@@ -147,7 +147,8 @@ class DashboardEmptyState extends StatelessWidget {
                   color: DashboardTheme.ink,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
-                  height: 1.2,
+                  height: 1.25,
+                  letterSpacing: 0.2,
                 ),
               ),
               const SizedBox(height: 10),
@@ -186,11 +187,11 @@ class DashboardLoadingView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               child: CircularProgressIndicator(
                 color: DashboardTheme.accent,
-                strokeWidth: 3,
+                strokeWidth: 3.5,
               ),
             ),
             const SizedBox(height: 20),
