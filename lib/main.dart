@@ -7,7 +7,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'screens/gallery_screen.dart';
 // SCREEN IMPORTS
 import 'screens/feed_screen.dart';
-import 'screens/dashboard_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/finance_screen.dart';
 import 'screens/tasks_screen.dart';
