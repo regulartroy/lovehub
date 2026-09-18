@@ -1,0 +1,60 @@
+type User @table {
+  displayName: String!
+  email: String!
+  createdAt: Timestamp!
+  photoUrl: String
+}
+
+type Household @table {
+  name: String!
+  createdAt: Timestamp!
+  description: String
+}
+
+type HouseholdMembership @table(key: ["user", "household"]) {
+  user: User!
+  household: Household!
+  role: String!
+  createdAt: Timestamp!
+}
+
+type Task @table {
+  household: Household!
+  assignee: User
+  title: String!
+  isCompleted: Boolean!
+  createdAt: Timestamp!
+  description: String
+  dueDate: Timestamp
+}
+
+type CalendarEvent @table {
+  household: Household!
+  creator: User
+  title: String!
+  startTime: Timestamp!
+  endTime: Timestamp!
+  createdAt: Timestamp!
+  description: String
+  location: String
+}
+
+type Document @table {
+  household: Household!
+  uploader: User
+  fileName: String!
+  fileUrl: String!
+  category: String!
+  createdAt: Timestamp!
+  description: String
+}
+
+type ShoppingListItem @table {
+  household: Household!
+  addedBy: User
+  itemName: String!
+  isPurchased: Boolean!
+  createdAt: Timestamp!
+  quantity: Int
+  notes: String
+}

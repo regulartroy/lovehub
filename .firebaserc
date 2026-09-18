@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "lovehub-26107"
+  },
+  "targets": {
+    "lovehub-26107": {
+      "hosting": {
+        "love-hub": [
+          "love-hub"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

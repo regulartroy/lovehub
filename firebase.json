@@ -1,0 +1,29 @@
+{
+  "flutter": {
+    "platforms": {
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "lovehub-26107",
+          "configurations": {
+            "web": "1:172938928038:web:4c2093da124bb37ef37967"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "target": "love-hub",
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
