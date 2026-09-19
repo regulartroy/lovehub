@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../theme/calendar_colors.dart';
+import '../calendar_split_pill.dart';
 import 'dashboard_chrome.dart';
 import 'dashboard_theme.dart';
 
@@ -36,13 +37,17 @@ List<Map<String, dynamic>> dashboardEventsOnDay(
 ) {
   return events.where((event) => dashboardEventOverlapsDay(event, day)).toList()
     ..sort((a, b) {
-      final aStart = dashboardEventDateTime(a['start']) ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bStart = dashboardEventDateTime(b['start']) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final aStart =
+          dashboardEventDateTime(a['start']) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bStart =
+          dashboardEventDateTime(b['start']) ??
+          DateTime.fromMillisecondsSinceEpoch(0);
       return aStart.compareTo(bStart);
     });
 }
 
-/// Who-colour for person chips. Heatmap dots and week chips use category.
+/// Category colour for heatmap dots. List / week chips use a split pill.
 Color dashboardGlanceColor(
   Map<String, dynamic> data, {
   HubMemberPalette? palette,
@@ -110,12 +115,20 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final today = DateUtils.dateOnly(now);
-    final weekDays = List<DateTime>.generate(7, (i) => today.add(Duration(days: i)));
+    final weekDays = List<DateTime>.generate(
+      7,
+      (i) => today.add(Duration(days: i)),
+    );
     final monthStart = dashboardMondayOf(today);
-    final monthDays = List<DateTime>.generate(35, (i) => monthStart.add(Duration(days: i)));
+    final monthDays = List<DateTime>.generate(
+      35,
+      (i) => monthStart.add(Duration(days: i)),
+    );
     final weekEnd = weekDays.last;
     final monthEnd = monthDays.last;
-    final hasUpcoming = monthDays.any((day) => dashboardEventsOnDay(events, day).isNotEmpty);
+    final hasUpcoming = monthDays.any(
+      (day) => dashboardEventsOnDay(events, day).isNotEmpty,
+    );
     final whoPalette = resolvedPalette;
 
     return DashboardSlide(
@@ -156,15 +169,14 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
               today: today,
               weekEnd: weekEnd,
               title: dashboardMonthRangeLabel(monthStart, monthEnd),
-              emptyHint: hasUpcoming ? null : 'Quiet month — add plans from Calendar',
+              emptyHint: hasUpcoming
+                  ? null
+                  : 'Quiet month — add plans from Calendar',
               palette: whoPalette,
             ),
           ),
           SizedBox(height: metrics.isCompact ? 8 : 10),
-          CalendarGlanceLegend(
-            palette: whoPalette,
-            compact: metrics.isCompact,
-          ),
+          CalendarGlanceLegend(palette: whoPalette, compact: metrics.isCompact),
         ],
       ),
     );
@@ -220,7 +232,10 @@ class _CardLabel extends StatelessWidget {
         if (trailing != null) ...[
           const SizedBox(width: 10),
           Expanded(
-            child: Divider(color: DashboardTheme.fade(Colors.white, 0.16), height: 1),
+            child: Divider(
+              color: DashboardTheme.fade(Colors.white, 0.16),
+              height: 1,
+            ),
           ),
           const SizedBox(width: 10),
           Text(
@@ -311,8 +326,11 @@ class _WeekDayColumn extends StatelessWidget {
     final weekday = DateFormat('EEE').format(day).toUpperCase();
     return LayoutBuilder(
       builder: (context, constraints) {
-        final eventAreaHeight = (constraints.maxHeight - (metrics.isCompact ? 52 : 64))
-            .clamp(0.0, constraints.maxHeight);
+        final eventAreaHeight =
+            (constraints.maxHeight - (metrics.isCompact ? 52 : 64)).clamp(
+              0.0,
+              constraints.maxHeight,
+            );
         final chipBudget = eventAreaHeight < 26
             ? 0
             : eventAreaHeight < 54
@@ -354,7 +372,9 @@ class _WeekDayColumn extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: isToday ? Colors.greenAccent : const Color(0xFF8FB0C8),
+                    color: isToday
+                        ? Colors.greenAccent
+                        : const Color(0xFF8FB0C8),
                     fontSize: metrics.isCompact ? 10 : 12,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.6,
@@ -456,27 +476,16 @@ class _EventChip extends StatelessWidget {
     final isMeal = event['category'] == 'meal';
     final isWork = event['category'] == 'work';
 
-    return Container(
-      width: double.infinity,
+    return CalendarSplitPill(
+      style: style,
+      title: compact || time.isEmpty || time == 'All day'
+          ? title
+          : '$time $title',
+      density: CalendarSplitPillDensity.compact,
       margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        color: style.washDark(0.16),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: DashboardTheme.fade(style.signal, 0.28)),
-      ),
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 4 : 6,
-          vertical: compact ? 3 : 4,
-        ),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: style.signal.withValues(alpha: 0.92), width: 2.5),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
+      trailing: compact
+          ? null
+          : Icon(
               isBirthday
                   ? Icons.cake_rounded
                   : isMeal
@@ -484,38 +493,8 @@ class _EventChip extends StatelessWidget {
                   : isWork
                   ? Icons.work_outline
                   : Icons.circle,
-              color: isBirthday || isMeal || isWork ? style.signal : style.who,
               size: isBirthday || isMeal || isWork ? 11 : 6,
             ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                compact || time.isEmpty || time == 'All day'
-                    ? title
-                    : '$time $title',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: DashboardTheme.ink,
-                  fontSize: compact ? 10 : 11,
-                  fontWeight: FontWeight.w600,
-                  height: 1.1,
-                ),
-              ),
-            ),
-            if (!compact)
-              Container(
-                width: 7,
-                height: 7,
-                margin: const EdgeInsets.only(left: 3),
-                decoration: BoxDecoration(
-                  color: style.who,
-                  shape: BoxShape.circle,
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -660,7 +639,9 @@ class _MonthDayCell extends StatelessWidget {
         final showDots = events.isNotEmpty && constraints.maxHeight >= 26;
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: isToday ? DashboardTheme.fade(Colors.greenAccent, 0.12) : fill,
+            color: isToday
+                ? DashboardTheme.fade(Colors.greenAccent, 0.12)
+                : fill,
             borderRadius: BorderRadius.circular(DashboardTheme.radiusSm),
             border: Border.all(color: borderColor, width: isToday ? 1.4 : 1),
           ),
@@ -690,9 +671,13 @@ class _MonthDayCell extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       for (final event in events.take(3))
-                        _GlanceDot(
-                          style: CalendarColors.fromMap(event, palette: palette),
+                        CalendarGlanceDot(
+                          style: CalendarColors.fromMap(
+                            event,
+                            palette: palette,
+                          ),
                           faded: isPast,
+                          size: metrics.isCompact ? 6 : 7,
                         ),
                     ],
                   ),
@@ -702,32 +687,6 @@ class _MonthDayCell extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _GlanceDot extends StatelessWidget {
-  const _GlanceDot({required this.style, required this.faded});
-
-  final CalendarEventStyle style;
-  final bool faded;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 5,
-      height: 5,
-      margin: const EdgeInsets.symmetric(horizontal: 1),
-      decoration: BoxDecoration(
-        color: style.glanceDot.withValues(alpha: faded ? 0.45 : 0.95),
-        shape: BoxShape.circle,
-        border: style.special == null
-            ? null
-            : Border.all(
-                color: style.special!.withValues(alpha: faded ? 0.5 : 0.9),
-                width: 1,
-              ),
-      ),
     );
   }
 }
@@ -748,10 +707,7 @@ class CalendarGlanceLegend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = dark ? DashboardTheme.inkMuted : const Color(0xFF5A564E);
-    final swatches = [
-      ...palette.whoLegend(),
-      ...palette.kindLegend(),
-    ];
+    final swatches = [...palette.whoLegend(), ...palette.kindLegend()];
 
     return Wrap(
       spacing: compact ? 8 : 12,

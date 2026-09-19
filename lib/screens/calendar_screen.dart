@@ -10,6 +10,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
 import '../theme/calendar_colors.dart';
+import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../services/member_profile.dart';
 
@@ -1455,22 +1456,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                                         e,
                                         palette: _palette,
                                       );
-                                      return Container(
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 1.5,
-                                        ),
-                                        width: 7,
-                                        height: 7,
-                                        decoration: BoxDecoration(
-                                          color: style.glanceDot,
-                                          shape: BoxShape.circle,
-                                          border: style.special == null
-                                              ? null
-                                              : Border.all(
-                                                  color: style.special!,
-                                                  width: 1.2,
-                                                ),
-                                        ),
+                                      return CalendarGlanceDot(
+                                        style: style,
+                                        size: 7,
                                       );
                                     }).toList(),
                                   );
@@ -1751,9 +1739,6 @@ class _CalendarScreenState extends State<CalendarScreen>
     bool showAvatar = false,
   }) {
     final style = CalendarColors.fromEvent(event, palette: _palette);
-    final borderColor = style.signal;
-    final bgColor = style.washLight();
-    final whoColor = style.who;
 
     bool isMulti = !isSameDay(event.start, event.end);
     String cleanTitle = event.summary.replaceAll(RegExp(r'\[.*?\]'), '').trim();
@@ -1771,78 +1756,49 @@ class _CalendarScreenState extends State<CalendarScreen>
       if (pUrl != null && pUrl.isNotEmpty) {
         avatarWidget = CircleAvatar(
           backgroundImage: NetworkImage(pUrl),
-          radius: 16,
+          radius: 14,
         );
       } else {
         avatarWidget = CircleAvatar(
-          backgroundColor: whoColor.withValues(alpha: 0.2),
-          radius: 16,
+          backgroundColor: Colors.white.withValues(alpha: 0.22),
+          radius: 14,
           child: Text(
             initial,
-            style: TextStyle(color: whoColor, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: style.inkOnWho,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
           ),
         );
       }
+    } else if (event.assignedTo == 'shared') {
+      avatarWidget = Icon(
+        Icons.favorite,
+        size: 16,
+        color: style.inkOnWho,
+      );
     }
 
-    return Card(
-      elevation: 0,
-      color: bgColor,
+    final timeLabel = hideSubtitle || (event.allDay && !isMulti)
+        ? null
+        : isMulti
+        ? "${DateFormat('d MMM').format(event.start)} - ${DateFormat('d MMM').format(event.end)}"
+        : "${DateFormat('HH:mm').format(event.start)} - ${DateFormat('HH:mm').format(event.end)}";
+
+    return CalendarSplitPill(
+      style: style,
+      title: cleanTitle,
+      subtitle: timeLabel,
+      density: CalendarSplitPillDensity.regular,
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: borderColor.withValues(alpha: 0.28)),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: borderColor, width: 4)),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: ListTile(
-          onTap: () => _showEditOrImportDialog(existingEvent: event),
-          leading: avatarWidget,
-          title: Text(
-            cleanTitle,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: (event.allDay && !isMulti)
-              ? null // Show absolutely nothing if it's a single all-day event!
-              : Text(
-                  isMulti
-                      ? "${DateFormat('d MMM').format(event.start)} - ${DateFormat('d MMM').format(event.end)}"
-                      : "${DateFormat('HH:mm').format(event.start)} - ${DateFormat('HH:mm').format(event.end)}",
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: whoColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              if (event.category == 'birthday')
-                Icon(
-                  _getBdayIcon(event.id),
-                  size: 18,
-                  color: style.signal,
-                )
-              else if (event.category == 'work')
-                Icon(Icons.work, size: 16, color: borderColor)
-              else if (event.assignedTo == 'shared')
-                Icon(
-                  Icons.favorite,
-                  size: 16,
-                  color: whoColor,
-                ),
-            ],
-          ),
-        ),
-      ),
+      onTap: () => _showEditOrImportDialog(existingEvent: event),
+      leading: avatarWidget,
+      trailing: event.category == 'birthday'
+          ? Icon(_getBdayIcon(event.id), size: 18)
+          : event.category == 'work'
+          ? const Icon(Icons.work, size: 16)
+          : null,
     );
   }
 }
