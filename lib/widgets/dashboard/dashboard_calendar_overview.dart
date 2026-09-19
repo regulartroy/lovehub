@@ -200,13 +200,17 @@ class _CardLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(
-          text,
-          style: const TextStyle(
-            color: Color(0xFF8FB0C8),
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.3,
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF8FB0C8),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.3,
+            ),
           ),
         ),
         if (trailing != null) ...[
@@ -218,13 +222,18 @@ class _CardLabel extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            trailing!,
-            style: const TextStyle(
-              color: DashboardTheme.inkFaint,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
+          Flexible(
+            child: Text(
+              trailing!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: DashboardTheme.inkFaint,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.6,
+              ),
             ),
           ),
         ] else
@@ -261,7 +270,10 @@ class _FourWeekBoard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _CardLabel(text: 'NEXT 4 WEEKS', trailing: rangeLabel),
+          _CardLabel(
+            text: 'NEXT 4 WEEKS',
+            trailing: metrics.isCompact ? null : rangeLabel,
+          ),
           SizedBox(height: metrics.isCompact ? 8 : 12),
           Expanded(
             child: LayoutBuilder(
