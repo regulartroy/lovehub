@@ -225,7 +225,7 @@ class _MainScreenState extends State<MainScreen>
               false; // <-- NEW: Data has arrived, turn off the loader!
         });
 
-        if (!_didSyncHubPhotos && isUsablePhotoUrl(_user!.photoURL)) {
+        if (!_didSyncHubPhotos) {
           final hubIds = Map<String, dynamic>.from(
             data['joinedHubs'] ?? {},
           ).keys;
@@ -248,12 +248,14 @@ class _MainScreenState extends State<MainScreen>
 
   Future<void> _createPersonalHub() async {
     // 1. Create the hub
-    final docRef = await FirebaseFirestore.instance.collection('hubs').add({
-      'name': 'My Lovehub',
-      'members': [_user!.uid],
-      'createdAt': FieldValue.serverTimestamp(),
-      'createdBy': _user!.uid,
-    });
+    final docRef = await FirebaseFirestore.instance.collection('hubs').add(
+      newHubDocument(
+        name: 'My Lovehub',
+        creatorUid: _user!.uid,
+        photoURL: _user!.photoURL,
+        displayName: _user!.displayName,
+      ),
+    );
     // 2. Add it to the user's joinedHubs so it shows up
     await FirebaseFirestore.instance.collection('users').doc(_user!.uid).set({
       'joinedHubs': {
@@ -375,12 +377,14 @@ class _MainScreenState extends State<MainScreen>
               if (nameCtrl.text.isNotEmpty) {
                 final docRef = await FirebaseFirestore.instance
                     .collection('hubs')
-                    .add({
-                      'name': nameCtrl.text,
-                      'members': [_user!.uid],
-                      'createdAt': FieldValue.serverTimestamp(),
-                      'createdBy': _user!.uid,
-                    });
+                    .add(
+                      newHubDocument(
+                        name: nameCtrl.text,
+                        creatorUid: _user!.uid,
+                        photoURL: _user!.photoURL,
+                        displayName: _user!.displayName,
+                      ),
+                    );
                 await FirebaseFirestore.instance
                     .collection('users')
                     .doc(_user!.uid)

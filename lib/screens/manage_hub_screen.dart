@@ -1,8 +1,10 @@
 // File: lib/screens/manage_hub_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/member_profile.dart';
+import '../widgets/member_avatar.dart';
 
 class ManageHubScreen extends StatelessWidget {
   final String hubId;
@@ -22,23 +24,23 @@ class ManageHubScreen extends StatelessWidget {
     BuildContext context,
     Map<String, dynamic> requestData,
   ) async {
-    final newMemberId = requestData['uid'];
-    final requestPhoto = requestData['photoURL']?.toString();
-    final requestName = requestData['displayName']?.toString();
+    final newMemberId = requestData['uid'].toString();
+    final best = await resolveJoinMemberProfile(
+      uid: newMemberId,
+      requestPhotoURL: requestData['photoURL']?.toString(),
+      requestDisplayName: requestData['displayName']?.toString(),
+    );
+    final requestPhoto = best.photoURL;
+    final requestName = best.displayName;
 
     final hubUpdates = <String, dynamic>{
       'members': FieldValue.arrayUnion([newMemberId]),
+      ...hubMemberProfilePayload(
+        uid: newMemberId,
+        photoURL: requestPhoto,
+        displayName: requestName,
+      ),
     };
-    if (isUsablePhotoUrl(requestPhoto) ||
-        (requestName != null && requestName.trim().isNotEmpty)) {
-      hubUpdates.addAll(
-        hubMemberProfilePayload(
-          uid: newMemberId,
-          photoURL: requestPhoto,
-          displayName: requestName,
-        ),
-      );
-    }
 
     await FirebaseFirestore.instance.collection('hubs').doc(hubId).set(
       hubUpdates,
@@ -74,6 +76,33 @@ class ManageHubScreen extends StatelessWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Member Approved!")));
+    }
+  }
+
+  Future<void> _refreshMemberPhotos(BuildContext context) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final result = await refreshHubMemberPhotos(
+        hubId: hubId,
+        currentUser: FirebaseAuth.instance.currentUser,
+      );
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(hubPhotoRefreshMessage(result))),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not refresh member photos: $e')),
+        );
+      }
     }
   }
 
@@ -302,16 +331,42 @@ class ManageHubScreen extends StatelessWidget {
                 final hubData = snapshot.data!.data() as Map<String, dynamic>;
                 final List members = hubData['members'] ?? [];
 
+                final profiles = Map<String, dynamic>.from(
+                  hubData['memberProfiles'] ?? const {},
+                );
                 return Column(
                   children: members.map((uid) {
                     return MemberTile(
                       userId: uid,
                       hubId: hubId,
                       isMe: uid == currentUserId,
+                      hubProfile: hubProfileMap(profiles[uid]),
                     );
                   }).toList(),
                 );
               },
+            ),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _refreshMemberPhotos(context),
+                  icon: const Icon(Icons.photo_camera_front_outlined),
+                  label: const Text("Refresh member photos"),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.all(16),
+                  ),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(
+                "Re-pulls Google photos from each member's profile when LoveHub can read them, and writes them onto this hub so partners keep seeing them.",
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
             ),
 
             const Divider(height: 40),
@@ -376,12 +431,14 @@ class MemberTile extends StatelessWidget {
   final String userId;
   final String hubId;
   final bool isMe;
+  final Map<String, dynamic> hubProfile;
 
   const MemberTile({
     super.key,
     required this.userId,
     required this.hubId,
     required this.isMe,
+    this.hubProfile = const {},
   });
 
   Future<void> _updateRole(String newRole) async {
@@ -404,26 +461,36 @@ class MemberTile extends StatelessWidget {
     return FutureBuilder<DocumentSnapshot>(
       future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData && !snapshot.hasError) {
           return const ListTile(leading: CircularProgressIndicator());
+        }
 
-        final userData = snapshot.data!.data() as Map<String, dynamic>?;
-        if (userData == null) return const SizedBox();
+        final userData = snapshot.data?.data() as Map<String, dynamic>?;
+        final photoURL = resolveMemberPhotoUrl(
+          uid: userId,
+          firestorePhotoURL: userData?['photoURL']?.toString(),
+          hubPhotoURL: hubProfile['photoURL']?.toString(),
+          currentUid: isMe ? userId : null,
+          currentAuthPhotoURL: isMe
+              ? FirebaseAuth.instance.currentUser?.photoURL
+              : null,
+        );
+        final displayName =
+            (userData?['displayName'] ?? hubProfile['displayName'] ?? 'Unknown')
+                .toString();
 
-        final hubData = userData['joinedHubs']?[hubId] as Map<String, dynamic>?;
+        final hubData = userData?['joinedHubs']?[hubId] as Map<String, dynamic>?;
         final role = hubData?['role'] ?? 'member';
         final isAdmin = role == 'admin';
 
         return ListTile(
-          leading: CircleAvatar(
-            backgroundImage: userData['photoURL'] != null
-                ? NetworkImage(userData['photoURL'])
-                : null,
-            child: userData['photoURL'] == null
-                ? const Icon(Icons.person)
-                : null,
+          leading: MemberAvatar(
+            photoURL: photoURL,
+            name: displayName,
+            radius: 20,
+            backgroundColor: Colors.pink.shade200,
           ),
-          title: Text(userData['displayName'] ?? 'Unknown'),
+          title: Text(displayName),
           subtitle: Text(isAdmin ? "Admin" : "Member"),
           trailing: isMe
               ? const Chip(label: Text("You"))
