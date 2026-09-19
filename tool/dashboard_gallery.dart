@@ -334,6 +334,7 @@ class DashboardGalleryPage extends StatelessWidget {
           metrics: metrics,
           events: _lookAheadEvents(),
           now: _previewNow,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
         ),
         const Positioned(
           left: 0,
@@ -350,6 +351,7 @@ class DashboardGalleryPage extends StatelessWidget {
       metrics: metrics,
       events: const [],
       now: _previewNow,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
     );
   }
 }

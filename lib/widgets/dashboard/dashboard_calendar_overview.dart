@@ -91,11 +91,13 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
     required this.metrics,
     required this.events,
     required this.now,
+    this.padding,
   });
 
   final DashboardMetrics metrics;
   final List<Map<String, dynamic>> events;
   final DateTime now;
+  final EdgeInsets? padding;
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +112,7 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
     return DashboardSlide(
       metrics: metrics,
       tint: DashboardTheme.schedule,
+      padding: padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
