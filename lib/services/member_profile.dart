@@ -15,73 +15,14 @@ String memberInitial(String? name) {
   return value.isEmpty ? '?' : value[0].toUpperCase();
 }
 
-final _googleSizeSuffix = RegExp(r'=s\d+(-[a-z])?$', caseSensitive: false);
-
-bool isGooglePhotoHost(String? url) {
-  final host = Uri.tryParse(url?.trim() ?? '')?.host.toLowerCase() ?? '';
-  return host.contains('googleusercontent.com') || host.contains('ggpht.com');
-}
-
-String _stripGoogleSizeSuffix(String path) {
-  return path.replaceFirst(_googleSizeSuffix, '');
-}
-
-/// Durable Google profile URL stored on the hub / users doc.
-///
-/// Path-only `=sNN-c`, no `sz` query. Extra query params are a common 403
-/// source; Auth's `=s96-c` form is the one that usually keeps working.
-String durablePhotoUrl(String? url, {int size = 128}) {
-  final value = url?.trim() ?? '';
-  if (!isUsablePhotoUrl(value) || !isGooglePhotoHost(value)) return value;
-  final uri = Uri.tryParse(value);
-  if (uri == null) return value;
-  final clamped = size.clamp(32, 512);
-  final path = '${_stripGoogleSizeSuffix(uri.path)}=s$clamped-c';
-  return Uri(scheme: uri.scheme, host: uri.host, path: path).toString();
-}
-
-/// Display-time variants. Live evidence: Tom's Google URL loads, Maria's
-/// stored googleusercontent URL is requested and fails. Try the raw string
-/// first, then the durable form, then a few size/query fallbacks.
-List<String> googlePhotoUrlCandidates(String? url, {int size = 128}) {
-  final raw = url?.trim() ?? '';
-  if (!isUsablePhotoUrl(raw)) return const [];
-  if (!isGooglePhotoHost(raw)) return [raw];
-
-  final uri = Uri.tryParse(raw);
-  final unsized = uri == null
-      ? raw
-      : Uri(
-          scheme: uri.scheme,
-          host: uri.host,
-          path: _stripGoogleSizeSuffix(uri.path),
-        ).toString();
-  final durable = durablePhotoUrl(raw, size: size);
-  final authDefault = durablePhotoUrl(raw, size: 96);
-  final withSz = Uri.parse(durable).replace(
-    queryParameters: {'sz': '${size.clamp(32, 512)}'},
-  ).toString();
-
-  final out = <String>[];
-  for (final candidate in [raw, durable, authDefault, unsized, withSz]) {
-    if (isUsablePhotoUrl(candidate) && !out.contains(candidate)) {
-      out.add(candidate);
-    }
-  }
-  return out;
-}
-
-/// Normalize Google profile URLs for display. Prefer the durable path form;
-/// callers that need retries should use [googlePhotoUrlCandidates].
-String hardenPhotoUrl(String? url, {int size = 128}) {
-  return durablePhotoUrl(url, size: size);
-}
-
 /// Resolve a hub member photo without inventing a new auth flow.
 ///
 /// Order: request payload, Firestore `users/{uid}.photoURL`, hub
 /// `memberProfiles`, then Firebase Auth — Auth is only valid for the
 /// signed-in user.
+///
+/// Returns the stored string as-is. Do not rewrite Google URLs; Auth's
+/// photoURL is the working form.
 String resolveMemberPhotoUrl({
   required String uid,
   String? requestPhotoURL,
@@ -108,9 +49,9 @@ Map<String, dynamic>? currentUserProfileUpdates({
 }) {
   final updates = <String, dynamic>{};
   if (isUsablePhotoUrl(authPhotoURL)) {
-    final durable = durablePhotoUrl(authPhotoURL);
-    if (existing?['photoURL'] != durable) {
-      updates['photoURL'] = durable;
+    final photo = authPhotoURL!.trim();
+    if (existing?['photoURL'] != photo) {
+      updates['photoURL'] = photo;
     }
   }
   final name = authDisplayName?.trim() ?? '';
@@ -128,7 +69,7 @@ Map<String, dynamic> hubMemberProfilePayload({
 }) {
   final profile = <String, dynamic>{};
   if (isUsablePhotoUrl(photoURL)) {
-    profile['photoURL'] = durablePhotoUrl(photoURL);
+    profile['photoURL'] = photoURL!.trim();
   }
   final name = displayName?.trim() ?? '';
   if (name.isNotEmpty) profile['displayName'] = name;
@@ -152,7 +93,7 @@ Map<String, dynamic>? hubMemberProfilesPatch({
     final existingMap = existing is Map
         ? Map<String, dynamic>.from(existing)
         : const <String, dynamic>{};
-    final photo = durablePhotoUrl(photosByUid[uid]);
+    final photo = photosByUid[uid]?.trim() ?? '';
     final name = namesByUid[uid]?.trim() ?? '';
     final existingPhoto = existingMap['photoURL']?.toString();
     final existingName = (existingMap['displayName'] ?? '').toString().trim();
@@ -232,105 +173,9 @@ Future<void> syncCurrentUserPhotoToHubs({
   }
 }
 
-class HubPhotoRefreshResult {
-  const HubPhotoRefreshResult({
-    required this.updated,
-    required this.unchanged,
-    required this.missingUids,
-  });
-
-  final int updated;
-  final int unchanged;
-  final List<String> missingUids;
-
-  int get missing => missingUids.length;
-}
-
-String hubPhotoRefreshMessage(HubPhotoRefreshResult result) {
-  if (result.missing == 0 && result.updated == 0) {
-    return 'Member photos are already up to date.';
-  }
-  if (result.missing == 0) {
-    return 'Updated ${result.updated} member photo${result.updated == 1 ? '' : 's'}.';
-  }
-  return 'Updated ${result.updated}. ${result.missing} still missing — they need to open LoveHub once.';
-}
-
 Map<String, dynamic> hubProfileMap(dynamic raw) {
   if (raw is Map) return Map<String, dynamic>.from(raw);
   return const <String, dynamic>{};
-}
-
-/// Re-pull member photos from `users/{uid}` where allowed and write them onto
-/// the hub document. Always includes the signed-in Auth photo for self.
-Future<HubPhotoRefreshResult> refreshHubMemberPhotos({
-  required String hubId,
-  FirebaseFirestore? firestore,
-  User? currentUser,
-}) async {
-  final db = firestore ?? FirebaseFirestore.instance;
-  final current = currentUser ?? FirebaseAuth.instance.currentUser;
-  final hubSnap = await db.collection('hubs').doc(hubId).get();
-  final ids = List<String>.from(hubSnap.data()?['members'] ?? const []);
-  final existingProfiles = Map<String, dynamic>.from(
-    hubSnap.data()?['memberProfiles'] ?? const {},
-  );
-
-  final photos = <String, String>{};
-  final names = <String, String>{};
-  final missingUids = <String>[];
-
-  for (final uid in ids) {
-    String? firestorePhoto;
-    String? firestoreName;
-    try {
-      final userSnap = await db.collection('users').doc(uid).get();
-      if (userSnap.exists) {
-        firestorePhoto = userSnap.data()?['photoURL']?.toString();
-        firestoreName = userSnap.data()?['displayName']?.toString();
-      }
-    } catch (_) {
-      // Partner user docs are often unreadable; hub membership is the fallback.
-    }
-
-    final hubMap = hubProfileMap(existingProfiles[uid]);
-    final photo = resolveMemberPhotoUrl(
-      uid: uid,
-      firestorePhotoURL: firestorePhoto,
-      hubPhotoURL: hubMap['photoURL']?.toString(),
-      currentUid: current?.uid,
-      currentAuthPhotoURL: current?.photoURL,
-    );
-    final name =
-        (firestoreName ??
-                hubMap['displayName'] ??
-                (uid == current?.uid ? current?.displayName : null))
-            ?.toString();
-
-    if (isUsablePhotoUrl(photo)) {
-      photos[uid] = photo;
-    } else {
-      missingUids.add(uid);
-    }
-    if (name != null && name.trim().isNotEmpty) {
-      names[uid] = name.trim();
-    }
-  }
-
-  final patch = hubMemberProfilesPatch(
-    photosByUid: photos,
-    namesByUid: names,
-    existingHubProfiles: existingProfiles,
-  );
-  if (patch != null) {
-    await db.collection('hubs').doc(hubId).set(patch, SetOptions(merge: true));
-  }
-
-  return HubPhotoRefreshResult(
-    updated: patch == null ? 0 : (patch['memberProfiles'] as Map).length,
-    unchanged: ids.length - (patch == null ? 0 : (patch['memberProfiles'] as Map).length),
-    missingUids: missingUids,
-  );
 }
 
 /// Best photo available while approving a join request.
@@ -434,7 +279,8 @@ class HubMemberDirectory {
         _users[uid] = doc.data() ?? const {};
         _emit();
       }, onError: (_) {
-        // `users/{other}` is often denied. Keep going on hub membership.
+        // Partner user docs must be readable (see firestore.rules). If a
+        // snapshot is denied, keep going on hub membership.
         _users[uid] = const {};
         _emit();
       });

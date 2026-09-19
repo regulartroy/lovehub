@@ -11,6 +11,9 @@
       }
     }
   },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "target": "love-hub",
     "public": "build/web",

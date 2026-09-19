@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../services/member_profile.dart';
-import 'google_photo_image.dart';
 
 /// Shared circular member photo used by Home, Dashboard, and Calendar.
 ///
-/// Flutter web (CanvasKit) cannot fetch many Google profile URLs as bytes.
-/// Google photos also 403 when the page sends a Referer. [GooglePhotoImage]
-/// loads them as an HTML `<img referrerpolicy="no-referrer">` and retries
-/// durable URL variants so errorBuilder is not the first and only outcome.
+/// Uses the raw stored URL with [Image.network]. On Flutter web (CanvasKit),
+/// [WebHtmlElementStrategy.prefer] loads an HTML `<img>` / [WebImageInfo]
+/// instead of an XHR byte-fetch. Many `googleusercontent` profile URLs have
+/// no CORS headers; the byte-fetch 403s and the old `errorBuilder` drew the
+/// same initial as a missing URL.
+///
+/// Do not set [Image.network] headers on web: a non-empty header map forces
+/// the XHR path. Page-level `<meta name="referrer" content="no-referrer">`
+/// is enough — do not rewrite Google photo URLs.
 class MemberAvatar extends StatelessWidget {
   const MemberAvatar({
     super.key,
@@ -35,8 +39,6 @@ class MemberAvatar extends StatelessWidget {
     final bg = backgroundColor ?? theme.colorScheme.primary;
     final fg = foregroundColor ?? Colors.white;
     final initial = memberInitial(name);
-    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
-    final pixelSize = (radius * 2 * dpr).round().clamp(64, 256);
 
     final fallback = _FallbackFace(
       radius: radius,
@@ -48,10 +50,15 @@ class MemberAvatar extends StatelessWidget {
 
     Widget child = fallback;
     if (isUsablePhotoUrl(photoURL) && icon == null) {
-      child = GooglePhotoImage(
-        photoURL: photoURL!,
-        size: pixelSize,
-        fallback: fallback,
+      child = Image.network(
+        photoURL!.trim(),
+        width: radius * 2,
+        height: radius * 2,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+        errorBuilder: (context, error, stackTrace) => fallback,
       );
     }
 

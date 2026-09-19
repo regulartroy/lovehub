@@ -47,7 +47,6 @@ class _FeedScreenState extends State<FeedScreen> {
 
   StreamSubscription<QuerySnapshot>? _birthdaySub;
   late final HubMemberDirectory _memberDirectory;
-  bool _refreshingPhotos = false;
 
   @override
   void initState() {
@@ -270,28 +269,6 @@ class _FeedScreenState extends State<FeedScreen> {
       docRef.set({
         'completed': FieldValue.arrayRemove([choreId]),
       }, SetOptions(merge: true));
-    }
-  }
-
-  Future<void> _refreshMemberPhotos(String hubId) async {
-    if (_refreshingPhotos) return;
-    setState(() => _refreshingPhotos = true);
-    try {
-      final result = await refreshHubMemberPhotos(
-        hubId: hubId,
-        currentUser: widget.user,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(hubPhotoRefreshMessage(result))),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not refresh member photos: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _refreshingPhotos = false);
     }
   }
 
@@ -655,41 +632,6 @@ class _FeedScreenState extends State<FeedScreen> {
                                           ),
                                         ],
                                       ),
-                                      if (_hubMembers.values.any(
-                                        (m) => !isUsablePhotoUrl(
-                                          m['photoURL']?.toString(),
-                                        ),
-                                      ))
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 12,
-                                          ),
-                                          child: TextButton.icon(
-                                            onPressed: _refreshingPhotos
-                                                ? null
-                                                : () => _refreshMemberPhotos(
-                                                    activeHubId,
-                                                  ),
-                                            icon: _refreshingPhotos
-                                                ? const SizedBox(
-                                                    width: 14,
-                                                    height: 14,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                                  )
-                                                : const Icon(
-                                                    Icons.refresh,
-                                                    size: 16,
-                                                  ),
-                                            label: Text(
-                                              _refreshingPhotos
-                                                  ? 'Refreshing photos…'
-                                                  : 'Refresh member photos',
-                                            ),
-                                          ),
-                                        ),
                                     ],
                                   ),
                                 ),

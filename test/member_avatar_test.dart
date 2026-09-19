@@ -56,7 +56,7 @@ void main() {
       'https://lh3.googleusercontent.com/a/ACg8ocMaria=s96-c',
     );
     expect(provider.webHtmlElementStrategy, WebHtmlElementStrategy.prefer);
-    expect(provider.headers, {'Accept': 'image/*'});
+    expect(provider.headers, isNull);
   });
 
   testWidgets('shared heart uses the icon instead of a network image', (

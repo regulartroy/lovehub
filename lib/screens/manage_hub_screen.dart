@@ -79,33 +79,6 @@ class ManageHubScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _refreshMemberPhotos(BuildContext context) async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-    try {
-      final result = await refreshHubMemberPhotos(
-        hubId: hubId,
-        currentUser: FirebaseAuth.instance.currentUser,
-      );
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(hubPhotoRefreshMessage(result))),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not refresh member photos: $e')),
-        );
-      }
-    }
-  }
-
   Future<void> _rejectUser(String userId) async {
     await FirebaseFirestore.instance
         .collection('hubs')
@@ -345,28 +318,6 @@ class ManageHubScreen extends StatelessWidget {
                   }).toList(),
                 );
               },
-            ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _refreshMemberPhotos(context),
-                  icon: const Icon(Icons.photo_camera_front_outlined),
-                  label: const Text("Refresh member photos"),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.all(16),
-                  ),
-                ),
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                "Re-pulls Google photos from each member's profile when LoveHub can read them, and writes them onto this hub so partners keep seeing them.",
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
             ),
 
             const Divider(height: 40),

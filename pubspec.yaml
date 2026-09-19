@@ -55,7 +55,6 @@ dependencies:
   firebase_vertexai: ^2.2.0
   firebase_storage: ^13.1.0
   confetti: ^0.8.0
-  web: ^1.1.1
 
 
 dev_dependencies:
