@@ -106,12 +106,12 @@ class DashboardGalleryPage extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             _panel(
-              height: metrics.isCompact ? 640 : 560,
+              height: metrics.isCompact ? 760 : 680,
               child: _lookAheadPreview(metrics),
             ),
             const SizedBox(height: 20),
             _panel(
-              height: metrics.isCompact ? 520 : 480,
+              height: metrics.isCompact ? 720 : 640,
               child: _lookAheadEmptyPreview(metrics),
             ),
             const SizedBox(height: 20),
@@ -467,6 +467,30 @@ class DashboardGalleryPage extends StatelessWidget {
         'allDay': true,
         'category': 'general',
         'assignedTo': 'tom',
+      },
+      {
+        'summary': 'Swimming',
+        'start': at(18, 16, 0),
+        'end': at(18, 17, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'maria',
+      },
+      {
+        'summary': 'Parents evening',
+        'start': at(21, 18, 0),
+        'end': at(21, 19, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Sunday roast',
+        'start': at(23, 13, 0),
+        'end': at(23, 15, 0),
+        'allDay': false,
+        'category': 'meal',
+        'assignedTo': 'shared',
       },
     ];
   }
