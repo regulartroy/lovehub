@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_chrome.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
@@ -54,6 +55,8 @@ class DashboardGalleryPage extends StatelessWidget {
               style: const TextStyle(color: DashboardTheme.inkMuted, fontSize: 16),
             ),
             const SizedBox(height: 28),
+            _palettePanel(metrics),
+            const SizedBox(height: 20),
             _panel(
               height: 280,
               child: const DashboardLoadingView(),
@@ -123,6 +126,85 @@ class DashboardGalleryPage extends StatelessWidget {
     );
   }
 
+  static const _galleryMembers = [
+    {'uid': 'tom', 'name': 'Tom'},
+    {'uid': 'maria', 'name': 'Maria'},
+  ];
+
+  Widget _palettePanel(DashboardMetrics metrics) {
+    const swatches = [
+      (CalendarColors.tom, 'Tom', 'dusty teal'),
+      (CalendarColors.maria, 'Maria', 'soft rose'),
+      (CalendarColors.shared, 'Shared', 'warm sand'),
+      (CalendarColors.work, 'Work', 'slate accent'),
+      (CalendarColors.personal, 'Personal', 'sage accent'),
+    ];
+
+    return DashboardGlassCard(
+      tint: DashboardTheme.schedule,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Calendar colours',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: metrics.bodySize,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Who is the fill. Kind is the quiet stripe.',
+            style: TextStyle(color: DashboardTheme.inkMuted, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 16,
+            runSpacing: 12,
+            children: [
+              for (final swatch in swatches)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: swatch.$1,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          swatch.$2,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          swatch.$3,
+                          style: const TextStyle(
+                            color: DashboardTheme.inkFaint,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _panel({required double height, required Widget child}) {
     return SizedBox(
       height: height,
@@ -161,8 +243,8 @@ class DashboardGalleryPage extends StatelessWidget {
     final tomorrowCard = DashboardGlassCard(
       tint: DashboardTheme.schedule,
       child: ListView(
-        children: const [
-          Text(
+        children: [
+          const Text(
             'TOMORROW',
             style: TextStyle(
               color: Color(0xFF8FB0C8),
@@ -170,10 +252,17 @@ class DashboardGalleryPage extends StatelessWidget {
               letterSpacing: 1.2,
             ),
           ),
-          SizedBox(height: 12),
-          Text(
-            'Farmers market walk',
-            style: TextStyle(color: Colors.white, fontSize: 20),
+          const SizedBox(height: 12),
+          _previewChip(
+            who: CalendarColors.tom,
+            kind: CalendarColors.work,
+            label: '07:00  Early shift',
+          ),
+          const SizedBox(height: 8),
+          _previewChip(
+            who: CalendarColors.shared,
+            kind: CalendarColors.personal,
+            label: 'Farmers market walk',
           ),
         ],
       ),
@@ -265,8 +354,16 @@ class DashboardGalleryPage extends StatelessWidget {
         'start': at(0, 9, 30),
         'end': at(0, 11, 0),
         'allDay': false,
-        'category': 'shared',
+        'category': 'general',
         'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Early shift',
+        'start': at(1, 7, 0),
+        'end': at(1, 15, 0),
+        'allDay': false,
+        'category': 'work',
+        'assignedTo': 'tom',
       },
       {
         'summary': 'Pasta night',
@@ -334,6 +431,7 @@ class DashboardGalleryPage extends StatelessWidget {
           metrics: metrics,
           events: _lookAheadEvents(),
           now: _previewNow,
+          members: _galleryMembers,
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
         ),
         const Positioned(
@@ -346,11 +444,38 @@ class DashboardGalleryPage extends StatelessWidget {
     );
   }
 
+  Widget _previewChip({
+    required Color who,
+    required Color kind,
+    required String label,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: who.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: who.withValues(alpha: 0.32)),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: kind.withValues(alpha: 0.9), width: 3),
+          ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
   Widget _lookAheadEmptyPreview(DashboardMetrics metrics) {
     return DashboardCalendarOverviewSlide(
       metrics: metrics,
       events: const [],
       now: _previewNow,
+      members: _galleryMembers,
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
     );
   }

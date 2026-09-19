@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../theme/calendar_colors.dart';
 import 'dashboard_chrome.dart';
 import 'dashboard_theme.dart';
 
@@ -41,12 +42,12 @@ List<Map<String, dynamic>> dashboardEventsOnDay(
     });
 }
 
-Color dashboardGlanceColor(Map<String, dynamic> data) {
-  final category = data['category'] ?? 'general';
-  if (category == 'birthday') return Colors.purpleAccent;
-  if (category == 'meal') return Colors.greenAccent;
-  if ((data['assignedTo'] ?? 'shared') == 'shared') return DashboardTheme.accent;
-  return DashboardTheme.schedule;
+/// Who-colour for glance chips and heatmap dots. Kind/special stay overlays.
+Color dashboardGlanceColor(
+  Map<String, dynamic> data, {
+  HubMemberPalette? palette,
+}) {
+  return CalendarColors.fromMap(data, palette: palette).glanceDot;
 }
 
 String dashboardGlanceTitle(Map<String, dynamic> data) =>
@@ -91,13 +92,20 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
     required this.metrics,
     required this.events,
     required this.now,
+    this.members = const [],
+    this.palette,
     this.padding,
   });
 
   final DashboardMetrics metrics;
   final List<Map<String, dynamic>> events;
   final DateTime now;
+  final List<Map<String, dynamic>> members;
+  final HubMemberPalette? palette;
   final EdgeInsets? padding;
+
+  HubMemberPalette get resolvedPalette =>
+      palette ?? HubMemberPalette.fromMembers(members);
 
   @override
   Widget build(BuildContext context) {
@@ -108,6 +116,7 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
     final weekEnd = weekDays.last;
     final monthEnd = monthDays.last;
     final hasUpcoming = monthDays.any((day) => dashboardEventsOnDay(events, day).isNotEmpty);
+    final whoPalette = resolvedPalette;
 
     return DashboardSlide(
       metrics: metrics,
@@ -134,6 +143,7 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
               events: events,
               today: today,
               rangeLabel: dashboardCompactDayRange(today, weekEnd),
+              palette: whoPalette,
             ),
           ),
           SizedBox(height: metrics.isCompact ? 10 : 14),
@@ -147,7 +157,13 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
               weekEnd: weekEnd,
               title: dashboardMonthRangeLabel(monthStart, monthEnd),
               emptyHint: hasUpcoming ? null : 'Quiet month — add plans from Calendar',
+              palette: whoPalette,
             ),
+          ),
+          SizedBox(height: metrics.isCompact ? 8 : 10),
+          CalendarGlanceLegend(
+            palette: whoPalette,
+            compact: metrics.isCompact,
           ),
         ],
       ),
@@ -230,6 +246,7 @@ class _WeekStrip extends StatelessWidget {
     required this.events,
     required this.today,
     required this.rangeLabel,
+    required this.palette,
   });
 
   final DashboardMetrics metrics;
@@ -237,6 +254,7 @@ class _WeekStrip extends StatelessWidget {
   final List<Map<String, dynamic>> events;
   final DateTime today;
   final String rangeLabel;
+  final HubMemberPalette palette;
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +278,7 @@ class _WeekStrip extends StatelessWidget {
                       day: days[i],
                       events: dashboardEventsOnDay(events, days[i]),
                       isToday: DateUtils.isSameDay(days[i], today),
+                      palette: palette,
                     ),
                   ),
                 ],
@@ -278,12 +297,14 @@ class _WeekDayColumn extends StatelessWidget {
     required this.day,
     required this.events,
     required this.isToday,
+    required this.palette,
   });
 
   final DashboardMetrics metrics;
   final DateTime day;
   final List<Map<String, dynamic>> events;
   final bool isToday;
+  final HubMemberPalette palette;
 
   @override
   Widget build(BuildContext context) {
@@ -387,6 +408,7 @@ class _WeekDayColumn extends StatelessWidget {
                                 _EventChip(
                                   event: event,
                                   compact: metrics.isCompact,
+                                  palette: palette,
                                 ),
                               if (overflow > 0)
                                 Padding(
@@ -415,57 +437,74 @@ class _WeekDayColumn extends StatelessWidget {
 }
 
 class _EventChip extends StatelessWidget {
-  const _EventChip({required this.event, required this.compact});
+  const _EventChip({
+    required this.event,
+    required this.compact,
+    required this.palette,
+  });
 
   final Map<String, dynamic> event;
   final bool compact;
+  final HubMemberPalette palette;
 
   @override
   Widget build(BuildContext context) {
-    final color = dashboardGlanceColor(event);
+    final style = CalendarColors.fromMap(event, palette: palette);
     final title = dashboardGlanceTitle(event);
     final time = dashboardGlanceTimeLabel(event);
     final isBirthday = event['category'] == 'birthday';
     final isMeal = event['category'] == 'meal';
+    final isWork = event['category'] == 'work';
 
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 4),
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 4 : 6,
-        vertical: compact ? 3 : 4,
-      ),
       decoration: BoxDecoration(
-        color: DashboardTheme.fade(color, 0.14),
+        color: style.washDark(0.16),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: DashboardTheme.fade(color, 0.28)),
+        border: Border.all(color: DashboardTheme.fade(style.who, 0.28)),
       ),
-      child: Row(
-        children: [
-          Icon(
-            isBirthday
-                ? Icons.cake_rounded
-                : isMeal
-                ? Icons.restaurant
-                : Icons.circle,
-            color: color,
-            size: isBirthday || isMeal ? 11 : 6,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 4 : 6,
+          vertical: compact ? 3 : 4,
+        ),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: style.kind.withValues(alpha: 0.88), width: 2.5),
           ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              compact || time.isEmpty || time == 'All day' ? title : '$time $title',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: DashboardTheme.ink,
-                fontSize: compact ? 10 : 11,
-                fontWeight: FontWeight.w600,
-                height: 1.1,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isBirthday
+                  ? Icons.cake_rounded
+                  : isMeal
+                  ? Icons.restaurant
+                  : isWork
+                  ? Icons.work_outline
+                  : Icons.circle,
+              color: style.special ?? style.kind,
+              size: isBirthday || isMeal || isWork ? 11 : 6,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                compact || time.isEmpty || time == 'All day'
+                    ? title
+                    : '$time $title',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: DashboardTheme.ink,
+                  fontSize: compact ? 10 : 11,
+                  fontWeight: FontWeight.w600,
+                  height: 1.1,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -479,6 +518,7 @@ class _MonthHeatmap extends StatelessWidget {
     required this.today,
     required this.weekEnd,
     required this.title,
+    required this.palette,
     this.emptyHint,
   });
 
@@ -488,6 +528,7 @@ class _MonthHeatmap extends StatelessWidget {
   final DateTime today;
   final DateTime weekEnd;
   final String title;
+  final HubMemberPalette palette;
   final String? emptyHint;
 
   @override
@@ -540,6 +581,7 @@ class _MonthHeatmap extends StatelessWidget {
                               events: dashboardEventsOnDay(events, rows[r][c]),
                               today: today,
                               weekEnd: weekEnd,
+                              palette: palette,
                             ),
                           ),
                         ],
@@ -574,6 +616,7 @@ class _MonthDayCell extends StatelessWidget {
     required this.events,
     required this.today,
     required this.weekEnd,
+    required this.palette,
   });
 
   final DashboardMetrics metrics;
@@ -581,6 +624,7 @@ class _MonthDayCell extends StatelessWidget {
   final List<Map<String, dynamic>> events;
   final DateTime today;
   final DateTime weekEnd;
+  final HubMemberPalette palette;
 
   @override
   Widget build(BuildContext context) {
@@ -588,14 +632,17 @@ class _MonthDayCell extends StatelessWidget {
     final isPast = day.isBefore(today);
     final inLookAheadWeek = !day.isBefore(today) && !day.isAfter(weekEnd);
     final density = events.length.clamp(0, 4);
+    final washColor = events.isEmpty
+        ? CalendarColors.shared
+        : CalendarColors.fromMap(events.first, palette: palette).who;
     final fill = DashboardTheme.fade(
-      DashboardTheme.schedule,
-      isPast ? 0.03 : 0.05 + density * 0.06,
+      washColor,
+      isPast ? 0.03 : 0.05 + density * 0.05,
     );
     final borderColor = isToday
         ? Colors.greenAccent
         : inLookAheadWeek
-        ? DashboardTheme.fade(DashboardTheme.schedule, 0.38)
+        ? DashboardTheme.fade(CalendarColors.shared, 0.36)
         : DashboardTheme.fade(Colors.white, 0.08);
 
     return LayoutBuilder(
@@ -633,16 +680,9 @@ class _MonthDayCell extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       for (final event in events.take(3))
-                        Container(
-                          width: 5,
-                          height: 5,
-                          margin: const EdgeInsets.symmetric(horizontal: 1),
-                          decoration: BoxDecoration(
-                            color: dashboardGlanceColor(event).withValues(
-                              alpha: isPast ? 0.45 : 0.95,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
+                        _GlanceDot(
+                          style: CalendarColors.fromMap(event, palette: palette),
+                          faded: isPast,
                         ),
                     ],
                   ),
@@ -652,6 +692,91 @@ class _MonthDayCell extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _GlanceDot extends StatelessWidget {
+  const _GlanceDot({required this.style, required this.faded});
+
+  final CalendarEventStyle style;
+  final bool faded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 5,
+      height: 5,
+      margin: const EdgeInsets.symmetric(horizontal: 1),
+      decoration: BoxDecoration(
+        color: style.glanceDot.withValues(alpha: faded ? 0.45 : 0.95),
+        shape: BoxShape.circle,
+        border: style.special == null
+            ? null
+            : Border.all(
+                color: style.special!.withValues(alpha: faded ? 0.5 : 0.9),
+                width: 1,
+              ),
+      ),
+    );
+  }
+}
+
+/// Compact who + kind key for kitchen-tablet glances.
+class CalendarGlanceLegend extends StatelessWidget {
+  const CalendarGlanceLegend({
+    super.key,
+    required this.palette,
+    this.compact = false,
+    this.dark = true,
+  });
+
+  final HubMemberPalette palette;
+  final bool compact;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = dark ? DashboardTheme.inkMuted : const Color(0xFF5A564E);
+    final swatches = [
+      ...palette.whoLegend(),
+      ...palette.kindLegend(),
+    ];
+
+    return Wrap(
+      spacing: compact ? 8 : 12,
+      runSpacing: 4,
+      children: [
+        for (final swatch in swatches)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: swatch.color,
+                  shape: swatch.label == 'Work' || swatch.label == 'Personal'
+                      ? BoxShape.rectangle
+                      : BoxShape.circle,
+                  borderRadius: swatch.label == 'Work' || swatch.label == 'Personal'
+                      ? BorderRadius.circular(2)
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                swatch.label,
+                style: TextStyle(
+                  color: ink,
+                  fontSize: compact ? 9 : 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+      ],
     );
   }
 }

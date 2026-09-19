@@ -9,6 +9,8 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
+import '../theme/calendar_colors.dart';
+import '../widgets/dashboard/dashboard_calendar_overview.dart';
 
 // --- TOP LEVEL HELPERS ---
 extension StringExtension on String {
@@ -109,7 +111,8 @@ class _CalendarScreenState extends State<CalendarScreen>
                 .collection('users')
                 .doc(uid)
                 .get();
-            String name = uDoc.data()?['displayName'] ?? "Partner";
+            final displayName = uDoc.data()?['displayName'] ?? "Partner";
+            String name = displayName.toString();
             String photoURL = uDoc.data()?['photoURL'] ?? "";
 
             if (uid == widget.user.uid) {
@@ -118,7 +121,12 @@ class _CalendarScreenState extends State<CalendarScreen>
                   widget.user.photoURL ??
                   photoURL; // Grab from Google Auth if missing
             }
-            members.add({'uid': uid, 'name': name, 'photoURL': photoURL});
+            members.add({
+              'uid': uid,
+              'name': name,
+              'displayName': displayName,
+              'photoURL': photoURL,
+            });
           }
           if (mounted) setState(() => _hubMembers = members);
           // Listen to the new birthdays collection
@@ -144,6 +152,7 @@ class _CalendarScreenState extends State<CalendarScreen>
             {
               'uid': widget.user.uid,
               'name': 'Me',
+              'displayName': widget.user.displayName ?? 'Me',
               'photoURL': widget.user.photoURL ?? '',
             },
           ],
@@ -587,16 +596,14 @@ class _CalendarScreenState extends State<CalendarScreen>
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: ['general', 'work', 'birthday'].map((cat) {
-                      Color catColor = Colors.pink;
-                      if (cat == 'work') catColor = Colors.blue;
-                      if (cat == 'birthday') catColor = Colors.purple;
+                      final catColor = CalendarColors.categoryTint(cat);
 
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
-                          label: Text(cat.capitalize()),
+                          label: Text(cat == 'general' ? 'Personal' : cat.capitalize()),
                           selected: category == cat,
-                          selectedColor: catColor.withOpacity(0.3),
+                          selectedColor: catColor.withValues(alpha: 0.28),
                           onSelected: (v) => setSheetState(() {
                             category = cat;
                             if (cat == 'birthday') {
@@ -843,6 +850,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                     ChoiceChip(
                       label: const Text("Shared"),
                       selected: assignedTo == 'shared',
+                      selectedColor: CalendarColors.shared.withValues(alpha: 0.28),
                       onSelected: (v) =>
                           setSheetState(() => assignedTo = 'shared'),
                     ),
@@ -850,6 +858,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                       (m) => ChoiceChip(
                         label: Text(m['name']),
                         selected: assignedTo == m['uid'],
+                        selectedColor: _palette
+                            .whoColor(m['uid'])
+                            .withValues(alpha: 0.28),
                         onSelected: (v) =>
                             setSheetState(() => assignedTo = m['uid']),
                       ),
@@ -1136,6 +1147,8 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
+  HubMemberPalette get _palette => HubMemberPalette.fromMembers(_hubMembers);
+
   Widget _buildMemberFilter() {
     return Container(
       height: 60,
@@ -1164,20 +1177,19 @@ class _CalendarScreenState extends State<CalendarScreen>
           ),
           ..._hubMembers.map((member) {
             bool isSelected = _selectedMemberFilter == member['uid'];
+            final who = _palette.whoColor(member['uid']);
             return Padding(
               padding: const EdgeInsets.only(right: 12),
               child: ChoiceChip(
                 showCheckmark: false,
                 avatar: CircleAvatar(
-                  backgroundColor: isSelected
-                      ? Colors.white
-                      : Colors.grey.shade200,
+                  backgroundColor: isSelected ? Colors.white : who.withValues(alpha: 0.18),
                   radius: 10,
                   child: Text(
                     member['name'][0],
                     style: TextStyle(
                       fontSize: 10,
-                      color: isSelected ? Colors.black : Colors.black,
+                      color: who,
                     ),
                   ),
                 ),
@@ -1186,7 +1198,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                 onSelected: (bool selected) => setState(
                   () => _selectedMemberFilter = selected ? member['uid'] : null,
                 ),
-                selectedColor: Colors.pink,
+                selectedColor: who,
                 labelStyle: TextStyle(
                   color: isSelected ? Colors.white : Colors.black,
                 ),
@@ -1368,23 +1380,23 @@ class _CalendarScreenState extends State<CalendarScreen>
             const Divider(),
             SwitchListTile(
               title: const Text("Shared Plans"),
-              secondary: const Icon(Icons.favorite, color: Colors.pink),
+              secondary: const Icon(Icons.favorite, color: CalendarColors.shared),
               value: _filters['shared']!,
-              activeColor: Colors.pink,
+              activeColor: CalendarColors.shared,
               onChanged: (v) => setState(() => _filters['shared'] = v),
             ),
             SwitchListTile(
               title: const Text("Work"),
-              secondary: const Icon(Icons.work, color: Colors.blue),
+              secondary: const Icon(Icons.work, color: CalendarColors.work),
               value: _filters['work']!,
-              activeColor: Colors.blue,
+              activeColor: CalendarColors.work,
               onChanged: (v) => setState(() => _filters['work'] = v),
             ),
             SwitchListTile(
               title: const Text("Birthdays"),
-              secondary: const Icon(Icons.cake, color: Colors.purple),
+              secondary: const Icon(Icons.cake, color: CalendarColors.birthday),
               value: _filters['birthday']!,
-              activeColor: Colors.purple,
+              activeColor: CalendarColors.birthday,
               onChanged: (v) => setState(() => _filters['birthday'] = v),
             ),
           ],
@@ -1430,7 +1442,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                               eventLoader: _getEventsForDay,
                               calendarStyle: const CalendarStyle(
                                 todayDecoration: BoxDecoration(
-                                  color: Colors.pinkAccent,
+                                  color: Color(0xFF8A8680),
                                   shape: BoxShape.circle,
                                 ),
                                 selectedDecoration: BoxDecoration(
@@ -1451,24 +1463,10 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   return Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: events.take(3).map((e) {
-                                      Color c;
-                                      if (e.category == 'birthday') {
-                                        c = Colors.purple;
-                                      } else if (e.assignedTo == 'shared') {
-                                        c = Colors.pinkAccent;
-                                      } else {
-                                        int userIndex = _hubMembers.indexWhere(
-                                          (m) => m['uid'] == e.assignedTo,
-                                        );
-                                        if (userIndex == 0)
-                                          c = Colors.blue.shade400;
-                                        else if (userIndex == 1)
-                                          c = Colors.teal.shade400;
-                                        else if (userIndex == 2)
-                                          c = Colors.teal.shade300;
-                                        else
-                                          c = Colors.grey;
-                                      }
+                                      final style = CalendarColors.fromEvent(
+                                        e,
+                                        palette: _palette,
+                                      );
                                       return Container(
                                         margin: const EdgeInsets.symmetric(
                                           horizontal: 1.5,
@@ -1476,13 +1474,27 @@ class _CalendarScreenState extends State<CalendarScreen>
                                         width: 7,
                                         height: 7,
                                         decoration: BoxDecoration(
-                                          color: c,
+                                          color: style.glanceDot,
                                           shape: BoxShape.circle,
+                                          border: style.special == null
+                                              ? null
+                                              : Border.all(
+                                                  color: style.special!,
+                                                  width: 1.2,
+                                                ),
                                         ),
                                       );
                                     }).toList(),
                                   );
                                 },
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                              child: CalendarGlanceLegend(
+                                palette: _palette,
+                                compact: true,
+                                dark: false,
                               ),
                             ),
                             const Divider(),
@@ -1750,33 +1762,10 @@ class _CalendarScreenState extends State<CalendarScreen>
     bool hideSubtitle = false,
     bool showAvatar = false,
   }) {
-    Color borderColor;
-    Color bgColor;
-
-    if (event.category == 'birthday') {
-      borderColor = Colors.purple;
-      bgColor = Colors.purple.shade50;
-    } else if (event.assignedTo == 'shared') {
-      borderColor = Colors.pinkAccent;
-      bgColor = Colors.pink.shade50;
-    } else {
-      int userIndex = _hubMembers.indexWhere(
-        (m) => m['uid'] == event.assignedTo,
-      );
-      if (userIndex == 0) {
-        borderColor = Colors.blue.shade400;
-        bgColor = Colors.blue.shade50;
-      } else if (userIndex == 1) {
-        borderColor = Colors.teal.shade400;
-        bgColor = Colors.teal.shade50;
-      } else if (userIndex == 2) {
-        borderColor = Colors.teal.shade300;
-        bgColor = Colors.teal.shade50;
-      } else {
-        borderColor = Colors.grey;
-        bgColor = Colors.grey.shade50;
-      }
-    }
+    final style = CalendarColors.fromEvent(event, palette: _palette);
+    final borderColor = style.kind;
+    final bgColor = style.washLight();
+    final whoColor = style.who;
 
     bool isMulti = !isSameDay(event.start, event.end);
     String cleanTitle = event.summary.replaceAll(RegExp(r'\[.*?\]'), '').trim();
@@ -1798,11 +1787,11 @@ class _CalendarScreenState extends State<CalendarScreen>
         );
       } else {
         avatarWidget = CircleAvatar(
-          backgroundColor: borderColor.withOpacity(0.2),
+          backgroundColor: whoColor.withValues(alpha: 0.2),
           radius: 16,
           child: Text(
             initial,
-            style: TextStyle(color: borderColor, fontWeight: FontWeight.bold),
+            style: TextStyle(color: whoColor, fontWeight: FontWeight.bold),
           ),
         );
       }
@@ -1814,7 +1803,7 @@ class _CalendarScreenState extends State<CalendarScreen>
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: borderColor.withOpacity(0.3)),
+        side: BorderSide(color: whoColor.withValues(alpha: 0.28)),
       ),
       child: Container(
         decoration: BoxDecoration(
@@ -1836,16 +1825,19 @@ class _CalendarScreenState extends State<CalendarScreen>
                       : "${DateFormat('HH:mm').format(event.start)} - ${DateFormat('HH:mm').format(event.end)}",
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                 ),
-          // --- UPGRADED: Custom trailing icons for birthdays & work! ---
           trailing: event.category == 'birthday'
-              ? Icon(_getBdayIcon(event.id), size: 18, color: Colors.purple)
+              ? Icon(
+                  _getBdayIcon(event.id),
+                  size: 18,
+                  color: style.special ?? CalendarColors.birthday,
+                )
               : (event.category == 'work'
                     ? Icon(Icons.work, size: 16, color: borderColor)
                     : (event.assignedTo == 'shared'
-                          ? const Icon(
+                          ? Icon(
                               Icons.favorite,
                               size: 16,
-                              color: Colors.pink,
+                              color: whoColor,
                             )
                           : null)),
         ),

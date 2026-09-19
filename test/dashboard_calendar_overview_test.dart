@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
 
 void main() {
   final now = DateTime(2026, 9, 19); // Saturday
+  final members = [
+    {'uid': 'tom', 'name': 'Tom'},
+    {'uid': 'maria', 'name': 'Maria'},
+  ];
 
   List<Map<String, dynamic>> sampleEvents() {
     DateTime at(int dayOffset, [int hour = 9, int minute = 0]) {
@@ -17,8 +22,16 @@ void main() {
         'start': at(0, 9, 30),
         'end': at(0, 11, 0),
         'allDay': false,
-        'category': 'shared',
+        'category': 'general',
         'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Early shift',
+        'start': at(1, 7, 0),
+        'end': at(1, 15, 0),
+        'allDay': false,
+        'category': 'work',
+        'assignedTo': 'tom',
       },
       {
         'summary': "Maria's birthday",
@@ -100,6 +113,7 @@ void main() {
             metrics: DashboardMetrics(const Size(1024, 768)),
             events: sampleEvents(),
             now: now,
+            members: members,
           ),
         ),
       ),
@@ -114,7 +128,18 @@ void main() {
     expect(find.text("Maria's birthday"), findsWidgets);
     expect(find.text('Weekend away'), findsWidgets);
     expect(find.text('Free'), findsWidgets);
+    expect(find.text('Tom'), findsWidgets);
+    expect(find.text('Maria'), findsWidgets);
+    expect(find.text('Shared'), findsWidgets);
+    expect(find.text('Work'), findsWidgets);
     expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
+    expect(
+      dashboardGlanceColor(
+        {'assignedTo': 'tom', 'category': 'work'},
+        palette: HubMemberPalette.fromMembers(members),
+      ),
+      CalendarColors.tom,
+    );
   });
 
   testWidgets('empty look-ahead still draws the calendar and a quiet hint', (
@@ -131,6 +156,7 @@ void main() {
             metrics: DashboardMetrics(const Size(390, 844)),
             events: const [],
             now: now,
+            members: members,
           ),
         ),
       ),
@@ -156,6 +182,7 @@ void main() {
             metrics: DashboardMetrics(const Size(390, 844)),
             events: sampleEvents(),
             now: now,
+            members: members,
           ),
         ),
       ),
