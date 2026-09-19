@@ -15,32 +15,66 @@ String memberInitial(String? name) {
   return value.isEmpty ? '?' : value[0].toUpperCase();
 }
 
-/// Normalize Google profile URLs so Flutter web can request a concrete size.
+final _googleSizeSuffix = RegExp(r'=s\d+(-[a-z])?$', caseSensitive: false);
+
+bool isGooglePhotoHost(String? url) {
+  final host = Uri.tryParse(url?.trim() ?? '')?.host.toLowerCase() ?? '';
+  return host.contains('googleusercontent.com') || host.contains('ggpht.com');
+}
+
+String _stripGoogleSizeSuffix(String path) {
+  return path.replaceFirst(_googleSizeSuffix, '');
+}
+
+/// Durable Google profile URL stored on the hub / users doc.
 ///
-/// `lh3.googleusercontent.com` links often omit `=sNN-c` / `sz`. A stable size
-/// suffix is more cache-friendly and avoids a few silent 403s.
-String hardenPhotoUrl(String? url, {int size = 128}) {
+/// Path-only `=sNN-c`, no `sz` query. Extra query params are a common 403
+/// source; Auth's `=s96-c` form is the one that usually keeps working.
+String durablePhotoUrl(String? url, {int size = 128}) {
   final value = url?.trim() ?? '';
-  if (!isUsablePhotoUrl(value)) return value;
+  if (!isUsablePhotoUrl(value) || !isGooglePhotoHost(value)) return value;
   final uri = Uri.tryParse(value);
   if (uri == null) return value;
-  final host = uri.host.toLowerCase();
-  if (!host.contains('googleusercontent.com') && !host.contains('ggpht.com')) {
-    return value;
-  }
-
   final clamped = size.clamp(32, 512);
-  var path = uri.path;
-  final sizeSuffix = RegExp(r'=s\d+(-[a-z])?$', caseSensitive: false);
-  if (sizeSuffix.hasMatch(path)) {
-    path = path.replaceFirst(sizeSuffix, '=s$clamped-c');
-  } else {
-    path = '$path=s$clamped-c';
-  }
+  final path = '${_stripGoogleSizeSuffix(uri.path)}=s$clamped-c';
+  return Uri(scheme: uri.scheme, host: uri.host, path: path).toString();
+}
 
-  final params = Map<String, String>.from(uri.queryParameters);
-  params['sz'] = '$clamped';
-  return uri.replace(path: path, queryParameters: params).toString();
+/// Display-time variants. Live evidence: Tom's Google URL loads, Maria's
+/// stored googleusercontent URL is requested and fails. Try the raw string
+/// first, then the durable form, then a few size/query fallbacks.
+List<String> googlePhotoUrlCandidates(String? url, {int size = 128}) {
+  final raw = url?.trim() ?? '';
+  if (!isUsablePhotoUrl(raw)) return const [];
+  if (!isGooglePhotoHost(raw)) return [raw];
+
+  final uri = Uri.tryParse(raw);
+  final unsized = uri == null
+      ? raw
+      : Uri(
+          scheme: uri.scheme,
+          host: uri.host,
+          path: _stripGoogleSizeSuffix(uri.path),
+        ).toString();
+  final durable = durablePhotoUrl(raw, size: size);
+  final authDefault = durablePhotoUrl(raw, size: 96);
+  final withSz = Uri.parse(durable).replace(
+    queryParameters: {'sz': '${size.clamp(32, 512)}'},
+  ).toString();
+
+  final out = <String>[];
+  for (final candidate in [raw, durable, authDefault, unsized, withSz]) {
+    if (isUsablePhotoUrl(candidate) && !out.contains(candidate)) {
+      out.add(candidate);
+    }
+  }
+  return out;
+}
+
+/// Normalize Google profile URLs for display. Prefer the durable path form;
+/// callers that need retries should use [googlePhotoUrlCandidates].
+String hardenPhotoUrl(String? url, {int size = 128}) {
+  return durablePhotoUrl(url, size: size);
 }
 
 /// Resolve a hub member photo without inventing a new auth flow.
@@ -73,9 +107,11 @@ Map<String, dynamic>? currentUserProfileUpdates({
   Map<String, dynamic>? existing,
 }) {
   final updates = <String, dynamic>{};
-  if (isUsablePhotoUrl(authPhotoURL) &&
-      existing?['photoURL'] != authPhotoURL) {
-    updates['photoURL'] = authPhotoURL;
+  if (isUsablePhotoUrl(authPhotoURL)) {
+    final durable = durablePhotoUrl(authPhotoURL);
+    if (existing?['photoURL'] != durable) {
+      updates['photoURL'] = durable;
+    }
   }
   final name = authDisplayName?.trim() ?? '';
   final existingName = (existing?['displayName'] ?? '').toString().trim();
@@ -91,7 +127,9 @@ Map<String, dynamic> hubMemberProfilePayload({
   String? displayName,
 }) {
   final profile = <String, dynamic>{};
-  if (isUsablePhotoUrl(photoURL)) profile['photoURL'] = photoURL!.trim();
+  if (isUsablePhotoUrl(photoURL)) {
+    profile['photoURL'] = durablePhotoUrl(photoURL);
+  }
   final name = displayName?.trim() ?? '';
   if (name.isNotEmpty) profile['displayName'] = name;
   if (profile.isEmpty) return {};
@@ -114,7 +152,7 @@ Map<String, dynamic>? hubMemberProfilesPatch({
     final existingMap = existing is Map
         ? Map<String, dynamic>.from(existing)
         : const <String, dynamic>{};
-    final photo = photosByUid[uid];
+    final photo = durablePhotoUrl(photosByUid[uid]);
     final name = namesByUid[uid]?.trim() ?? '';
     final existingPhoto = existingMap['photoURL']?.toString();
     final existingName = (existingMap['displayName'] ?? '').toString().trim();
@@ -124,7 +162,7 @@ Map<String, dynamic>? hubMemberProfilesPatch({
     if (!needsPhoto && !needsName) continue;
 
     final profile = <String, dynamic>{};
-    if (isUsablePhotoUrl(photo)) profile['photoURL'] = photo!.trim();
+    if (isUsablePhotoUrl(photo)) profile['photoURL'] = photo;
     if (name.isNotEmpty) profile['displayName'] = name;
     if (profile.isEmpty) continue;
     patch[uid] = profile;

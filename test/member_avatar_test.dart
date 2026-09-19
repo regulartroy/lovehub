@@ -51,9 +51,10 @@ void main() {
     final image = tester.widget<Image>(find.byType(Image));
     expect(image.image, isA<NetworkImage>());
     final provider = image.image as NetworkImage;
-    expect(provider.url, contains('lh3.googleusercontent.com'));
-    expect(provider.url, contains('=s'));
-    expect(provider.url, contains('sz='));
+    expect(
+      provider.url,
+      'https://lh3.googleusercontent.com/a/ACg8ocMaria=s96-c',
+    );
     expect(provider.webHtmlElementStrategy, WebHtmlElementStrategy.prefer);
     expect(provider.headers, {'Accept': 'image/*'});
   });

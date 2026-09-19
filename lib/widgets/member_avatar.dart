@@ -1,14 +1,14 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/member_profile.dart';
+import 'google_photo_image.dart';
 
 /// Shared circular member photo used by Home, Dashboard, and Calendar.
 ///
-/// Flutter web (CanvasKit) cannot fetch many Google profile URLs as bytes
-/// because `lh3.googleusercontent.com` often omits CORS. We prefer an HTML
-/// `<img>` on web, request a concrete `sz` / `=sNN-c`, and never send custom
-/// headers (headers force the byte-fetch path).
+/// Flutter web (CanvasKit) cannot fetch many Google profile URLs as bytes.
+/// Google photos also 403 when the page sends a Referer. [GooglePhotoImage]
+/// loads them as an HTML `<img referrerpolicy="no-referrer">` and retries
+/// durable URL variants so errorBuilder is not the first and only outcome.
 class MemberAvatar extends StatelessWidget {
   const MemberAvatar({
     super.key,
@@ -37,7 +37,6 @@ class MemberAvatar extends StatelessWidget {
     final initial = memberInitial(name);
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
     final pixelSize = (radius * 2 * dpr).round().clamp(64, 256);
-    final url = hardenPhotoUrl(photoURL, size: pixelSize);
 
     final fallback = _FallbackFace(
       radius: radius,
@@ -48,21 +47,11 @@ class MemberAvatar extends StatelessWidget {
     );
 
     Widget child = fallback;
-    if (isUsablePhotoUrl(url) && icon == null) {
-      child = Image.network(
-        url,
-        width: radius * 2,
-        height: radius * 2,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-        filterQuality: FilterQuality.medium,
-        // Headers would disable HTML-element loading on web.
-        headers: kIsWeb ? null : const {'Accept': 'image/*'},
-        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('MemberAvatar failed to load $url: $error');
-          return fallback;
-        },
+    if (isUsablePhotoUrl(photoURL) && icon == null) {
+      child = GooglePhotoImage(
+        photoURL: photoURL!,
+        size: pixelSize,
+        fallback: fallback,
       );
     }
 

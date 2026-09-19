@@ -69,26 +69,46 @@ void main() {
     expect(isUsablePhotoUrl('https://lh3.googleusercontent.com/photo'), isTrue);
   });
 
-  test('hardens Google profile URLs with size suffix and sz query', () {
+  test('durable Google URLs drop query params and keep a path size', () {
     expect(
-      hardenPhotoUrl(
+      durablePhotoUrl(
         'https://lh3.googleusercontent.com/a/ACg8ocExample=s96-c',
         size: 128,
       ),
-      'https://lh3.googleusercontent.com/a/ACg8ocExample=s128-c?sz=128',
+      'https://lh3.googleusercontent.com/a/ACg8ocExample=s128-c',
     );
     expect(
-      hardenPhotoUrl(
-        'https://lh3.googleusercontent.com/a/ACg8ocExample',
+      durablePhotoUrl(
+        'https://lh3.googleusercontent.com/a/ACg8ocExample?sz=64',
         size: 96,
       ),
-      'https://lh3.googleusercontent.com/a/ACg8ocExample=s96-c?sz=96',
+      'https://lh3.googleusercontent.com/a/ACg8ocExample=s96-c',
     );
     expect(
       hardenPhotoUrl('https://example.com/maria.jpg', size: 128),
       'https://example.com/maria.jpg',
     );
-    expect(hardenPhotoUrl(''), '');
+    expect(isGooglePhotoHost('https://lh3.googleusercontent.com/a/x'), isTrue);
+    expect(isGooglePhotoHost('https://example.com/maria.jpg'), isFalse);
+  });
+
+  test('Google photo candidates try raw then durable forms', () {
+    const raw = 'https://lh3.googleusercontent.com/a/ACg8ocMaria=s96-c';
+    final candidates = googlePhotoUrlCandidates(raw, size: 128);
+    expect(candidates.first, raw);
+    expect(
+      candidates,
+      contains('https://lh3.googleusercontent.com/a/ACg8ocMaria=s128-c'),
+    );
+    expect(
+      candidates,
+      contains('https://lh3.googleusercontent.com/a/ACg8ocMaria=s96-c'),
+    );
+    expect(candidates.any((c) => c.contains('sz=')), isTrue);
+    expect(googlePhotoUrlCandidates('https://example.com/m.jpg'), [
+      'https://example.com/m.jpg',
+    ]);
+    expect(googlePhotoUrlCandidates(''), isEmpty);
   });
 
   test('memberInitial uses the first letter', () {
@@ -126,6 +146,14 @@ void main() {
         'displayName': 'Tom Hughes',
       },
     );
+    expect(
+      currentUserProfileUpdates(
+        authPhotoURL: 'https://lh3.googleusercontent.com/a/ACg8ocTom=s96-c',
+        authDisplayName: 'Tom',
+        existing: {'displayName': 'Tom'},
+      ),
+      {'photoURL': 'https://lh3.googleusercontent.com/a/ACg8ocTom=s128-c'},
+    );
   });
 
   test('hub member profile payload skips empty photos', () {
@@ -142,7 +170,7 @@ void main() {
       {
         'memberProfiles': {
           'maria': {
-            'photoURL': 'https://lh3.googleusercontent.com/a/maria=s96-c',
+            'photoURL': 'https://lh3.googleusercontent.com/a/maria=s128-c',
             'displayName': 'Maria',
           },
         },
@@ -187,6 +215,25 @@ void main() {
         },
       ),
       isNull,
+    );
+    expect(
+      hubMemberProfilesPatch(
+        photosByUid: {
+          'maria': 'https://lh3.googleusercontent.com/a/maria=s96-c',
+        },
+        existingHubProfiles: {
+          'maria': {
+            'photoURL': 'https://lh3.googleusercontent.com/a/maria=s96-c',
+          },
+        },
+      ),
+      {
+        'memberProfiles': {
+          'maria': {
+            'photoURL': 'https://lh3.googleusercontent.com/a/maria=s128-c',
+          },
+        },
+      },
     );
   });
 
