@@ -138,36 +138,29 @@ class CalendarSplitPill extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           onTap: onTap,
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 1,
-                  child: ColoredBox(
-                    key: whoKey,
-                    color: style.who,
-                    child: leading == null
-                        ? const SizedBox.expand()
-                        : Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: _compact ? 2 : 6,
-                              vertical: _compact ? 2 : 6,
-                            ),
-                            child: Center(child: leading),
-                          ),
-                  ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final narrowWho =
+                  _compact && leading == null && constraints.maxWidth < 90;
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    narrowWho
+                        ? SizedBox(width: 10, child: _whoBox())
+                        : Expanded(flex: 1, child: _whoBox()),
+                    Expanded(
+                      flex: 2,
+                      child: ColoredBox(
+                        key: kindKey,
+                        color: style.kind,
+                        child: kindContent,
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  flex: 2,
-                  child: ColoredBox(
-                    key: kindKey,
-                    color: style.kind,
-                    child: kindContent,
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -175,6 +168,22 @@ class CalendarSplitPill extends StatelessWidget {
 
     if (margin == null) return pill;
     return Padding(padding: margin!, child: pill);
+  }
+
+  Widget _whoBox() {
+    return ColoredBox(
+      key: whoKey,
+      color: style.who,
+      child: leading == null
+          ? const SizedBox.expand()
+          : Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: _compact ? 2 : 6,
+                vertical: _compact ? 2 : 6,
+              ),
+              child: Center(child: leading),
+            ),
+    );
   }
 }
 
