@@ -16,6 +16,7 @@ import 'firebase_options.dart';
 import 'screens/invite_screen.dart'; // Make sure the path matches your structure
 import 'widgets/app_drawer.dart';
 import 'screens/cycle_screen.dart'; // <-- Add this!
+import 'services/member_profile.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -134,6 +135,7 @@ class _MainScreenState extends State<MainScreen>
   Map<String, dynamic> _joinedHubs = {};
   Map<String, dynamic> _pendingHubs = {};
   List<MapEntry<String, dynamic>> _visibleHubs = [];
+  bool _didSyncHubPhotos = false;
 
   @override
   void initState() {
@@ -169,6 +171,18 @@ class _MainScreenState extends State<MainScreen>
         _createPersonalHub();
       } else {
         final data = doc.data()!;
+        final profileUpdates = currentUserProfileUpdates(
+          authPhotoURL: _user!.photoURL,
+          authDisplayName: _user!.displayName,
+          existing: data,
+        );
+        if (profileUpdates != null) {
+          FirebaseFirestore.instance
+              .collection('users')
+              .doc(_user!.uid)
+              .set(profileUpdates, SetOptions(merge: true));
+        }
+
         setState(() {
           _joinedHubs = data['joinedHubs'] ?? {};
           _pendingHubs = data['pendingHubs'] ?? {};
@@ -210,6 +224,16 @@ class _MainScreenState extends State<MainScreen>
           _isLoadingUser =
               false; // <-- NEW: Data has arrived, turn off the loader!
         });
+
+        if (!_didSyncHubPhotos && isUsablePhotoUrl(_user!.photoURL)) {
+          final hubIds = Map<String, dynamic>.from(
+            data['joinedHubs'] ?? {},
+          ).keys;
+          if (hubIds.isNotEmpty) {
+            _didSyncHubPhotos = true;
+            syncCurrentUserPhotoToHubs(hubIds: hubIds, user: _user);
+          }
+        }
       }
     });
   }

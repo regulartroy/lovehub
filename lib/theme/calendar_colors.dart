@@ -4,23 +4,24 @@ import '../models/event_model.dart';
 
 /// Shared calendar colour system for the Calendar tab and Dashboard glances.
 ///
-/// **Who** is the base fill / chip tint. **Kind** is a quieter accent
-/// (left stripe, icon tint). Birthday and meal sit on top as muted overlays
-/// so they never shout louder than the person colours.
+/// **Who** is a quiet chip tint (avatars already show the person).
+/// **Kind** is the stronger signal — stripe, glance fill, heatmap dots,
+/// and filter chips. Birthday purple and a quiet meal overlay sit on top
+/// of kind so they never fight leisure green.
 class CalendarColors {
   CalendarColors._();
 
-  // Who — approved household fills
+  // Who — small chip tints only
   static const Color tom = Color(0xFF5B8A8A); // dusty teal
-  static const Color maria = Color(0xFFB07A8A); // soft rose
+  static const Color maria = Color(0xFF3F8A70); // dusty sea-green
   static const Color shared = Color(0xFFA89070); // warm sand
 
-  // Kind — subtle accents, not neon fills
-  static const Color work = Color(0xFF6B7C9C); // slate blue
-  static const Color personal = Color(0xFF7A9A7E); // soft sage
+  // Kind — stronger category signal
+  static const Color work = Color(0xFF6E7175); // stone grey
+  static const Color personal = Color(0xFF3F9A55); // leisure green
 
-  // Special overlays — readable, quieter than who colours
-  static const Color birthday = Color(0xFF8A7A92); // muted lilac
+  // Special overlays
+  static const Color birthday = Color(0xFF7A4E9A); // clear purple
   static const Color meal = Color(0xFF8C7A64); // muted terracotta
 
   /// Extra household members stay in the same dusty/muted family.
@@ -87,8 +88,10 @@ class CalendarColors {
   }
 }
 
-/// Resolved colours for one event. Use [who] as the fill, [kind] as the
-/// accent stripe, and [special] only as a small overlay.
+/// Resolved colours for one event.
+///
+/// [who] is the small person chip. [kind] / [special] carry the stronger
+/// category signal used for stripes, washes, and glance dots.
 class CalendarEventStyle {
   const CalendarEventStyle({
     required this.who,
@@ -100,19 +103,23 @@ class CalendarEventStyle {
   final Color kind;
   final Color? special;
 
-  /// Syncfusion `Appointment.color` and any other appointment API.
-  Color get appointmentColor => who;
+  /// Work / leisure / birthday / meal — whichever should read first.
+  Color get signal => special ?? kind;
 
-  /// Heatmap / month-grid dot. Person first; special stays an overlay.
-  Color get glanceDot => who;
+  /// Syncfusion `Appointment.color` and any other appointment API.
+  Color get appointmentColor => signal;
+
+  /// Heatmap / month-grid dot. Category first; person stays on the chip.
+  Color get glanceDot => signal;
 
   Color washLight([double strength = 0.18]) =>
-      Color.lerp(const Color(0xFFFFFBF7), who, strength)!;
+      Color.lerp(const Color(0xFFFFFBF7), signal, strength)!;
 
-  Color washDark([double strength = 0.16]) => who.withValues(alpha: strength);
+  Color washDark([double strength = 0.16]) =>
+      signal.withValues(alpha: strength);
 
   Color outlineLight([double strength = 0.32]) =>
-      Color.lerp(Colors.white, who, strength)!;
+      Color.lerp(Colors.white, signal, strength)!;
 }
 
 /// Stable who-colour map for a hub. Tom and Maria keep the approved colours
@@ -201,14 +208,32 @@ class HubMemberPalette {
   }
 
   List<CalendarLegendSwatch> kindLegend() => const [
-    CalendarLegendSwatch(color: CalendarColors.work, label: 'Work'),
-    CalendarLegendSwatch(color: CalendarColors.personal, label: 'Personal'),
+    CalendarLegendSwatch(
+      color: CalendarColors.work,
+      label: 'Work',
+      category: true,
+    ),
+    CalendarLegendSwatch(
+      color: CalendarColors.personal,
+      label: 'Leisure',
+      category: true,
+    ),
+    CalendarLegendSwatch(
+      color: CalendarColors.birthday,
+      label: 'Birthdays',
+      category: true,
+    ),
   ];
 }
 
 class CalendarLegendSwatch {
-  const CalendarLegendSwatch({required this.color, required this.label});
+  const CalendarLegendSwatch({
+    required this.color,
+    required this.label,
+    this.category = false,
+  });
 
   final Color color;
   final String label;
+  final bool category;
 }

@@ -11,6 +11,7 @@ import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
 import '../theme/calendar_colors.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
+import '../services/member_profile.dart';
 
 // --- TOP LEVEL HELPERS ---
 extension StringExtension on String {
@@ -51,6 +52,7 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   List<Map<String, dynamic>> _hubMembers = [];
   String? _activeHubId;
+  HubMemberDirectory? _memberDirectory;
 
   // FILTER STATE
   String? _selectedMemberFilter;
@@ -76,6 +78,13 @@ class _CalendarScreenState extends State<CalendarScreen>
     super.initState();
     _tabController = TabController(length: 5, vsync: this, initialIndex: 1);
     _selectedDay = null;
+    _memberDirectory = HubMemberDirectory(
+      currentUser: widget.user,
+      meLabel: 'Me',
+      onChanged: (members) {
+        if (mounted) setState(() => _hubMembers = members);
+      },
+    );
 
     // --- NEW: Clear the selected date when leaving the calendar tab ---
     _tabController.addListener(() {
@@ -89,6 +98,13 @@ class _CalendarScreenState extends State<CalendarScreen>
     _silentLogin();
   }
 
+  @override
+  void dispose() {
+    _memberDirectory?.dispose();
+    _tabController.dispose();
+    super.dispose();
+  }
+
   Future<void> _initHubData() async {
     try {
       final userDoc = await FirebaseFirestore.instance
@@ -100,35 +116,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         _activeHubId = data['activeHubId'];
 
         if (_activeHubId != null) {
-          final hubDoc = await FirebaseFirestore.instance
-              .collection('hubs')
-              .doc(_activeHubId)
-              .get();
-          List<dynamic> memberIds = hubDoc.data()?['members'] ?? [];
-          List<Map<String, dynamic>> members = [];
-          for (String uid in memberIds) {
-            final uDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(uid)
-                .get();
-            final displayName = uDoc.data()?['displayName'] ?? "Partner";
-            String name = displayName.toString();
-            String photoURL = uDoc.data()?['photoURL'] ?? "";
-
-            if (uid == widget.user.uid) {
-              name = "Me";
-              photoURL =
-                  widget.user.photoURL ??
-                  photoURL; // Grab from Google Auth if missing
-            }
-            members.add({
-              'uid': uid,
-              'name': name,
-              'displayName': displayName,
-              'photoURL': photoURL,
-            });
-          }
-          if (mounted) setState(() => _hubMembers = members);
+          _memberDirectory?.watch(_activeHubId);
           // Listen to the new birthdays collection
           FirebaseFirestore.instance
               .collection('hubs')
@@ -1763,7 +1751,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     bool showAvatar = false,
   }) {
     final style = CalendarColors.fromEvent(event, palette: _palette);
-    final borderColor = style.kind;
+    final borderColor = style.signal;
     final bgColor = style.washLight();
     final whoColor = style.who;
 
@@ -1803,7 +1791,7 @@ class _CalendarScreenState extends State<CalendarScreen>
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: whoColor.withValues(alpha: 0.28)),
+        side: BorderSide(color: borderColor.withValues(alpha: 0.28)),
       ),
       child: Container(
         decoration: BoxDecoration(
@@ -1825,21 +1813,34 @@ class _CalendarScreenState extends State<CalendarScreen>
                       : "${DateFormat('HH:mm').format(event.start)} - ${DateFormat('HH:mm').format(event.end)}",
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                 ),
-          trailing: event.category == 'birthday'
-              ? Icon(
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: whoColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              if (event.category == 'birthday')
+                Icon(
                   _getBdayIcon(event.id),
                   size: 18,
-                  color: style.special ?? CalendarColors.birthday,
+                  color: style.signal,
                 )
-              : (event.category == 'work'
-                    ? Icon(Icons.work, size: 16, color: borderColor)
-                    : (event.assignedTo == 'shared'
-                          ? Icon(
-                              Icons.favorite,
-                              size: 16,
-                              color: whoColor,
-                            )
-                          : null)),
+              else if (event.category == 'work')
+                Icon(Icons.work, size: 16, color: borderColor)
+              else if (event.assignedTo == 'shared')
+                Icon(
+                  Icons.favorite,
+                  size: 16,
+                  color: whoColor,
+                ),
+            ],
+          ),
         ),
       ),
     );

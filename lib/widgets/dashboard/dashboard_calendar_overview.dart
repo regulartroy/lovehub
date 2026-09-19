@@ -42,7 +42,7 @@ List<Map<String, dynamic>> dashboardEventsOnDay(
     });
 }
 
-/// Who-colour for glance chips and heatmap dots. Kind/special stay overlays.
+/// Who-colour for person chips. Heatmap dots and week chips use category.
 Color dashboardGlanceColor(
   Map<String, dynamic> data, {
   HubMemberPalette? palette,
@@ -462,7 +462,7 @@ class _EventChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: style.washDark(0.16),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: DashboardTheme.fade(style.who, 0.28)),
+        border: Border.all(color: DashboardTheme.fade(style.signal, 0.28)),
       ),
       child: Container(
         padding: EdgeInsets.symmetric(
@@ -471,7 +471,7 @@ class _EventChip extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(color: style.kind.withValues(alpha: 0.88), width: 2.5),
+            left: BorderSide(color: style.signal.withValues(alpha: 0.92), width: 2.5),
           ),
         ),
         child: Row(
@@ -484,7 +484,7 @@ class _EventChip extends StatelessWidget {
                   : isWork
                   ? Icons.work_outline
                   : Icons.circle,
-              color: style.special ?? style.kind,
+              color: isBirthday || isMeal || isWork ? style.signal : style.who,
               size: isBirthday || isMeal || isWork ? 11 : 6,
             ),
             const SizedBox(width: 4),
@@ -503,6 +503,16 @@ class _EventChip extends StatelessWidget {
                 ),
               ),
             ),
+            if (!compact)
+              Container(
+                width: 7,
+                height: 7,
+                margin: const EdgeInsets.only(left: 3),
+                decoration: BoxDecoration(
+                  color: style.who,
+                  shape: BoxShape.circle,
+                ),
+              ),
           ],
         ),
       ),
@@ -634,7 +644,7 @@ class _MonthDayCell extends StatelessWidget {
     final density = events.length.clamp(0, 4);
     final washColor = events.isEmpty
         ? CalendarColors.shared
-        : CalendarColors.fromMap(events.first, palette: palette).who;
+        : CalendarColors.fromMap(events.first, palette: palette).signal;
     final fill = DashboardTheme.fade(
       washColor,
       isPast ? 0.03 : 0.05 + density * 0.05,
@@ -756,10 +766,8 @@ class CalendarGlanceLegend extends StatelessWidget {
                 height: 7,
                 decoration: BoxDecoration(
                   color: swatch.color,
-                  shape: swatch.label == 'Work' || swatch.label == 'Personal'
-                      ? BoxShape.rectangle
-                      : BoxShape.circle,
-                  borderRadius: swatch.label == 'Work' || swatch.label == 'Personal'
+                  shape: swatch.category ? BoxShape.rectangle : BoxShape.circle,
+                  borderRadius: swatch.category
                       ? BorderRadius.circular(2)
                       : null,
                 ),

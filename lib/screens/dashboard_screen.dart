@@ -13,6 +13,7 @@ import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../theme/calendar_colors.dart';
 import '../widgets/dashboard/dashboard_chrome.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
+import '../services/member_profile.dart';
 import 'dashboard/city_weather_card.dart';
 import 'dashboard/dashboard_options_screen.dart';
 import 'dashboard/dashboard_quotes.dart';
@@ -38,6 +39,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _hasBirthdayToday = false;
 
   List<Map<String, dynamic>> _hubMembers = [];
+  HubMemberDirectory? _memberDirectory;
   List<Map<String, dynamic>> _rawEvents = [];
   List<Map<String, dynamic>> _eventsAll = [];
   List<Map<String, dynamic>> _birthdays = [];
@@ -96,6 +98,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 4),
     );
+    _memberDirectory = HubMemberDirectory(
+      currentUser: FirebaseAuth.instance.currentUser,
+      onChanged: (members) {
+        if (!mounted) return;
+        _hubMembers = members;
+        if (_boot == _DashboardBoot.ready) {
+          _rebuildSlides(_widthOrDefault);
+        }
+      },
+    );
 
     if (widget.visibleHubs.isEmpty) {
       _boot = _DashboardBoot.empty;
@@ -124,6 +136,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _weatherUpdateTimer?.cancel();
     _pageController.dispose();
     _confettiController.dispose();
+    _memberDirectory?.dispose();
     super.dispose();
   }
 
@@ -176,18 +189,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _slideTimer?.cancel();
 
     final hubId = widget.visibleHubs.first.key;
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
     try {
-      if (currentUid != null) {
-        final authPhoto = FirebaseAuth.instance.currentUser?.photoURL;
-        if (authPhoto != null && authPhoto.isNotEmpty) {
-          await FirebaseFirestore.instance.collection('users').doc(currentUid).set({
-            'photoURL': authPhoto,
-          }, SetOptions(merge: true));
-        }
-      }
-
       final hubDoc = await FirebaseFirestore.instance.collection('hubs').doc(hubId).get();
       if (!hubDoc.exists) {
         if (!mounted) return;
@@ -198,24 +201,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return;
       }
 
-      final members = <Map<String, dynamic>>[];
-      final memberIds = List<String>.from(hubDoc.data()?['members'] ?? const []);
-      for (final uid in memberIds) {
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-        var photoURL = userDoc.data()?['photoURL'] ?? '';
-        if (uid == currentUid) {
-          photoURL = FirebaseAuth.instance.currentUser?.photoURL ?? photoURL;
-        }
-        final fullName = userDoc.data()?['displayName'] ?? 'Unknown';
-        members.add({
-          'uid': uid,
-          'name': fullName.toString().split(' ').first,
-          'photoURL': photoURL,
-        });
-      }
+      _memberDirectory?.watch(hubId);
 
       if (!mounted) return;
-      _hubMembers = members;
       _boot = _DashboardBoot.ready;
     } catch (e) {
       if (!mounted) return;
@@ -934,13 +922,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       decoration: BoxDecoration(
         color: style.washDark(0.16),
         borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
-        border: Border.all(color: DashboardTheme.fade(style.who, 0.32)),
+        border: Border.all(color: DashboardTheme.fade(style.signal, 0.32)),
       ),
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 16, vertical: large ? 16 : 12),
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(color: style.kind.withValues(alpha: 0.9), width: 3.5),
+            left: BorderSide(color: style.signal.withValues(alpha: 0.92), width: 3.5),
           ),
         ),
         child: Row(
@@ -954,13 +942,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 if (category == 'birthday')
                   Icon(
                     _birthdayIcon(data['id'] ?? data['summary']),
-                    color: style.special ?? style.who,
+                    color: style.signal,
                     size: large ? 24 : 20,
                   )
                 else if (isMeal)
                   Icon(
                     Icons.restaurant,
-                    color: style.special ?? style.who,
+                    color: style.signal,
                     size: large ? 24 : 20,
                   )
                 else
@@ -968,7 +956,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Text(
                       timeStr,
                       style: TextStyle(
-                        color: style.who,
+                        color: DashboardTheme.inkMuted,
                         fontSize: large ? 20 : 17,
                         fontWeight: FontWeight.w600,
                       ),
@@ -987,6 +975,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
                 height: 1.25,
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: style.who,
+              shape: BoxShape.circle,
             ),
           ),
         ],
