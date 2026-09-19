@@ -74,26 +74,40 @@ String dashboardCompactDayRange(DateTime start, DateTime end) {
   return '${startDay.day} ${DateFormat('MMM').format(startDay).toUpperCase()} – ${endDay.day} ${DateFormat('MMM').format(endDay).toUpperCase()}';
 }
 
-/// Four rolling 7-day strips starting today — the next ~4 weeks at a glance.
-const int dashboardLookAheadWeekCount = 4;
+/// About four weeks from today. Monday alignment often needs a fifth row.
+const int dashboardLookAheadHorizonDays = 28;
 
-List<List<DateTime>> dashboardLookAheadWeeks(
-  DateTime now, {
-  int weekCount = dashboardLookAheadWeekCount,
-}) {
+/// How many Monday–Sunday rows are needed to cover [dashboardLookAheadHorizonDays]
+/// from [now], starting at the Monday of the current week.
+int dashboardLookAheadWeekCount(DateTime now) {
   final today = DateUtils.dateOnly(now);
-  return List<List<DateTime>>.generate(weekCount, (week) {
+  final start = dashboardMondayOf(today);
+  final coverUntil = today.add(
+    const Duration(days: dashboardLookAheadHorizonDays - 1),
+  );
+  final lastMonday = dashboardMondayOf(coverUntil);
+  return lastMonday.difference(start).inDays ~/ 7 + 1;
+}
+
+/// Real Monday–Sunday weeks: current week (containing today) plus following
+/// weeks until ~4 weeks ahead is covered.
+List<List<DateTime>> dashboardLookAheadWeeks(DateTime now, {int? weekCount}) {
+  final today = DateUtils.dateOnly(now);
+  final start = dashboardMondayOf(today);
+  final count = weekCount ?? dashboardLookAheadWeekCount(today);
+  return List<List<DateTime>>.generate(count, (week) {
     return List<DateTime>.generate(
       7,
-      (day) => today.add(Duration(days: week * 7 + day)),
+      (day) => start.add(Duration(days: week * 7 + day)),
     );
   });
 }
 
-/// Second dashboard slide: four copies of the compact 7-day week strip.
+/// Second dashboard slide: Monday–Sunday week-strips for the next ~4 weeks.
 ///
-/// Each row reuses the same day-column chips as the original look-ahead
-/// top row so the next ~4 weeks stay readable without a mini-month grid.
+/// Each row is a real calendar week (Mon→Sun), reusing the same day-column
+/// chips as before. When today is not Monday the first/last weeks are
+/// partial, so the board may grow to 5 rows and scroll.
 class DashboardCalendarOverviewSlide extends StatelessWidget {
   const DashboardCalendarOverviewSlide({
     super.key,
@@ -143,7 +157,7 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
           ),
           SizedBox(height: metrics.isCompact ? 12 : 16),
           Expanded(
-            child: _FourWeekBoard(
+            child: _LookAheadWeekBoard(
               metrics: metrics,
               weeks: weeks,
               events: events,
@@ -243,8 +257,8 @@ class _CardLabel extends StatelessWidget {
   }
 }
 
-class _FourWeekBoard extends StatelessWidget {
-  const _FourWeekBoard({
+class _LookAheadWeekBoard extends StatelessWidget {
+  const _LookAheadWeekBoard({
     required this.metrics,
     required this.weeks,
     required this.events,
@@ -363,10 +377,14 @@ class _WeekDayRow extends StatelessWidget {
           if (i > 0) SizedBox(width: metrics.isCompact ? 6 : 8),
           Expanded(
             child: _WeekDayColumn(
+              key: ValueKey(
+                'look-ahead-day-${days[i].year}-${days[i].month.toString().padLeft(2, '0')}-${days[i].day.toString().padLeft(2, '0')}',
+              ),
               metrics: metrics,
               day: days[i],
               events: dashboardEventsOnDay(events, days[i]),
               isToday: DateUtils.isSameDay(days[i], today),
+              isPast: days[i].isBefore(today),
               palette: palette,
             ),
           ),
@@ -378,10 +396,12 @@ class _WeekDayRow extends StatelessWidget {
 
 class _WeekDayColumn extends StatelessWidget {
   const _WeekDayColumn({
+    super.key,
     required this.metrics,
     required this.day,
     required this.events,
     required this.isToday,
+    required this.isPast,
     required this.palette,
   });
 
@@ -389,11 +409,23 @@ class _WeekDayColumn extends StatelessWidget {
   final DateTime day;
   final List<Map<String, dynamic>> events;
   final bool isToday;
+  final bool isPast;
   final HubMemberPalette palette;
 
   @override
   Widget build(BuildContext context) {
     final weekday = DateFormat('EEE').format(day).toUpperCase();
+    final wash = isToday ? Colors.greenAccent : DashboardTheme.schedule;
+    final labelColor = isToday
+        ? Colors.greenAccent
+        : isPast
+        ? DashboardTheme.inkFaint
+        : const Color(0xFF8FB0C8);
+    final dateColor = isToday
+        ? Colors.greenAccent
+        : isPast
+        ? DashboardTheme.inkFaint
+        : DashboardTheme.ink;
     return LayoutBuilder(
       builder: (context, constraints) {
         final eventAreaHeight =
@@ -414,14 +446,22 @@ class _WeekDayColumn extends StatelessWidget {
         return DecoratedBox(
           decoration: BoxDecoration(
             color: DashboardTheme.fade(
-              isToday ? Colors.greenAccent : DashboardTheme.schedule,
-              isToday ? 0.12 : 0.05,
+              wash,
+              isToday
+                  ? 0.12
+                  : isPast
+                  ? 0.03
+                  : 0.05,
             ),
             borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
             border: Border.all(
               color: DashboardTheme.fade(
-                isToday ? Colors.greenAccent : DashboardTheme.schedule,
-                isToday ? 0.45 : 0.16,
+                wash,
+                isToday
+                    ? 0.45
+                    : isPast
+                    ? 0.10
+                    : 0.16,
               ),
               width: isToday ? 1.4 : 1,
             ),
@@ -442,9 +482,7 @@ class _WeekDayColumn extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: isToday
-                        ? Colors.greenAccent
-                        : const Color(0xFF8FB0C8),
+                    color: labelColor,
                     fontSize: metrics.isCompact ? 10 : 12,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.6,
@@ -455,7 +493,7 @@ class _WeekDayColumn extends StatelessWidget {
                   '${day.day}',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isToday ? Colors.greenAccent : DashboardTheme.ink,
+                    color: dateColor,
                     fontSize: metrics.isCompact ? 20 : 24,
                     fontWeight: FontWeight.w700,
                     height: 1.05,
@@ -486,7 +524,9 @@ class _WeekDayColumn extends StatelessWidget {
                                   : '${events.length} plans',
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                color: DashboardTheme.inkMuted,
+                                color: isPast
+                                    ? DashboardTheme.inkFaint
+                                    : DashboardTheme.inkMuted,
                                 fontSize: metrics.isCompact ? 10 : 11,
                                 fontWeight: FontWeight.w600,
                               ),

@@ -114,12 +114,12 @@ class DashboardGalleryPage extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             _panel(
-              height: metrics.isCompact ? 760 : 680,
+              height: metrics.isCompact ? 820 : 720,
               child: _lookAheadPreview(metrics),
             ),
             const SizedBox(height: 20),
             _panel(
-              height: metrics.isCompact ? 720 : 640,
+              height: metrics.isCompact ? 780 : 680,
               child: _lookAheadEmptyPreview(metrics),
             ),
             const SizedBox(height: 20),
@@ -396,6 +396,22 @@ class DashboardGalleryPage extends StatelessWidget {
     }
 
     return [
+      {
+        'summary': 'Bin night',
+        'start': DateUtils.dateOnly(at(-5)),
+        'end': DateUtils.dateOnly(at(-5)),
+        'allDay': true,
+        'category': 'general',
+        'assignedTo': 'tom',
+      },
+      {
+        'summary': 'School pickup',
+        'start': at(-2, 15, 30),
+        'end': at(-2, 16, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'tom',
+      },
       {
         'summary': 'Farmers market walk',
         'start': at(0, 9, 30),
