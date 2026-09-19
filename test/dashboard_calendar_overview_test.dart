@@ -18,6 +18,14 @@ void main() {
 
     return [
       {
+        'summary': 'Bin night',
+        'start': DateUtils.dateOnly(at(-5)),
+        'end': DateUtils.dateOnly(at(-5)),
+        'allDay': true,
+        'category': 'general',
+        'assignedTo': 'tom',
+      },
+      {
         'summary': 'Farmers market walk',
         'start': at(0, 9, 30),
         'end': at(0, 11, 0),
@@ -115,17 +123,43 @@ void main() {
     );
   });
 
-  test('look-ahead weeks roll four 7-day strips from today', () {
-    final weeks = dashboardLookAheadWeeks(now);
-    expect(weeks, hasLength(4));
-    expect(weeks.every((week) => week.length == 7), isTrue);
-    expect(weeks.first.first, DateTime(2026, 9, 19));
-    expect(weeks.first.last, DateTime(2026, 9, 25));
-    expect(weeks.last.first, DateTime(2026, 10, 10));
-    expect(weeks.last.last, DateTime(2026, 10, 16));
+  test('look-ahead weeks are Monday–Sunday rows covering ~4 weeks ahead', () {
+    final saturday = dashboardLookAheadWeeks(now);
+    expect(saturday, hasLength(5));
+    expect(saturday.every((week) => week.length == 7), isTrue);
+    expect(
+      saturday.every((week) => week.first.weekday == DateTime.monday),
+      isTrue,
+    );
+    expect(
+      saturday.every((week) => week.last.weekday == DateTime.sunday),
+      isTrue,
+    );
+    expect(saturday.first.first, DateTime(2026, 9, 14));
+    expect(saturday.first.last, DateTime(2026, 9, 20));
+    expect(saturday[0][5], DateTime(2026, 9, 19));
+    expect(saturday.last.first, DateTime(2026, 10, 12));
+    expect(saturday.last.last, DateTime(2026, 10, 18));
+
+    final monday = dashboardLookAheadWeeks(DateTime(2026, 9, 14));
+    expect(monday, hasLength(4));
+    expect(monday.first.first, DateTime(2026, 9, 14));
+    expect(monday.last.last, DateTime(2026, 10, 11));
+
+    final sunday = dashboardLookAheadWeeks(DateTime(2026, 9, 20));
+    expect(sunday, hasLength(5));
+    expect(sunday.first.first, DateTime(2026, 9, 14));
+    expect(sunday.last.last, DateTime(2026, 10, 18));
   });
 
-  testWidgets('look-ahead slide shows four week-strips and no month grid', (
+  test('look-ahead week count stays 4 on Monday and 5 mid-week', () {
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 14)), 4);
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 16)), 5);
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 19)), 5);
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 20)), 5);
+  });
+
+  testWidgets('look-ahead slide shows Mon–Sun week-strips and no month grid', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1024, 768);
@@ -155,8 +189,14 @@ void main() {
     expect(find.byKey(const ValueKey('look-ahead-week-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-2')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-19')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-day-2026-10-18')), findsOneWidget);
     expect(find.text('TODAY'), findsOneWidget);
+    expect(find.text('MON'), findsWidgets);
     expect(find.text('SUN'), findsWidgets);
+    expect(find.textContaining('Bin night'), findsWidgets);
     expect(find.textContaining('Farmers market walk'), findsWidgets);
     expect(find.text("Maria's birthday"), findsWidgets);
     expect(find.text('Weekend away'), findsWidgets);
@@ -194,7 +234,9 @@ void main() {
     );
   });
 
-  testWidgets('empty look-ahead still draws four week-strips and a quiet hint', (
+  testWidgets(
+    'empty look-ahead still draws Mon–Sun week-strips and a quiet hint',
+    (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -217,7 +259,9 @@ void main() {
     expect(find.text('LOOK AHEAD'), findsOneWidget);
     expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
     expect(find.text('Free'), findsWidgets);
-    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
     expect(find.text('Quiet stretch — add plans from Calendar'), findsOneWidget);
     expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
   });
@@ -245,7 +289,37 @@ void main() {
     expect(find.text('LOOK AHEAD'), findsOneWidget);
     expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Monday today keeps four Mon–Sun rows and highlights today', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(1024, 768)),
+            events: const [],
+            now: DateTime(2026, 9, 14),
+            members: members,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsNothing);
+    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-day-2026-10-11')), findsOneWidget);
+    expect(find.text('TODAY'), findsOneWidget);
   });
 }
