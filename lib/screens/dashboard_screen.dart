@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
+import '../theme/calendar_colors.dart';
 import '../widgets/dashboard/dashboard_chrome.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
 import 'dashboard/city_weather_card.dart';
@@ -360,14 +361,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _currentPhotoUrl = random.first;
   }
 
+  HubMemberPalette get _memberPalette =>
+      HubMemberPalette.fromMembers(_hubMembers);
+
   Widget _memberAvatar(String uid, {double radius = 14}) {
+    final who = _memberPalette.whoColor(uid);
     if (uid == 'shared') {
       return CircleAvatar(
         radius: radius,
-        backgroundColor: DashboardTheme.fade(DashboardTheme.accent, 0.2),
+        backgroundColor: DashboardTheme.fade(who, 0.28),
         child: Icon(
           Icons.favorite_rounded,
-          color: DashboardTheme.accent,
+          color: who,
           size: radius * 1.2,
         ),
       );
@@ -383,7 +388,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final fallback = CircleAvatar(
       radius: radius,
-      backgroundColor: Colors.indigo,
+      backgroundColor: who,
       child: Text(
         initial,
         style: TextStyle(
@@ -683,6 +688,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         metrics: metrics,
         events: _eventsAll,
         now: DateTime.now(),
+        members: _hubMembers,
       ),
     );
 
@@ -917,36 +923,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final start = (data['start'] as Timestamp).toDate();
     final timeStr = isAllDay ? 'All day' : DateFormat('HH:mm').format(start);
 
-    late final Color baseColor;
-    if (category == 'birthday') {
-      baseColor = Colors.purpleAccent;
-    } else if (isMeal) {
-      baseColor = Colors.greenAccent;
-    } else if (ownerId == 'shared') {
-      baseColor = DashboardTheme.accent;
-    } else {
-      final userIndex = _hubMembers.indexWhere((m) => m['uid'] == ownerId);
-      if (userIndex == 0) {
-        baseColor = Colors.blue.shade400;
-      } else if (userIndex == 1) {
-        baseColor = Colors.teal.shade400;
-      } else if (userIndex == 2) {
-        baseColor = Colors.teal.shade300;
-      } else {
-        baseColor = Colors.white70;
-      }
-    }
+    final style = CalendarColors.resolve(
+      assignedTo: ownerId.toString(),
+      category: category.toString(),
+      palette: _memberPalette,
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: large ? 16 : 12),
       decoration: BoxDecoration(
-        color: DashboardTheme.fade(baseColor, 0.12),
+        color: style.washDark(0.16),
         borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
-        border: Border.all(color: DashboardTheme.fade(baseColor, 0.32)),
+        border: Border.all(color: DashboardTheme.fade(style.who, 0.32)),
       ),
-      child: Row(
-        children: [
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: large ? 16 : 12),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: style.kind.withValues(alpha: 0.9), width: 3.5),
+          ),
+        ),
+        child: Row(
+          children: [
           SizedBox(
             width: large ? 118 : 104,
             child: Row(
@@ -956,17 +954,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 if (category == 'birthday')
                   Icon(
                     _birthdayIcon(data['id'] ?? data['summary']),
-                    color: baseColor,
+                    color: style.special ?? style.who,
                     size: large ? 24 : 20,
                   )
                 else if (isMeal)
-                  Icon(Icons.restaurant, color: baseColor, size: large ? 24 : 20)
+                  Icon(
+                    Icons.restaurant,
+                    color: style.special ?? style.who,
+                    size: large ? 24 : 20,
+                  )
                 else
                   Expanded(
                     child: Text(
                       timeStr,
                       style: TextStyle(
-                        color: baseColor,
+                        color: style.who,
                         fontSize: large ? 20 : 17,
                         fontWeight: FontWeight.w600,
                       ),
@@ -988,6 +990,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

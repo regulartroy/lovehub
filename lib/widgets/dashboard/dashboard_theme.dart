@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+export '../../theme/calendar_colors.dart';
+
 /// Shared tokens for the kiosk / wall-tablet dashboard.
 /// Keeps slides visually related while allowing a tint per topic.
 class DashboardTheme {
