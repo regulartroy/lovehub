@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../theme/calendar_colors.dart';
+import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_chrome.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
 import '../services/member_profile.dart';
@@ -890,7 +891,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 )
               else
-                ...events.map((d) => _eventRow(d, checkDate, i == 0, large)),
+                ...events.map((d) => _eventRow(d, checkDate, large)),
             ],
           );
         }),
@@ -901,7 +902,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _eventRow(
     Map<String, dynamic> data,
     DateTime checkDate,
-    bool isToday,
     bool large,
   ) {
     final isMeal = data['category'] == 'meal';
@@ -917,78 +917,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       palette: _memberPalette,
     );
 
-    return Container(
+    return CalendarSplitPill(
+      style: style,
+      title: _formatMultiDayTitle(data, checkDate),
+      subtitle: timeStr,
+      density: large
+          ? CalendarSplitPillDensity.comfortable
+          : CalendarSplitPillDensity.regular,
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: style.washDark(0.16),
-        borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
-        border: Border.all(color: DashboardTheme.fade(style.signal, 0.32)),
-      ),
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: large ? 16 : 12),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: style.signal.withValues(alpha: 0.92), width: 3.5),
-          ),
-        ),
-        child: Row(
-          children: [
-          SizedBox(
-            width: large ? 118 : 104,
-            child: Row(
-              children: [
-                _memberAvatar(ownerId, radius: large ? 18 : 15),
-                const SizedBox(width: 10),
-                if (category == 'birthday')
-                  Icon(
-                    _birthdayIcon(data['id'] ?? data['summary']),
-                    color: style.signal,
-                    size: large ? 24 : 20,
-                  )
-                else if (isMeal)
-                  Icon(
-                    Icons.restaurant,
-                    color: style.signal,
-                    size: large ? 24 : 20,
-                  )
-                else
-                  Expanded(
-                    child: Text(
-                      timeStr,
-                      style: TextStyle(
-                        color: DashboardTheme.inkMuted,
-                        fontSize: large ? 20 : 17,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _formatMultiDayTitle(data, checkDate),
-              style: TextStyle(
-                color: isToday ? Colors.white : Colors.white70,
-                fontSize: large ? 22 : 18,
-                fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
-                height: 1.25,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: style.who,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-        ),
-      ),
+      leading: _memberAvatar(ownerId, radius: large ? 16 : 13),
+      trailing: category == 'birthday'
+          ? Icon(
+              _birthdayIcon(data['id'] ?? data['summary']),
+              size: large ? 20 : 16,
+            )
+          : isMeal
+          ? Icon(Icons.restaurant, size: large ? 20 : 16)
+          : null,
     );
   }
 

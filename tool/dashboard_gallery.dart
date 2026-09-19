@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
+import 'package:lovehub/widgets/calendar_split_pill.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_chrome.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
@@ -52,15 +53,19 @@ class DashboardGalleryPage extends StatelessWidget {
               metrics.isCompact
                   ? 'Phone layout — compact type and single column'
                   : 'Tablet layout — roomier type and split schedule',
-              style: const TextStyle(color: DashboardTheme.inkMuted, fontSize: 16),
+              style: const TextStyle(
+                color: DashboardTheme.inkMuted,
+                fontSize: 16,
+              ),
             ),
             const SizedBox(height: 28),
             _palettePanel(metrics),
             const SizedBox(height: 20),
-            _panel(
-              height: 280,
-              child: const DashboardLoadingView(),
-            ),
+            _splitPillPanel(metrics),
+            const SizedBox(height: 20),
+            _calendarListPreview(),
+            const SizedBox(height: 20),
+            _panel(height: 280, child: const DashboardLoadingView()),
             const SizedBox(height: 20),
             _panel(
               height: 360,
@@ -133,12 +138,12 @@ class DashboardGalleryPage extends StatelessWidget {
 
   Widget _palettePanel(DashboardMetrics metrics) {
     const swatches = [
-      (CalendarColors.tom, 'Tom', 'dusty teal chip'),
-      (CalendarColors.maria, 'Maria', 'dusty sea-green chip'),
-      (CalendarColors.shared, 'Shared', 'warm sand chip'),
+      (CalendarColors.tom, 'Tom', 'clear blue'),
+      (CalendarColors.maria, 'Maria', 'warmer rose'),
+      (CalendarColors.shared, 'Shared', 'cooler magenta'),
       (CalendarColors.work, 'Work', 'stone grey'),
-      (CalendarColors.personal, 'Leisure', 'clear green'),
-      (CalendarColors.birthday, 'Birthdays', 'clear purple'),
+      (CalendarColors.personal, 'Leisure', 'yellow'),
+      (CalendarColors.birthday, 'Birthdays', 'purple'),
     ];
 
     return DashboardGlassCard(
@@ -157,7 +162,7 @@ class DashboardGalleryPage extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Who is the small chip. Work / leisure / birthday is the stronger signal.',
+            'Split pill: left who, right category. Maria rose ≠ Shared magenta.',
             style: TextStyle(color: DashboardTheme.inkMuted, fontSize: 14),
           ),
           const SizedBox(height: 16),
@@ -254,22 +259,46 @@ class DashboardGalleryPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          _previewChip(
-            who: CalendarColors.tom,
-            kind: CalendarColors.work,
-            label: '07:00  Early shift',
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.tom,
+              kind: CalendarColors.work,
+            ),
+            title: 'Early shift',
+            subtitle: '07:00',
+            density: CalendarSplitPillDensity.comfortable,
           ),
           const SizedBox(height: 8),
-          _previewChip(
-            who: CalendarColors.maria,
-            kind: CalendarColors.personal,
-            label: 'School pickup',
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.maria,
+              kind: CalendarColors.personal,
+            ),
+            title: 'School pickup',
+            subtitle: '15:30',
+            density: CalendarSplitPillDensity.comfortable,
           ),
           const SizedBox(height: 8),
-          _previewChip(
-            who: CalendarColors.shared,
-            kind: CalendarColors.personal,
-            label: 'Farmers market walk',
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.shared,
+              kind: CalendarColors.personal,
+            ),
+            title: 'Farmers market walk',
+            subtitle: '09:30',
+            density: CalendarSplitPillDensity.comfortable,
+          ),
+          const SizedBox(height: 8),
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.shared,
+              kind: CalendarColors.birthday,
+              special: CalendarColors.birthday,
+            ),
+            title: "Maria's birthday",
+            subtitle: 'All day',
+            density: CalendarSplitPillDensity.comfortable,
+            trailing: const Icon(Icons.cake_rounded),
           ),
         ],
       ),
@@ -294,7 +323,10 @@ class DashboardGalleryPage extends StatelessWidget {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: DashboardTheme.fade(Colors.white, 0.07),
                   borderRadius: BorderRadius.circular(16),
@@ -389,6 +421,14 @@ class DashboardGalleryPage extends StatelessWidget {
         'assignedTo': 'tom',
       },
       {
+        'summary': 'Dentist',
+        'start': at(2, 10, 0),
+        'end': at(2, 10, 45),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'maria',
+      },
+      {
         'summary': "Maria's birthday",
         'start': DateUtils.dateOnly(at(3)),
         'end': DateUtils.dateOnly(at(3)),
@@ -451,38 +491,128 @@ class DashboardGalleryPage extends StatelessWidget {
     );
   }
 
-  Widget _previewChip({
-    required Color who,
-    required Color kind,
-    required String label,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: kind.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kind.withValues(alpha: 0.32)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: kind.withValues(alpha: 0.92), width: 3),
+  Widget _splitPillPanel(DashboardMetrics metrics) {
+    return DashboardGlassCard(
+      tint: DashboardTheme.schedule,
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Schedule chips',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: metrics.bodySize,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
+          const SizedBox(height: 6),
+          const Text(
+            'Left third is who. Right two-thirds is work grey, leisure yellow, or birthday purple.',
+            style: TextStyle(color: DashboardTheme.inkMuted, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.tom,
+              kind: CalendarColors.work,
+            ),
+            title: 'Early shift',
+            subtitle: '07:00',
+            density: CalendarSplitPillDensity.comfortable,
+            trailing: const Icon(Icons.work_outline),
+          ),
+          const SizedBox(height: 8),
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.maria,
+              kind: CalendarColors.personal,
+            ),
+            title: 'Dentist',
+            subtitle: '10:00',
+            density: CalendarSplitPillDensity.comfortable,
+          ),
+          const SizedBox(height: 8),
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.shared,
+              kind: CalendarColors.personal,
+            ),
+            title: 'Farmers market walk',
+            subtitle: '09:30',
+            density: CalendarSplitPillDensity.comfortable,
+          ),
+          const SizedBox(height: 8),
+          CalendarSplitPill(
+            style: const CalendarEventStyle(
+              who: CalendarColors.shared,
+              kind: CalendarColors.birthday,
+              special: CalendarColors.birthday,
+            ),
+            title: "Maria's birthday",
+            subtitle: 'All day',
+            density: CalendarSplitPillDensity.comfortable,
+            trailing: const Icon(Icons.cake_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _calendarListPreview() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(DashboardTheme.radiusLg),
+      child: ColoredBox(
+        color: const Color(0xFFF6F3EE),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Calendar list',
+                style: TextStyle(
+                  color: Color(0xFF1C1914),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: who, shape: BoxShape.circle),
-            ),
-          ],
+              const SizedBox(height: 6),
+              const Text(
+                'Same split pill on the light calendar tab.',
+                style: TextStyle(color: Color(0xFF5A564E), fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              CalendarSplitPill(
+                style: const CalendarEventStyle(
+                  who: CalendarColors.tom,
+                  kind: CalendarColors.work,
+                ),
+                title: 'Early shift',
+                subtitle: '07:00 - 15:00',
+                trailing: const Icon(Icons.work),
+              ),
+              const SizedBox(height: 8),
+              CalendarSplitPill(
+                style: const CalendarEventStyle(
+                  who: CalendarColors.maria,
+                  kind: CalendarColors.personal,
+                ),
+                title: 'Dentist',
+                subtitle: '10:00 - 10:45',
+              ),
+              const SizedBox(height: 8),
+              CalendarSplitPill(
+                style: const CalendarEventStyle(
+                  who: CalendarColors.shared,
+                  kind: CalendarColors.birthday,
+                  special: CalendarColors.birthday,
+                ),
+                title: "Maria's birthday",
+                trailing: const Icon(Icons.cake_rounded),
+              ),
+            ],
+          ),
         ),
       ),
     );
