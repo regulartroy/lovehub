@@ -290,13 +290,13 @@ class _WeekDayColumn extends StatelessWidget {
     final weekday = DateFormat('EEE').format(day).toUpperCase();
     return LayoutBuilder(
       builder: (context, constraints) {
-        final eventAreaHeight = (constraints.maxHeight - (metrics.isCompact ? 48 : 56))
+        final eventAreaHeight = (constraints.maxHeight - (metrics.isCompact ? 52 : 64))
             .clamp(0.0, constraints.maxHeight);
-        final chipBudget = eventAreaHeight < 22
+        final chipBudget = eventAreaHeight < 26
             ? 0
-            : eventAreaHeight < 48
+            : eventAreaHeight < 54
             ? 1
-            : eventAreaHeight < 74
+            : eventAreaHeight < 82
             ? 2
             : 3;
         final visible = events.take(chipBudget).toList();
@@ -598,58 +598,60 @@ class _MonthDayCell extends StatelessWidget {
         ? DashboardTheme.fade(DashboardTheme.schedule, 0.38)
         : DashboardTheme.fade(Colors.white, 0.08);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: isToday ? DashboardTheme.fade(Colors.greenAccent, 0.12) : fill,
-        borderRadius: BorderRadius.circular(DashboardTheme.radiusSm),
-        border: Border.all(color: borderColor, width: isToday ? 1.4 : 1),
-      ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: metrics.isCompact ? 3 : 5,
-          vertical: metrics.isCompact ? 3 : 5,
-        ),
-        child: Column(
-          children: [
-            Text(
-              '${day.day}',
-              style: TextStyle(
-                color: isPast
-                    ? DashboardTheme.inkFaint
-                    : isToday
-                    ? Colors.greenAccent
-                    : DashboardTheme.ink,
-                fontSize: metrics.isCompact ? 11 : 13,
-                fontWeight: isToday || events.isNotEmpty
-                    ? FontWeight.w700
-                    : FontWeight.w500,
-              ),
-            ),
-            const Spacer(),
-            if (events.isNotEmpty)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (final event in events.take(3)) ...[
-                    Container(
-                      width: metrics.isCompact ? 5 : 6,
-                      height: metrics.isCompact ? 5 : 6,
-                      margin: const EdgeInsets.symmetric(horizontal: 1),
-                      decoration: BoxDecoration(
-                        color: dashboardGlanceColor(event).withValues(
-                          alpha: isPast ? 0.45 : 0.95,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showDots = events.isNotEmpty && constraints.maxHeight >= 26;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: isToday ? DashboardTheme.fade(Colors.greenAccent, 0.12) : fill,
+            borderRadius: BorderRadius.circular(DashboardTheme.radiusSm),
+            border: Border.all(color: borderColor, width: isToday ? 1.4 : 1),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '${day.day}',
+                  style: TextStyle(
+                    color: isPast
+                        ? DashboardTheme.inkFaint
+                        : isToday
+                        ? Colors.greenAccent
+                        : DashboardTheme.ink,
+                    fontSize: metrics.isCompact ? 11 : 12,
+                    fontWeight: isToday || events.isNotEmpty
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    height: 1.0,
+                  ),
+                ),
+                if (showDots) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (final event in events.take(3))
+                        Container(
+                          width: 5,
+                          height: 5,
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          decoration: BoxDecoration(
+                            color: dashboardGlanceColor(event).withValues(
+                              alpha: isPast ? 0.45 : 0.95,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ],
-              )
-            else
-              SizedBox(height: metrics.isCompact ? 5 : 6),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
