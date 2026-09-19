@@ -30,6 +30,14 @@ class DashboardGalleryPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final metrics = DashboardMetrics(size);
+    const lookAheadOnly = bool.fromEnvironment('LOOK_AHEAD_ONLY');
+
+    if (lookAheadOnly) {
+      return Scaffold(
+        backgroundColor: DashboardTheme.canvas,
+        body: _lookAheadPreview(metrics),
+      );
+    }
 
     return Scaffold(
       backgroundColor: DashboardTheme.canvas,
