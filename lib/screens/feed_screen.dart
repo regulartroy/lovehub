@@ -8,6 +8,7 @@ import 'dashboard_screen.dart';
 import 'manage_hub_screen.dart';
 import 'food_screen.dart';
 import '../repositories/rota_repository.dart';
+import '../services/member_profile.dart';
 
 class FeedScreen extends StatefulWidget {
   final User user;
@@ -44,11 +45,22 @@ class _FeedScreenState extends State<FeedScreen> {
   DateTime _currentDay = DateUtils.dateOnly(DateTime.now());
 
   StreamSubscription<QuerySnapshot>? _birthdaySub;
-  StreamSubscription<DocumentSnapshot>? _hubSub;
+  late final HubMemberDirectory _memberDirectory;
 
   @override
   void initState() {
     super.initState();
+    _memberDirectory = HubMemberDirectory(
+      currentUser: widget.user,
+      onChanged: (members) {
+        if (!mounted) return;
+        setState(() {
+          _hubMembers = {
+            for (final member in members) member['uid'].toString(): member,
+          };
+        });
+      },
+    );
     _listenToHubMembers();
 
     if (widget.visibleHubs.isNotEmpty) {
@@ -108,7 +120,7 @@ class _FeedScreenState extends State<FeedScreen> {
     }
 
     _birthdaySub?.cancel();
-    _hubSub?.cancel();
+    _memberDirectory.dispose();
     super.dispose();
   }
 
@@ -152,39 +164,11 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _listenToHubMembers() {
-    _hubSub?.cancel();
-    if (widget.visibleHubs.isEmpty) return;
-
-    final hubId = widget.visibleHubs.first.key;
-    final String? currentUid = FirebaseAuth.instance.currentUser?.uid;
-
-    _hubSub = FirebaseFirestore.instance
-        .collection('hubs')
-        .doc(hubId)
-        .snapshots()
-        .listen((hubDoc) async {
-          if (!mounted || !hubDoc.exists) return;
-
-          final List members = hubDoc.data()?['members'] ?? [];
-          final Map<String, Map<String, dynamic>> memberData = {};
-
-          for (String uid in members) {
-            final uDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(uid)
-                .get();
-            String photoURL = uDoc.data()?['photoURL'] ?? '';
-            if (uid == currentUid) {
-              photoURL =
-                  FirebaseAuth.instance.currentUser?.photoURL ?? photoURL;
-            }
-            memberData[uid] = {
-              'name': uDoc.data()?['displayName'] ?? 'Unknown',
-              'photoURL': photoURL,
-            };
-          }
-          if (mounted) setState(() => _hubMembers = memberData);
-        });
+    if (widget.visibleHubs.isEmpty) {
+      _memberDirectory.watch(null);
+      return;
+    }
+    _memberDirectory.watch(widget.visibleHubs.first.key);
   }
 
   List<Map<String, dynamic>> _getProjectedBirthdays() {

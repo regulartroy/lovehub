@@ -17,8 +17,15 @@ void main() {
     expect(palette.whoColor('uid-maria'), CalendarColors.maria);
     expect(palette.whoColor('shared'), CalendarColors.shared);
     expect(CalendarColors.tom, const Color(0xFF5B8A8A));
-    expect(CalendarColors.maria, const Color(0xFFB07A8A));
+    expect(CalendarColors.maria, const Color(0xFF3F8A70));
     expect(CalendarColors.shared, const Color(0xFFA89070));
+  });
+
+  test('Maria is a greener teal, not rose', () {
+    expect(CalendarColors.maria.g, greaterThan(CalendarColors.maria.r));
+    expect(CalendarColors.maria.g, greaterThan(CalendarColors.maria.b));
+    expect(CalendarColors.maria.b, lessThan(CalendarColors.tom.b));
+    expect(CalendarColors.maria.r, lessThan(CalendarColors.tom.r));
   });
 
   test('name matching is case-insensitive and ignores a Me label', () {
@@ -51,7 +58,7 @@ void main() {
     );
   });
 
-  test('work uses slate accent; other categories use sage', () {
+  test('work is grey; leisure/personal is green; category beats who', () {
     final palette = HubMemberPalette.fromMembers(members);
 
     final work = CalendarColors.resolve(
@@ -67,14 +74,20 @@ void main() {
 
     expect(work.who, CalendarColors.tom);
     expect(work.kind, CalendarColors.work);
-    expect(work.appointmentColor, CalendarColors.tom);
+    expect(work.appointmentColor, CalendarColors.work);
+    expect(work.glanceDot, CalendarColors.work);
     expect(personal.who, CalendarColors.maria);
     expect(personal.kind, CalendarColors.personal);
-    expect(CalendarColors.work, const Color(0xFF6B7C9C));
-    expect(CalendarColors.personal, const Color(0xFF7A9A7E));
+    expect(personal.glanceDot, CalendarColors.personal);
+    expect(CalendarColors.work, const Color(0xFF6E7175));
+    expect(CalendarColors.personal, const Color(0xFF3F9A55));
+    expect(CalendarColors.work.r, closeTo(CalendarColors.work.g, 0.04));
+    expect(CalendarColors.work.g, closeTo(CalendarColors.work.b, 0.04));
+    expect(CalendarColors.personal.g, greaterThan(CalendarColors.personal.r));
+    expect(CalendarColors.personal.g, greaterThan(CalendarColors.personal.b));
   });
 
-  test('birthday and meal stay muted overlays on the who fill', () {
+  test('birthday purple is the glance signal; meal stays a quiet overlay', () {
     final palette = HubMemberPalette.fromMembers(members);
     final birthday = CalendarColors.fromMap({
       'assignedTo': 'shared',
@@ -87,13 +100,18 @@ void main() {
 
     expect(birthday.who, CalendarColors.shared);
     expect(birthday.special, CalendarColors.birthday);
-    expect(birthday.glanceDot, CalendarColors.shared);
+    expect(birthday.glanceDot, CalendarColors.birthday);
+    expect(birthday.signal, CalendarColors.birthday);
+    expect(CalendarColors.birthday, const Color(0xFF7A4E9A));
+    expect(CalendarColors.birthday.b, greaterThan(CalendarColors.birthday.r));
     expect(meal.who, CalendarColors.maria);
     expect(meal.special, CalendarColors.meal);
     expect(meal.kind, CalendarColors.personal);
+    expect(meal.glanceDot, CalendarColors.meal);
+    expect(CalendarColors.meal, const Color(0xFF8C7A64));
   });
 
-  test('EventModel and glance helper share the same who colour', () {
+  test('EventModel and glance helper share the same category colour', () {
     final palette = HubMemberPalette.fromMembers(members);
     final event = EventModel(
       id: '1',
@@ -105,7 +123,7 @@ void main() {
     );
 
     expect(
-      CalendarColors.fromEvent(event, palette: palette).who,
+      CalendarColors.fromEvent(event, palette: palette).glanceDot,
       dashboardGlanceColor(
         {'assignedTo': 'uid-tom', 'category': 'work'},
         palette: palette,

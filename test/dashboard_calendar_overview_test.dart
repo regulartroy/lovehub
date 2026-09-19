@@ -132,13 +132,29 @@ void main() {
     expect(find.text('Maria'), findsWidgets);
     expect(find.text('Shared'), findsWidgets);
     expect(find.text('Work'), findsWidgets);
+    expect(find.text('Leisure'), findsWidgets);
+    expect(find.text('Birthdays'), findsWidgets);
     expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
     expect(
       dashboardGlanceColor(
         {'assignedTo': 'tom', 'category': 'work'},
         palette: HubMemberPalette.fromMembers(members),
       ),
-      CalendarColors.tom,
+      CalendarColors.work,
+    );
+    expect(
+      dashboardGlanceColor(
+        {'assignedTo': 'maria', 'category': 'general'},
+        palette: HubMemberPalette.fromMembers(members),
+      ),
+      CalendarColors.personal,
+    );
+    expect(
+      dashboardGlanceColor(
+        {'assignedTo': 'shared', 'category': 'birthday'},
+        palette: HubMemberPalette.fromMembers(members),
+      ),
+      CalendarColors.birthday,
     );
   });
 

@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../services/member_profile.dart';
+
 class ManageHubScreen extends StatelessWidget {
   final String hubId;
   final String hubName;
@@ -21,17 +23,45 @@ class ManageHubScreen extends StatelessWidget {
     Map<String, dynamic> requestData,
   ) async {
     final newMemberId = requestData['uid'];
+    final requestPhoto = requestData['photoURL']?.toString();
+    final requestName = requestData['displayName']?.toString();
 
-    await FirebaseFirestore.instance.collection('hubs').doc(hubId).update({
+    final hubUpdates = <String, dynamic>{
       'members': FieldValue.arrayUnion([newMemberId]),
-    });
+    };
+    if (isUsablePhotoUrl(requestPhoto) ||
+        (requestName != null && requestName.trim().isNotEmpty)) {
+      hubUpdates.addAll(
+        hubMemberProfilePayload(
+          uid: newMemberId,
+          photoURL: requestPhoto,
+          displayName: requestName,
+        ),
+      );
+    }
 
-    await FirebaseFirestore.instance.collection('users').doc(newMemberId).set({
+    await FirebaseFirestore.instance.collection('hubs').doc(hubId).set(
+      hubUpdates,
+      SetOptions(merge: true),
+    );
+
+    final userUpdates = <String, dynamic>{
       'joinedHubs': {
         hubId: {'name': hubName, 'isVisible': true, 'role': 'member'},
       },
       'pendingHubs': {hubId: FieldValue.delete()},
-    }, SetOptions(merge: true));
+    };
+    if (isUsablePhotoUrl(requestPhoto)) {
+      userUpdates['photoURL'] = requestPhoto;
+    }
+    if (requestName != null && requestName.trim().isNotEmpty) {
+      userUpdates['displayName'] = requestName;
+    }
+
+    await FirebaseFirestore.instance.collection('users').doc(newMemberId).set(
+      userUpdates,
+      SetOptions(merge: true),
+    );
 
     await FirebaseFirestore.instance
         .collection('hubs')

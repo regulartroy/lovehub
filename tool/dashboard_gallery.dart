@@ -133,11 +133,12 @@ class DashboardGalleryPage extends StatelessWidget {
 
   Widget _palettePanel(DashboardMetrics metrics) {
     const swatches = [
-      (CalendarColors.tom, 'Tom', 'dusty teal'),
-      (CalendarColors.maria, 'Maria', 'soft rose'),
-      (CalendarColors.shared, 'Shared', 'warm sand'),
-      (CalendarColors.work, 'Work', 'slate accent'),
-      (CalendarColors.personal, 'Personal', 'sage accent'),
+      (CalendarColors.tom, 'Tom', 'dusty teal chip'),
+      (CalendarColors.maria, 'Maria', 'dusty sea-green chip'),
+      (CalendarColors.shared, 'Shared', 'warm sand chip'),
+      (CalendarColors.work, 'Work', 'stone grey'),
+      (CalendarColors.personal, 'Leisure', 'clear green'),
+      (CalendarColors.birthday, 'Birthdays', 'clear purple'),
     ];
 
     return DashboardGlassCard(
@@ -156,7 +157,7 @@ class DashboardGalleryPage extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Who is the fill. Kind is the quiet stripe.',
+            'Who is the small chip. Work / leisure / birthday is the stronger signal.',
             style: TextStyle(color: DashboardTheme.inkMuted, fontSize: 14),
           ),
           const SizedBox(height: 16),
@@ -257,6 +258,12 @@ class DashboardGalleryPage extends StatelessWidget {
             who: CalendarColors.tom,
             kind: CalendarColors.work,
             label: '07:00  Early shift',
+          ),
+          const SizedBox(height: 8),
+          _previewChip(
+            who: CalendarColors.maria,
+            kind: CalendarColors.personal,
+            label: 'School pickup',
           ),
           const SizedBox(height: 8),
           _previewChip(
@@ -451,20 +458,31 @@ class DashboardGalleryPage extends StatelessWidget {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: who.withValues(alpha: 0.16),
+        color: kind.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: who.withValues(alpha: 0.32)),
+        border: Border.all(color: kind.withValues(alpha: 0.32)),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(color: kind.withValues(alpha: 0.9), width: 3),
+            left: BorderSide(color: kind.withValues(alpha: 0.92), width: 3),
           ),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: who, shape: BoxShape.circle),
+            ),
+          ],
         ),
       ),
     );
