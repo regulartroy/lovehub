@@ -108,7 +108,10 @@ void main() {
       'end': DateTime(2026, 9, 19, 10),
     };
 
-    final ordered = dashboardEventsOnDay([later, earlier], DateTime(2026, 9, 19));
+    final ordered = dashboardEventsOnDay([
+      later,
+      earlier,
+    ], DateTime(2026, 9, 19));
     expect(ordered.map((e) => e['summary']), ['Walk', 'Dinner']);
   });
 
@@ -190,9 +193,18 @@ void main() {
     expect(find.byKey(const ValueKey('look-ahead-week-2')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-19')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-day-2026-10-18')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-2026-09-19')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-2026-10-18')),
+      findsOneWidget,
+    );
     expect(find.text('TODAY'), findsOneWidget);
     expect(find.text('MON'), findsWidgets);
     expect(find.text('SUN'), findsWidgets);
@@ -212,59 +224,64 @@ void main() {
     expect(find.text('Quiet stretch — add plans from Calendar'), findsNothing);
     expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
     expect(
-      dashboardGlanceColor(
-        {'assignedTo': 'tom', 'category': 'work'},
-        palette: HubMemberPalette.fromMembers(members),
-      ),
+      dashboardGlanceColor({
+        'assignedTo': 'tom',
+        'category': 'work',
+      }, palette: HubMemberPalette.fromMembers(members)),
       CalendarColors.work,
     );
     expect(
-      dashboardGlanceColor(
-        {'assignedTo': 'maria', 'category': 'general'},
-        palette: HubMemberPalette.fromMembers(members),
-      ),
+      dashboardGlanceColor({
+        'assignedTo': 'maria',
+        'category': 'general',
+      }, palette: HubMemberPalette.fromMembers(members)),
       CalendarColors.personal,
     );
     expect(
-      dashboardGlanceColor(
-        {'assignedTo': 'shared', 'category': 'birthday'},
-        palette: HubMemberPalette.fromMembers(members),
-      ),
+      dashboardGlanceColor({
+        'assignedTo': 'shared',
+        'category': 'birthday',
+      }, palette: HubMemberPalette.fromMembers(members)),
       CalendarColors.birthday,
     );
   });
 
   testWidgets(
     'empty look-ahead still draws Mon–Sun week-strips and a quiet hint',
-    (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DashboardCalendarOverviewSlide(
-            metrics: DashboardMetrics(const Size(390, 844)),
-            events: const [],
-            now: now,
-            members: members,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DashboardCalendarOverviewSlide(
+              metrics: DashboardMetrics(const Size(390, 844)),
+              events: const [],
+              now: now,
+              members: members,
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('LOOK AHEAD'), findsOneWidget);
-    expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
-    expect(find.text('Free'), findsWidgets);
-    expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
-    expect(find.text('Quiet stretch — add plans from Calendar'), findsOneWidget);
-    expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
-  });
+      expect(find.text('LOOK AHEAD'), findsOneWidget);
+      expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+      expect(find.text('Free'), findsWidgets);
+      expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Quiet stretch — add plans from Calendar'),
+        findsOneWidget,
+      );
+      expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
+    },
+  );
 
   testWidgets('compact phone layout keeps the look-ahead title readable', (
     tester,
@@ -290,7 +307,10 @@ void main() {
     expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
+      findsOneWidget,
+    );
     expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -318,8 +338,14 @@ void main() {
     expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-4')), findsNothing);
-    expect(find.byKey(const ValueKey('look-ahead-day-2026-09-14')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-day-2026-10-11')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-2026-10-11')),
+      findsOneWidget,
+    );
     expect(find.text('TODAY'), findsOneWidget);
   });
 }

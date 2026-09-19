@@ -91,10 +91,7 @@ int dashboardLookAheadWeekCount(DateTime now) {
 
 /// Real Monday–Sunday weeks: current week (containing today) plus following
 /// weeks until ~4 weeks ahead is covered.
-List<List<DateTime>> dashboardLookAheadWeeks(
-  DateTime now, {
-  int? weekCount,
-}) {
+List<List<DateTime>> dashboardLookAheadWeeks(DateTime now, {int? weekCount}) {
   final today = DateUtils.dateOnly(now);
   final start = dashboardMondayOf(today);
   final count = weekCount ?? dashboardLookAheadWeekCount(today);
