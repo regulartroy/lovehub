@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../screens/manage_hub_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/invite_screen.dart';
+import '../services/member_profile.dart';
+import 'member_avatar.dart';
 
 class AppDrawer extends StatelessWidget {
   final User user;
@@ -65,15 +67,13 @@ class AppDrawer extends StatelessWidget {
           UserAccountsDrawerHeader(
             accountName: Text(user.displayName ?? 'Lovehub User'),
             accountEmail: Text(user.email ?? ''),
-            currentAccountPicture: CircleAvatar(
+            currentAccountPicture: MemberAvatar(
+              photoURL: user.photoURL,
+              name: user.displayName,
+              radius: 36,
               backgroundColor: Colors.white,
-              backgroundImage:
-                  (user.photoURL != null && user.photoURL!.length > 10)
-                  ? NetworkImage(user.photoURL!)
-                  : null,
-              child: (user.photoURL == null || user.photoURL!.length <= 10)
-                  ? const Icon(Icons.person, size: 40, color: Colors.grey)
-                  : null,
+              foregroundColor: Colors.grey,
+              icon: isUsablePhotoUrl(user.photoURL) ? null : Icons.person,
             ),
             decoration: BoxDecoration(color: Colors.pink.shade400),
           ),
@@ -226,7 +226,37 @@ class AppDrawer extends StatelessWidget {
           ],
 
           const Divider(),
-          if (activeHubId != null)
+          if (activeHubId != null) ...[
+            ListTile(
+              leading: const Icon(Icons.photo_camera_front_outlined, color: Colors.pink),
+              title: const Text('Refresh member photos'),
+              subtitle: const Text(
+                'Copy readable profile photos onto this hub',
+                style: TextStyle(fontSize: 11),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  final result = await refreshHubMemberPhotos(
+                    hubId: activeHubId!,
+                    currentUser: user,
+                  );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(hubPhotoRefreshMessage(result))),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Could not refresh member photos: $e'),
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.person_add_alt_1, color: Colors.pink),
               title: const Text('Invite Partner to Hub'),
@@ -240,6 +270,7 @@ class AppDrawer extends StatelessWidget {
                 );
               },
             ),
+          ],
           ListTile(
             leading: const Icon(Icons.pin_rounded, color: Colors.blue),
             title: const Text('Join Hub with Code'),

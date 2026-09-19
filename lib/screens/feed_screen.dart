@@ -9,6 +9,7 @@ import 'manage_hub_screen.dart';
 import 'food_screen.dart';
 import '../repositories/rota_repository.dart';
 import '../services/member_profile.dart';
+import '../widgets/member_avatar.dart';
 
 class FeedScreen extends StatefulWidget {
   final User user;
@@ -46,6 +47,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   StreamSubscription<QuerySnapshot>? _birthdaySub;
   late final HubMemberDirectory _memberDirectory;
+  bool _refreshingPhotos = false;
 
   @override
   void initState() {
@@ -271,63 +273,46 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  Future<void> _refreshMemberPhotos(String hubId) async {
+    if (_refreshingPhotos) return;
+    setState(() => _refreshingPhotos = true);
+    try {
+      final result = await refreshHubMemberPhotos(
+        hubId: hubId,
+        currentUser: widget.user,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(hubPhotoRefreshMessage(result))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not refresh member photos: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _refreshingPhotos = false);
+    }
+  }
+
   Widget _buildTopAvatar(String? uid) {
     if (uid == null || !_hubMembers.containsKey(uid)) {
-      return Container(
-        width: 100, // Scaled up to match logo
-        height: 100, // Scaled up to match logo
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.grey.shade300,
-          border: Border.all(color: Colors.grey.shade200, width: 2),
-        ),
-        child: const Icon(Icons.person, color: Colors.white, size: 40),
+      return MemberAvatar(
+        radius: 50,
+        backgroundColor: Colors.grey.shade300,
+        foregroundColor: Colors.white,
+        border: Border.all(color: Colors.grey.shade200, width: 2),
+        icon: Icons.person,
       );
     }
 
     final data = _hubMembers[uid]!;
-    final String photoURL = data['photoURL'] ?? '';
-    final String name = data['name'] ?? '?';
-    final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-
-    Widget fallback = Container(
-      width: 100, // Scaled up to match logo
-      height: 100, // Scaled up to match logo
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.indigo.shade400,
-        border: Border.all(color: Colors.grey.shade300, width: 2),
-      ),
-      child: Center(
-        child: Text(
-          initial,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 36, // Scaled up font to match the larger bubble
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-
-    if (photoURL.isEmpty) return fallback;
-
-    return Container(
-      width: 90, // Scaled up to match logo
-      height: 90, // Scaled up to match logo
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.grey.shade300, width: 2),
-      ),
-      child: ClipOval(
-        child: Image.network(
-          photoURL,
-          width: 100, // Scaled up to match logo
-          height: 100, // Scaled up to match logo
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => fallback,
-        ),
-      ),
+    return MemberAvatar(
+      photoURL: data['photoURL']?.toString(),
+      name: data['name']?.toString(),
+      radius: 48,
+      backgroundColor: Colors.indigo.shade400,
+      border: Border.all(color: Colors.grey.shade300, width: 2),
     );
   }
 
@@ -670,6 +655,41 @@ class _FeedScreenState extends State<FeedScreen> {
                                           ),
                                         ],
                                       ),
+                                      if (_hubMembers.values.any(
+                                        (m) => !isUsablePhotoUrl(
+                                          m['photoURL']?.toString(),
+                                        ),
+                                      ))
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 12,
+                                          ),
+                                          child: TextButton.icon(
+                                            onPressed: _refreshingPhotos
+                                                ? null
+                                                : () => _refreshMemberPhotos(
+                                                    activeHubId,
+                                                  ),
+                                            icon: _refreshingPhotos
+                                                ? const SizedBox(
+                                                    width: 14,
+                                                    height: 14,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                                  )
+                                                : const Icon(
+                                                    Icons.refresh,
+                                                    size: 16,
+                                                  ),
+                                            label: Text(
+                                              _refreshingPhotos
+                                                  ? 'Refreshing photos…'
+                                                  : 'Refresh member photos',
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),

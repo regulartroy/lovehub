@@ -48,12 +48,54 @@ void main() {
     );
   });
 
+  test('prefers join-request photo over Firestore and hub', () {
+    expect(
+      resolveMemberPhotoUrl(
+        uid: 'maria',
+        requestPhotoURL: 'https://example.com/request-maria.jpg',
+        firestorePhotoURL: 'https://example.com/users-maria.jpg',
+        hubPhotoURL: 'https://example.com/hub-maria.jpg',
+        currentUid: 'tom',
+      ),
+      'https://example.com/request-maria.jpg',
+    );
+  });
+
   test('ignores short or non-http photo values', () {
     expect(isUsablePhotoUrl(null), isFalse);
     expect(isUsablePhotoUrl(''), isFalse);
     expect(isUsablePhotoUrl('null'), isFalse);
     expect(isUsablePhotoUrl('abc'), isFalse);
     expect(isUsablePhotoUrl('https://lh3.googleusercontent.com/photo'), isTrue);
+  });
+
+  test('hardens Google profile URLs with size suffix and sz query', () {
+    expect(
+      hardenPhotoUrl(
+        'https://lh3.googleusercontent.com/a/ACg8ocExample=s96-c',
+        size: 128,
+      ),
+      'https://lh3.googleusercontent.com/a/ACg8ocExample=s128-c?sz=128',
+    );
+    expect(
+      hardenPhotoUrl(
+        'https://lh3.googleusercontent.com/a/ACg8ocExample',
+        size: 96,
+      ),
+      'https://lh3.googleusercontent.com/a/ACg8ocExample=s96-c?sz=96',
+    );
+    expect(
+      hardenPhotoUrl('https://example.com/maria.jpg', size: 128),
+      'https://example.com/maria.jpg',
+    );
+    expect(hardenPhotoUrl(''), '');
+  });
+
+  test('memberInitial uses the first letter', () {
+    expect(memberInitial('Maria'), 'M');
+    expect(memberInitial('  tom'), 'T');
+    expect(memberInitial(''), '?');
+    expect(memberInitial(null), '?');
   });
 
   test('only writes a user profile update when Auth photo is new', () {
@@ -83,6 +125,101 @@ void main() {
         'photoURL': 'https://example.com/tom.jpg',
         'displayName': 'Tom Hughes',
       },
+    );
+  });
+
+  test('hub member profile payload skips empty photos', () {
+    expect(
+      hubMemberProfilePayload(uid: 'maria', photoURL: '', displayName: ''),
+      isEmpty,
+    );
+    expect(
+      hubMemberProfilePayload(
+        uid: 'maria',
+        photoURL: 'https://lh3.googleusercontent.com/a/maria=s96-c',
+        displayName: 'Maria',
+      ),
+      {
+        'memberProfiles': {
+          'maria': {
+            'photoURL': 'https://lh3.googleusercontent.com/a/maria=s96-c',
+            'displayName': 'Maria',
+          },
+        },
+      },
+    );
+  });
+
+  test('hubMemberProfilesPatch only writes missing or stale photos', () {
+    expect(
+      hubMemberProfilesPatch(
+        photosByUid: {'maria': 'https://example.com/maria.jpg'},
+        namesByUid: {'maria': 'Maria'},
+        existingHubProfiles: {
+          'maria': {
+            'photoURL': 'https://example.com/maria.jpg',
+            'displayName': 'Maria',
+          },
+        },
+      ),
+      isNull,
+    );
+    expect(
+      hubMemberProfilesPatch(
+        photosByUid: {'maria': 'https://example.com/maria.jpg'},
+        namesByUid: {'maria': 'Maria'},
+        existingHubProfiles: const {},
+      ),
+      {
+        'memberProfiles': {
+          'maria': {
+            'photoURL': 'https://example.com/maria.jpg',
+            'displayName': 'Maria',
+          },
+        },
+      },
+    );
+    expect(
+      hubMemberProfilesPatch(
+        photosByUid: {'maria': ''},
+        existingHubProfiles: {
+          'maria': {'photoURL': 'https://example.com/old.jpg'},
+        },
+      ),
+      isNull,
+    );
+  });
+
+  test('refresh message tells Tom when a partner still has no photo', () {
+    expect(
+      hubPhotoRefreshMessage(
+        const HubPhotoRefreshResult(
+          updated: 0,
+          unchanged: 2,
+          missingUids: [],
+        ),
+      ),
+      'Member photos are already up to date.',
+    );
+    expect(
+      hubPhotoRefreshMessage(
+        const HubPhotoRefreshResult(
+          updated: 1,
+          unchanged: 1,
+          missingUids: [],
+        ),
+      ),
+      'Updated 1 member photo.',
+    );
+    expect(
+      hubPhotoRefreshMessage(
+        const HubPhotoRefreshResult(
+          updated: 1,
+          unchanged: 0,
+          missingUids: ['maria'],
+        ),
+      ),
+      'Updated 1. 1 still missing — they need to open LoveHub once.',
     );
   });
 }

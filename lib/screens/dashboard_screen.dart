@@ -15,6 +15,7 @@ import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_chrome.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
 import '../services/member_profile.dart';
+import '../widgets/member_avatar.dart';
 import 'dashboard/city_weather_card.dart';
 import 'dashboard/dashboard_options_screen.dart';
 import 'dashboard/dashboard_quotes.dart';
@@ -356,14 +357,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _memberAvatar(String uid, {double radius = 14}) {
     final who = _memberPalette.whoColor(uid);
     if (uid == 'shared') {
-      return CircleAvatar(
+      return MemberAvatar(
         radius: radius,
         backgroundColor: DashboardTheme.fade(who, 0.28),
-        child: Icon(
-          Icons.favorite_rounded,
-          color: who,
-          size: radius * 1.2,
-        ),
+        foregroundColor: who,
+        icon: Icons.favorite_rounded,
       );
     }
 
@@ -371,33 +369,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       (m) => m['uid'] == uid,
       orElse: () => {'name': '?', 'photoURL': ''},
     );
-    final photoURL = member['photoURL'] ?? '';
-    final name = (member['name'] ?? '?').toString();
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-
-    final fallback = CircleAvatar(
+    return MemberAvatar(
+      photoURL: member['photoURL']?.toString(),
+      name: member['name']?.toString(),
       radius: radius,
       backgroundColor: who,
-      child: Text(
-        initial,
-        style: TextStyle(
-          fontSize: radius * 0.85,
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-
-    if (photoURL.isEmpty) return fallback;
-
-    return ClipOval(
-      child: Image.network(
-        photoURL,
-        width: radius * 2,
-        height: radius * 2,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => fallback,
-      ),
     );
   }
 

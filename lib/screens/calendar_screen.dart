@@ -13,6 +13,7 @@ import '../theme/calendar_colors.dart';
 import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../services/member_profile.dart';
+import '../widgets/member_avatar.dart';
 
 // --- TOP LEVEL HELPERS ---
 extension StringExtension on String {
@@ -1750,28 +1751,13 @@ class _CalendarScreenState extends State<CalendarScreen>
         (m) => m['uid'] == event.assignedTo,
         orElse: () => {'name': '?', 'photoURL': ''},
       );
-      final pUrl = member['photoURL'] as String?;
-      final initial = member['name'][0].toUpperCase();
-
-      if (pUrl != null && pUrl.isNotEmpty) {
-        avatarWidget = CircleAvatar(
-          backgroundImage: NetworkImage(pUrl),
-          radius: 14,
-        );
-      } else {
-        avatarWidget = CircleAvatar(
-          backgroundColor: Colors.white.withValues(alpha: 0.22),
-          radius: 14,
-          child: Text(
-            initial,
-            style: TextStyle(
-              color: style.inkOnWho,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-        );
-      }
+      avatarWidget = MemberAvatar(
+        photoURL: member['photoURL']?.toString(),
+        name: member['name']?.toString(),
+        radius: 14,
+        backgroundColor: Colors.white.withValues(alpha: 0.22),
+        foregroundColor: style.inkOnWho,
+      );
     } else if (event.assignedTo == 'shared') {
       avatarWidget = Icon(
         Icons.favorite,
