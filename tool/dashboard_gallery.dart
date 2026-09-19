@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_chrome.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
 
@@ -94,6 +95,16 @@ class DashboardGalleryPage extends StatelessWidget {
             _panel(
               height: metrics.isCompact ? 520 : 420,
               child: _schedulePreview(metrics),
+            ),
+            const SizedBox(height: 20),
+            _panel(
+              height: metrics.isCompact ? 640 : 560,
+              child: _lookAheadPreview(metrics),
+            ),
+            const SizedBox(height: 20),
+            _panel(
+              height: metrics.isCompact ? 520 : 480,
+              child: _lookAheadEmptyPreview(metrics),
             ),
             const SizedBox(height: 20),
             _panel(
@@ -229,9 +240,116 @@ class DashboardGalleryPage extends StatelessWidget {
                   ),
           ),
           const SizedBox(height: 12),
-          const Center(child: DashboardPageDots(count: 4, index: 0)),
+          const Center(child: DashboardPageDots(count: 5, index: 0)),
         ],
       ),
+    );
+  }
+
+  static final DateTime _previewNow = DateTime(2026, 9, 19);
+
+  List<Map<String, dynamic>> _lookAheadEvents() {
+    DateTime at(int dayOffset, [int hour = 9, int minute = 0]) {
+      return DateTime(
+        _previewNow.year,
+        _previewNow.month,
+        _previewNow.day + dayOffset,
+        hour,
+        minute,
+      );
+    }
+
+    return [
+      {
+        'summary': 'Farmers market walk',
+        'start': at(0, 9, 30),
+        'end': at(0, 11, 0),
+        'allDay': false,
+        'category': 'shared',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Pasta night',
+        'start': at(0, 19, 0),
+        'end': at(0, 20, 30),
+        'allDay': false,
+        'category': 'meal',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'School pickup',
+        'start': at(1, 15, 30),
+        'end': at(1, 16, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'tom',
+      },
+      {
+        'summary': "Maria's birthday",
+        'start': DateUtils.dateOnly(at(3)),
+        'end': DateUtils.dateOnly(at(3)),
+        'allDay': true,
+        'category': 'birthday',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Weekend away',
+        'start': DateUtils.dateOnly(at(6)),
+        'end': DateUtils.dateOnly(at(8)),
+        'allDay': true,
+        'category': 'shared',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Dentist',
+        'start': at(10, 10, 0),
+        'end': at(10, 10, 45),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'maria',
+      },
+      {
+        'summary': 'Date night',
+        'start': at(12, 19, 30),
+        'end': at(12, 22, 0),
+        'allDay': false,
+        'category': 'meal',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Bin night',
+        'start': DateUtils.dateOnly(at(14)),
+        'end': DateUtils.dateOnly(at(14)),
+        'allDay': true,
+        'category': 'general',
+        'assignedTo': 'tom',
+      },
+    ];
+  }
+
+  Widget _lookAheadPreview(DashboardMetrics metrics) {
+    return Stack(
+      children: [
+        DashboardCalendarOverviewSlide(
+          metrics: metrics,
+          events: _lookAheadEvents(),
+          now: _previewNow,
+        ),
+        const Positioned(
+          left: 0,
+          right: 0,
+          bottom: 10,
+          child: Center(child: DashboardPageDots(count: 5, index: 1)),
+        ),
+      ],
+    );
+  }
+
+  Widget _lookAheadEmptyPreview(DashboardMetrics metrics) {
+    return DashboardCalendarOverviewSlide(
+      metrics: metrics,
+      events: const [],
+      now: _previewNow,
     );
   }
 }

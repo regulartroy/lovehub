@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
+import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../widgets/dashboard/dashboard_chrome.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
 import 'dashboard/city_weather_card.dart';
@@ -677,6 +678,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final metrics = _metricsFor(screenWidth);
 
     slides.add(_buildScheduleSlide(metrics));
+    slides.add(
+      DashboardCalendarOverviewSlide(
+        metrics: metrics,
+        events: _eventsAll,
+        now: DateTime.now(),
+      ),
+    );
 
     final nonShopTasks = _allTasks.where((t) {
       final d = t.data() as Map<String, dynamic>;
