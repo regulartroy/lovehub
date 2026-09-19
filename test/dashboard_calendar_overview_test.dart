@@ -49,6 +49,22 @@ void main() {
         'category': 'shared',
         'assignedTo': 'shared',
       },
+      {
+        'summary': 'Date night',
+        'start': at(12, 19, 30),
+        'end': at(12, 22, 0),
+        'allDay': false,
+        'category': 'meal',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Parents evening',
+        'start': at(21, 18, 0),
+        'end': at(21, 19, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'shared',
+      },
     ];
   }
 
@@ -94,12 +110,22 @@ void main() {
       '19–25 SEP',
     );
     expect(
-      dashboardMonthRangeLabel(DateTime(2026, 9, 14), DateTime(2026, 10, 18)),
-      'SEP – OCT',
+      dashboardCompactDayRange(DateTime(2026, 9, 19), DateTime(2026, 10, 16)),
+      '19 SEP – 16 OCT',
     );
   });
 
-  testWidgets('look-ahead slide shows the week strip and month grid', (
+  test('look-ahead weeks roll four 7-day strips from today', () {
+    final weeks = dashboardLookAheadWeeks(now);
+    expect(weeks, hasLength(4));
+    expect(weeks.every((week) => week.length == 7), isTrue);
+    expect(weeks.first.first, DateTime(2026, 9, 19));
+    expect(weeks.first.last, DateTime(2026, 9, 25));
+    expect(weeks.last.first, DateTime(2026, 10, 10));
+    expect(weeks.last.last, DateTime(2026, 10, 16));
+  });
+
+  testWidgets('look-ahead slide shows four week-strips and no month grid', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1024, 768);
@@ -120,13 +146,22 @@ void main() {
     );
 
     expect(find.text('LOOK AHEAD'), findsOneWidget);
-    expect(find.text('NEXT 7 DAYS'), findsOneWidget);
-    expect(find.text('SEP – OCT'), findsOneWidget);
-    expect(find.text('TODAY'), findsWidgets);
+    expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+    expect(find.text('NEXT 7 DAYS'), findsNothing);
+    expect(find.text('SEP – OCT'), findsNothing);
+    expect(find.text('Mo'), findsNothing);
+    expect(find.text('Tu'), findsNothing);
+    expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
+    expect(find.text('TODAY'), findsOneWidget);
     expect(find.text('SUN'), findsWidgets);
     expect(find.textContaining('Farmers market walk'), findsWidgets);
     expect(find.text("Maria's birthday"), findsWidgets);
     expect(find.text('Weekend away'), findsWidgets);
+    expect(find.textContaining('Date night'), findsWidgets);
+    expect(find.textContaining('Parents evening'), findsWidgets);
     expect(find.text('Free'), findsWidgets);
     expect(find.text('Tom'), findsWidgets);
     expect(find.text('Maria'), findsWidgets);
@@ -134,6 +169,7 @@ void main() {
     expect(find.text('Work'), findsWidgets);
     expect(find.text('Leisure'), findsWidgets);
     expect(find.text('Birthdays'), findsWidgets);
+    expect(find.text('Quiet stretch — add plans from Calendar'), findsNothing);
     expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
     expect(
       dashboardGlanceColor(
@@ -158,7 +194,7 @@ void main() {
     );
   });
 
-  testWidgets('empty look-ahead still draws the calendar and a quiet hint', (
+  testWidgets('empty look-ahead still draws four week-strips and a quiet hint', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -179,9 +215,11 @@ void main() {
     );
 
     expect(find.text('LOOK AHEAD'), findsOneWidget);
-    expect(find.text('NEXT 7 DAYS'), findsOneWidget);
+    expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
     expect(find.text('Free'), findsWidgets);
-    expect(find.text('Quiet month — add plans from Calendar'), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
+    expect(find.text('Quiet stretch — add plans from Calendar'), findsOneWidget);
+    expect(find.text('Quiet month — add plans from Calendar'), findsNothing);
   });
 
   testWidgets('compact phone layout keeps the look-ahead title readable', (
@@ -205,7 +243,9 @@ void main() {
     );
 
     expect(find.text('LOOK AHEAD'), findsOneWidget);
-    expect(find.text('NEXT 7 DAYS'), findsOneWidget);
+    expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
