@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // LoveHub is a shared-hub app. Home reads `users/{otherUid}.photoURL`
+    // for partner avatars (plus hub `memberProfiles` as a cache).
+    // Partner user docs must stay readable to signed-in members.
+    //
+    // Writes are also auth-gated (not owner-only): approving a join,
+    // changing a role, and removing a member update the other user's
+    // `joinedHubs` map.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

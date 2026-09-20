@@ -228,36 +228,6 @@ class AppDrawer extends StatelessWidget {
           const Divider(),
           if (activeHubId != null) ...[
             ListTile(
-              leading: const Icon(Icons.photo_camera_front_outlined, color: Colors.pink),
-              title: const Text('Refresh member photos'),
-              subtitle: const Text(
-                'Copy readable profile photos onto this hub',
-                style: TextStyle(fontSize: 11),
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                try {
-                  final result = await refreshHubMemberPhotos(
-                    hubId: activeHubId!,
-                    currentUser: user,
-                  );
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(hubPhotoRefreshMessage(result))),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Could not refresh member photos: $e'),
-                      ),
-                    );
-                  }
-                }
-              },
-            ),
-            ListTile(
               leading: const Icon(Icons.person_add_alt_1, color: Colors.pink),
               title: const Text('Invite Partner to Hub'),
               onTap: () {
