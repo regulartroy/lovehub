@@ -147,10 +147,10 @@ class DashboardGalleryPage extends StatelessWidget {
   Widget _palettePanel(DashboardMetrics metrics) {
     const swatches = [
       (CalendarColors.tom, 'Tom', 'clear blue'),
-      (CalendarColors.maria, 'Maria', 'warmer rose'),
-      (CalendarColors.shared, 'Shared', 'cooler magenta'),
+      (CalendarColors.maria, 'Maria', 'kitchen yellow'),
+      (CalendarColors.shared, 'Shared', 'pink / magenta'),
       (CalendarColors.work, 'Work', 'stone grey'),
-      (CalendarColors.personal, 'Leisure', 'yellow'),
+      (CalendarColors.personal, 'Leisure', 'green'),
       (CalendarColors.birthday, 'Birthdays', 'purple'),
     ];
 
@@ -170,7 +170,7 @@ class DashboardGalleryPage extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Split pill: left who, right category. Maria rose ≠ Shared magenta.',
+            'Split pill: left who, right category. Maria yellow ≠ Shared pink. Leisure is green.',
             style: TextStyle(color: DashboardTheme.inkMuted, fontSize: 14),
           ),
           const SizedBox(height: 16),
@@ -516,6 +516,14 @@ class DashboardGalleryPage extends StatelessWidget {
         'category': 'meal',
         'assignedTo': 'shared',
       },
+      {
+        'summary': 'Half-term walk',
+        'start': at(150, 10, 0),
+        'end': at(150, 12, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'shared',
+      },
     ];
   }
 
@@ -556,7 +564,7 @@ class DashboardGalleryPage extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Left third is who. Right two-thirds is work grey, leisure yellow, or birthday purple.',
+            'Left third is who. Right two-thirds is work grey, leisure green, or birthday purple.',
             style: TextStyle(color: DashboardTheme.inkMuted, fontSize: 14),
           ),
           const SizedBox(height: 16),

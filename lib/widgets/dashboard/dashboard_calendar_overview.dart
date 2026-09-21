@@ -74,23 +74,30 @@ String dashboardCompactDayRange(DateTime start, DateTime end) {
   return '${startDay.day} ${DateFormat('MMM').format(startDay).toUpperCase()} – ${endDay.day} ${DateFormat('MMM').format(endDay).toUpperCase()}';
 }
 
-/// About four weeks from today. Monday alignment often needs a fifth row.
-const int dashboardLookAheadHorizonDays = 28;
+String dashboardLookAheadDayKey(DateTime day) {
+  final date = DateUtils.dateOnly(day);
+  return 'look-ahead-day-${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+}
 
-/// How many Monday–Sunday rows are needed to cover [dashboardLookAheadHorizonDays]
-/// from [now], starting at the Monday of the current week.
+/// About six months from today. Monday alignment often needs a partial last row.
+const int dashboardLookAheadHorizonMonths = 6;
+
+/// How many Monday–Sunday rows are needed to cover ~6 months from [now],
+/// starting at the Monday of the current week.
 int dashboardLookAheadWeekCount(DateTime now) {
   final today = DateUtils.dateOnly(now);
   final start = dashboardMondayOf(today);
-  final coverUntil = today.add(
-    const Duration(days: dashboardLookAheadHorizonDays - 1),
+  final coverUntil = DateTime(
+    today.year,
+    today.month + dashboardLookAheadHorizonMonths,
+    today.day,
   );
   final lastMonday = dashboardMondayOf(coverUntil);
   return lastMonday.difference(start).inDays ~/ 7 + 1;
 }
 
 /// Real Monday–Sunday weeks: current week (containing today) plus following
-/// weeks until ~4 weeks ahead is covered.
+/// weeks until ~6 months ahead is covered.
 List<List<DateTime>> dashboardLookAheadWeeks(DateTime now, {int? weekCount}) {
   final today = DateUtils.dateOnly(now);
   final start = dashboardMondayOf(today);
@@ -103,12 +110,12 @@ List<List<DateTime>> dashboardLookAheadWeeks(DateTime now, {int? weekCount}) {
   });
 }
 
-/// Second dashboard slide: Monday–Sunday week-strips for the next ~4 weeks.
+/// Second dashboard slide: Monday–Sunday week-strips for the next ~6 months.
 ///
-/// Each row is a real calendar week (Mon→Sun), reusing the same day-column
-/// chips as before. When today is not Monday the first/last weeks are
-/// partial, so the board may grow to 5 rows and scroll.
-class DashboardCalendarOverviewSlide extends StatelessWidget {
+/// Each row is a real calendar week (Mon→Sun). Tapping a day opens a detail
+/// card listing that day's events. [onDayTap] is fired as well so the host
+/// screen can keep showing play–pause controls on the same touch.
+class DashboardCalendarOverviewSlide extends StatefulWidget {
   const DashboardCalendarOverviewSlide({
     super.key,
     required this.metrics,
@@ -117,6 +124,8 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
     this.members = const [],
     this.palette,
     this.padding,
+    this.onDayTap,
+    this.onCloseDayDetail,
   });
 
   final DashboardMetrics metrics;
@@ -126,51 +135,106 @@ class DashboardCalendarOverviewSlide extends StatelessWidget {
   final HubMemberPalette? palette;
   final EdgeInsets? padding;
 
+  /// Invoked when a day cell is tapped, in addition to opening day detail.
+  final ValueChanged<DateTime>? onDayTap;
+
+  /// Invoked when the day-detail card is dismissed.
+  final VoidCallback? onCloseDayDetail;
+
   HubMemberPalette get resolvedPalette =>
       palette ?? HubMemberPalette.fromMembers(members);
 
   @override
+  State<DashboardCalendarOverviewSlide> createState() =>
+      _DashboardCalendarOverviewSlideState();
+}
+
+class _DashboardCalendarOverviewSlideState
+    extends State<DashboardCalendarOverviewSlide> {
+  DateTime? _selectedDay;
+
+  void _handleDayTap(DateTime day) {
+    final date = DateUtils.dateOnly(day);
+    setState(() => _selectedDay = date);
+    widget.onDayTap?.call(date);
+  }
+
+  void _closeDayDetail() {
+    if (_selectedDay == null) return;
+    setState(() => _selectedDay = null);
+    widget.onCloseDayDetail?.call();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final today = DateUtils.dateOnly(now);
+    final today = DateUtils.dateOnly(widget.now);
     final weeks = dashboardLookAheadWeeks(today);
     final horizonEnd = weeks.last.last;
-    final hasUpcoming = weeks.any(
-      (week) => week.any((day) => dashboardEventsOnDay(events, day).isNotEmpty),
-    );
-    final whoPalette = resolvedPalette;
+    final rangeStart = weeks.first.first;
+    final hasUpcoming = widget.events.any((event) {
+      final startRaw = dashboardEventDateTime(event['start']);
+      if (startRaw == null) return false;
+      final start = DateUtils.dateOnly(startRaw);
+      final end = DateUtils.dateOnly(
+        dashboardEventDateTime(event['end']) ?? startRaw,
+      );
+      return !end.isBefore(rangeStart) && !start.isAfter(horizonEnd);
+    });
+    final whoPalette = widget.resolvedPalette;
+    final selectedEvents = _selectedDay == null
+        ? const <Map<String, dynamic>>[]
+        : dashboardEventsOnDay(widget.events, _selectedDay!);
 
     return DashboardSlide(
-      metrics: metrics,
+      metrics: widget.metrics,
       tint: DashboardTheme.schedule,
-      padding: padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: widget.padding,
+      child: Stack(
         children: [
-          DashboardSectionHeader(
-            metrics: metrics,
-            icon: Icons.calendar_view_week_rounded,
-            tint: DashboardTheme.schedule,
-            title: 'LOOK AHEAD',
-            trailing: _RangeChip(
-              label: dashboardCompactDayRange(today, horizonEnd),
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DashboardSectionHeader(
+                metrics: widget.metrics,
+                icon: Icons.calendar_view_week_rounded,
+                tint: DashboardTheme.schedule,
+                title: 'LOOK AHEAD',
+                trailing: _RangeChip(
+                  label: dashboardCompactDayRange(today, horizonEnd),
+                ),
+              ),
+              SizedBox(height: widget.metrics.isCompact ? 12 : 16),
+              Expanded(
+                child: _LookAheadWeekBoard(
+                  metrics: widget.metrics,
+                  weeks: weeks,
+                  events: widget.events,
+                  today: today,
+                  selectedDay: _selectedDay,
+                  rangeLabel: dashboardCompactDayRange(today, horizonEnd),
+                  emptyHint: hasUpcoming
+                      ? null
+                      : 'Quiet stretch — add plans from Calendar',
+                  palette: whoPalette,
+                  onDayTap: _handleDayTap,
+                ),
+              ),
+              SizedBox(height: widget.metrics.isCompact ? 8 : 10),
+              CalendarGlanceLegend(
+                palette: whoPalette,
+                compact: widget.metrics.isCompact,
+              ),
+            ],
           ),
-          SizedBox(height: metrics.isCompact ? 12 : 16),
-          Expanded(
-            child: _LookAheadWeekBoard(
-              metrics: metrics,
-              weeks: weeks,
-              events: events,
-              today: today,
-              rangeLabel: dashboardCompactDayRange(today, horizonEnd),
-              emptyHint: hasUpcoming
-                  ? null
-                  : 'Quiet stretch — add plans from Calendar',
+          if (_selectedDay != null)
+            _LookAheadDayDetailLayer(
+              metrics: widget.metrics,
+              day: _selectedDay!,
+              events: selectedEvents,
               palette: whoPalette,
+              isToday: DateUtils.isSameDay(_selectedDay, today),
+              onClose: _closeDayDetail,
             ),
-          ),
-          SizedBox(height: metrics.isCompact ? 8 : 10),
-          CalendarGlanceLegend(palette: whoPalette, compact: metrics.isCompact),
         ],
       ),
     );
@@ -265,6 +329,8 @@ class _LookAheadWeekBoard extends StatelessWidget {
     required this.today,
     required this.rangeLabel,
     required this.palette,
+    required this.onDayTap,
+    this.selectedDay,
     this.emptyHint,
   });
 
@@ -272,12 +338,19 @@ class _LookAheadWeekBoard extends StatelessWidget {
   final List<List<DateTime>> weeks;
   final List<Map<String, dynamic>> events;
   final DateTime today;
+  final DateTime? selectedDay;
   final String rangeLabel;
   final HubMemberPalette palette;
   final String? emptyHint;
+  final ValueChanged<DateTime> onDayTap;
 
   @override
   Widget build(BuildContext context) {
+    final rowGap = metrics.isCompact ? 8.0 : 10.0;
+    // Keep day boxes tall enough for the weekday, date, and one chip.
+    // Shorter than this and we scroll instead of crushing.
+    final minRow = metrics.isCompact ? 108.0 : 96.0;
+
     return DashboardGlassCard(
       tint: DashboardTheme.schedule,
       padding: EdgeInsets.all(metrics.isCompact ? 12 : 16),
@@ -285,62 +358,39 @@ class _LookAheadWeekBoard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _CardLabel(
-            text: 'NEXT 4 WEEKS',
+            text: 'NEXT 6 MONTHS',
             trailing: metrics.isCompact ? null : rangeLabel,
           ),
+          if (emptyHint != null) ...[
+            SizedBox(height: metrics.isCompact ? 8 : 10),
+            Text(
+              emptyHint!,
+              style: const TextStyle(
+                color: DashboardTheme.inkFaint,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
           SizedBox(height: metrics.isCompact ? 8 : 12),
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final rowGap = metrics.isCompact ? 8.0 : 10.0;
-                final emptyH = emptyHint == null ? 0.0 : 36.0;
-                // Keep day boxes tall enough for the weekday, date, and one
-                // chip. Shorter than this and we scroll instead of crushing.
-                final minRow = metrics.isCompact ? 108.0 : 96.0;
-                final gaps = rowGap * (weeks.length - 1);
-                final fits =
-                    constraints.maxHeight >=
-                    weeks.length * minRow + gaps + emptyH;
-
-                Widget weekSlot(int index) {
-                  final row = _WeekDayRow(
+            child: ListView.separated(
+              key: const ValueKey('look-ahead-week-list'),
+              physics: const BouncingScrollPhysics(),
+              itemCount: weeks.length,
+              separatorBuilder: (_, __) => SizedBox(height: rowGap),
+              itemBuilder: (context, index) {
+                return SizedBox(
+                  height: minRow,
+                  child: _WeekDayRow(
                     key: ValueKey('look-ahead-week-$index'),
                     metrics: metrics,
                     days: weeks[index],
                     events: events,
                     today: today,
+                    selectedDay: selectedDay,
                     palette: palette,
-                  );
-                  if (fits) return Expanded(child: row);
-                  return SizedBox(height: minRow, child: row);
-                }
-
-                final children = <Widget>[
-                  for (var i = 0; i < weeks.length; i++) ...[
-                    if (i > 0) SizedBox(height: rowGap),
-                    weekSlot(i),
-                  ],
-                  if (emptyHint != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      emptyHint!,
-                      style: const TextStyle(
-                        color: DashboardTheme.inkFaint,
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ];
-
-                if (fits) {
-                  return Column(children: children);
-                }
-                return SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: children,
+                    onDayTap: onDayTap,
                   ),
                 );
               },
@@ -360,13 +410,17 @@ class _WeekDayRow extends StatelessWidget {
     required this.events,
     required this.today,
     required this.palette,
+    required this.onDayTap,
+    this.selectedDay,
   });
 
   final DashboardMetrics metrics;
   final List<DateTime> days;
   final List<Map<String, dynamic>> events;
   final DateTime today;
+  final DateTime? selectedDay;
   final HubMemberPalette palette;
+  final ValueChanged<DateTime> onDayTap;
 
   @override
   Widget build(BuildContext context) {
@@ -377,15 +431,17 @@ class _WeekDayRow extends StatelessWidget {
           if (i > 0) SizedBox(width: metrics.isCompact ? 6 : 8),
           Expanded(
             child: _WeekDayColumn(
-              key: ValueKey(
-                'look-ahead-day-${days[i].year}-${days[i].month.toString().padLeft(2, '0')}-${days[i].day.toString().padLeft(2, '0')}',
-              ),
+              key: ValueKey(dashboardLookAheadDayKey(days[i])),
               metrics: metrics,
               day: days[i],
               events: dashboardEventsOnDay(events, days[i]),
               isToday: DateUtils.isSameDay(days[i], today),
               isPast: days[i].isBefore(today),
+              isSelected:
+                  selectedDay != null &&
+                  DateUtils.isSameDay(days[i], selectedDay),
               palette: palette,
+              onTap: () => onDayTap(days[i]),
             ),
           ),
         ],
@@ -402,7 +458,9 @@ class _WeekDayColumn extends StatelessWidget {
     required this.events,
     required this.isToday,
     required this.isPast,
+    required this.isSelected,
     required this.palette,
+    required this.onTap,
   });
 
   final DashboardMetrics metrics;
@@ -410,7 +468,9 @@ class _WeekDayColumn extends StatelessWidget {
   final List<Map<String, dynamic>> events;
   final bool isToday;
   final bool isPast;
+  final bool isSelected;
   final HubMemberPalette palette;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -426,142 +486,153 @@ class _WeekDayColumn extends StatelessWidget {
         : isPast
         ? DashboardTheme.inkFaint
         : DashboardTheme.ink;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final eventAreaHeight =
-            (constraints.maxHeight - (metrics.isCompact ? 52 : 64)).clamp(
-              0.0,
-              constraints.maxHeight,
-            );
-        final chipBudget = eventAreaHeight < 26
-            ? 0
-            : eventAreaHeight < 54
-            ? 1
-            : eventAreaHeight < 82
-            ? 2
-            : 3;
-        final visible = events.take(chipBudget).toList();
-        final overflow = events.length - visible.length;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final eventAreaHeight =
+                (constraints.maxHeight - (metrics.isCompact ? 52 : 64)).clamp(
+                  0.0,
+                  constraints.maxHeight,
+                );
+            final chipBudget = eventAreaHeight < 26
+                ? 0
+                : eventAreaHeight < 54
+                ? 1
+                : eventAreaHeight < 82
+                ? 2
+                : 3;
+            final visible = events.take(chipBudget).toList();
+            final overflow = events.length - visible.length;
 
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: DashboardTheme.fade(
-              wash,
-              isToday
-                  ? 0.12
-                  : isPast
-                  ? 0.03
-                  : 0.05,
-            ),
-            borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
-            border: Border.all(
-              color: DashboardTheme.fade(
-                wash,
-                isToday
-                    ? 0.45
-                    : isPast
-                    ? 0.10
-                    : 0.16,
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: DashboardTheme.fade(
+                  wash,
+                  isSelected
+                      ? 0.20
+                      : isToday
+                      ? 0.12
+                      : isPast
+                      ? 0.03
+                      : 0.05,
+                ),
+                borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
+                border: Border.all(
+                  color: DashboardTheme.fade(
+                    wash,
+                    isSelected
+                        ? 0.70
+                        : isToday
+                        ? 0.45
+                        : isPast
+                        ? 0.10
+                        : 0.16,
+                  ),
+                  width: isSelected || isToday ? 1.4 : 1,
+                ),
               ),
-              width: isToday ? 1.4 : 1,
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              metrics.isCompact ? 5 : 8,
-              metrics.isCompact ? 8 : 10,
-              metrics.isCompact ? 5 : 8,
-              metrics.isCompact ? 6 : 8,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  isToday ? 'TODAY' : weekday,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: labelColor,
-                    fontSize: metrics.isCompact ? 10 : 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                  ),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  metrics.isCompact ? 5 : 8,
+                  metrics.isCompact ? 8 : 10,
+                  metrics.isCompact ? 5 : 8,
+                  metrics.isCompact ? 6 : 8,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${day.day}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: dateColor,
-                    fontSize: metrics.isCompact ? 20 : 24,
-                    fontWeight: FontWeight.w700,
-                    height: 1.05,
-                  ),
-                ),
-                SizedBox(height: metrics.isCompact ? 6 : 8),
-                Expanded(
-                  child: ClipRect(
-                    child: events.isEmpty
-                        ? Align(
-                            alignment: Alignment.topCenter,
-                            child: Text(
-                              'Free',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: DashboardTheme.inkFaint,
-                                fontSize: metrics.isCompact ? 11 : 13,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          )
-                        : chipBudget == 0
-                        ? Align(
-                            alignment: Alignment.topCenter,
-                            child: Text(
-                              events.length == 1
-                                  ? '1 plan'
-                                  : '${events.length} plans',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: isPast
-                                    ? DashboardTheme.inkFaint
-                                    : DashboardTheme.inkMuted,
-                                fontSize: metrics.isCompact ? 10 : 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          )
-                        : Column(
-                            children: [
-                              for (final event in visible)
-                                _EventChip(
-                                  event: event,
-                                  compact: metrics.isCompact,
-                                  palette: palette,
-                                ),
-                              if (overflow > 0)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    '+$overflow more',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: DashboardTheme.inkMuted,
-                                      fontSize: metrics.isCompact ? 10 : 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      isToday ? 'TODAY' : weekday,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: labelColor,
+                        fontSize: metrics.isCompact ? 10 : 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${day.day}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: dateColor,
+                        fontSize: metrics.isCompact ? 20 : 24,
+                        fontWeight: FontWeight.w700,
+                        height: 1.05,
+                      ),
+                    ),
+                    SizedBox(height: metrics.isCompact ? 6 : 8),
+                    Expanded(
+                      child: ClipRect(
+                        child: events.isEmpty
+                            ? Align(
+                                alignment: Alignment.topCenter,
+                                child: Text(
+                                  'Free',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: DashboardTheme.inkFaint,
+                                    fontSize: metrics.isCompact ? 11 : 13,
+                                    fontStyle: FontStyle.italic,
                                   ),
                                 ),
-                            ],
-                          ),
-                  ),
+                              )
+                            : chipBudget == 0
+                            ? Align(
+                                alignment: Alignment.topCenter,
+                                child: Text(
+                                  events.length == 1
+                                      ? '1 plan'
+                                      : '${events.length} plans',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: isPast
+                                        ? DashboardTheme.inkFaint
+                                        : DashboardTheme.inkMuted,
+                                    fontSize: metrics.isCompact ? 10 : 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            : Column(
+                                children: [
+                                  for (final event in visible)
+                                    _EventChip(
+                                      event: event,
+                                      compact: metrics.isCompact,
+                                      palette: palette,
+                                    ),
+                                  if (overflow > 0)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        '+$overflow more',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: DashboardTheme.inkMuted,
+                                          fontSize: metrics.isCompact ? 10 : 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        );
-      },
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -605,6 +676,190 @@ class _EventChip extends StatelessWidget {
                   : Icons.circle,
               size: isBirthday || isMeal || isWork ? 11 : 6,
             ),
+    );
+  }
+}
+
+class _LookAheadDayDetailLayer extends StatelessWidget {
+  const _LookAheadDayDetailLayer({
+    required this.metrics,
+    required this.day,
+    required this.events,
+    required this.palette,
+    required this.isToday,
+    required this.onClose,
+  });
+
+  final DashboardMetrics metrics;
+  final DateTime day;
+  final List<Map<String, dynamic>> events;
+  final HubMemberPalette palette;
+  final bool isToday;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: GestureDetector(
+        key: const ValueKey('look-ahead-day-detail-barrier'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onClose,
+        // Claim horizontal drags so PageView cannot swipe while the card is open.
+        onHorizontalDragStart: (_) {},
+        onHorizontalDragUpdate: (_) {},
+        child: ColoredBox(
+          color: const Color(0xCC07070C),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: metrics.isCompact ? 12 : 48,
+              vertical: metrics.isCompact ? 24 : 36,
+            ),
+            child: Center(
+              child: GestureDetector(
+                onTap: () {},
+                onHorizontalDragStart: (_) {},
+                onHorizontalDragUpdate: (_) {},
+                child: _LookAheadDayDetailCard(
+                  metrics: metrics,
+                  day: day,
+                  events: events,
+                  palette: palette,
+                  isToday: isToday,
+                  onClose: onClose,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LookAheadDayDetailCard extends StatelessWidget {
+  const _LookAheadDayDetailCard({
+    required this.metrics,
+    required this.day,
+    required this.events,
+    required this.palette,
+    required this.isToday,
+    required this.onClose,
+  });
+
+  final DashboardMetrics metrics;
+  final DateTime day;
+  final List<Map<String, dynamic>> events;
+  final HubMemberPalette palette;
+  final bool isToday;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel = DateFormat('EEEE d MMMM').format(day);
+    final title = isToday ? 'Today · $dateLabel' : dateLabel;
+
+    final header = Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isToday ? Colors.greenAccent : DashboardTheme.ink,
+              fontSize: metrics.isCompact ? 18 : 22,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ),
+        IconButton(
+          key: const ValueKey('look-ahead-day-detail-close'),
+          tooltip: 'Close',
+          onPressed: onClose,
+          icon: const Icon(Icons.close_rounded, color: Colors.white70),
+        ),
+      ],
+    );
+    final summary = Text(
+      events.isEmpty
+          ? 'Nothing planned'
+          : events.length == 1
+          ? '1 plan'
+          : '${events.length} plans',
+      style: const TextStyle(
+        color: DashboardTheme.inkMuted,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.4,
+      ),
+    );
+
+    final body = events.isEmpty
+        ? const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Text(
+              'Free day — nothing on the calendar',
+              key: ValueKey('look-ahead-day-detail-empty'),
+              style: TextStyle(
+                color: DashboardTheme.inkFaint,
+                fontSize: 16,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          )
+        : ListView.separated(
+            key: const ValueKey('look-ahead-day-detail-events'),
+            itemCount: events.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final event = events[index];
+              final style = CalendarColors.fromMap(event, palette: palette);
+              final isBirthday = event['category'] == 'birthday';
+              final isMeal = event['category'] == 'meal';
+              final isWork = event['category'] == 'work';
+              return CalendarSplitPill(
+                style: style,
+                title: dashboardGlanceTitle(event),
+                subtitle: dashboardGlanceTimeLabel(event),
+                density: metrics.isCompact
+                    ? CalendarSplitPillDensity.regular
+                    : CalendarSplitPillDensity.comfortable,
+                trailing: Icon(
+                  isBirthday
+                      ? Icons.cake_rounded
+                      : isMeal
+                      ? Icons.restaurant
+                      : isWork
+                      ? Icons.work_outline
+                      : Icons.circle,
+                  size: isBirthday || isMeal || isWork ? 16 : 8,
+                ),
+              );
+            },
+          );
+
+    return SizedBox(
+      width: metrics.isCompact ? double.infinity : 560,
+      height: events.isEmpty
+          ? (metrics.isCompact ? 220 : 210)
+          : (metrics.isCompact ? 460 : 440),
+      child: DashboardGlassCard(
+        tint: DashboardTheme.schedule,
+        emphasized: true,
+        padding: EdgeInsets.all(metrics.isCompact ? 16 : 22),
+        child: Column(
+          key: const ValueKey('look-ahead-day-detail'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            const SizedBox(height: 4),
+            summary,
+            SizedBox(height: metrics.isCompact ? 12 : 16),
+            Expanded(child: body),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -48,7 +48,7 @@ void main() {
     expect(kindBox.width / whoBox.width, closeTo(2, 0.35));
   });
 
-  testWidgets('Maria leisure and Shared leisure stay different pinks', (
+  testWidgets('Maria yellow and Shared pink stay different who colours', (
     tester,
   ) async {
     await tester.pumpWidget(

@@ -17,17 +17,14 @@ void main() {
     expect(palette.whoColor('uid-maria'), CalendarColors.maria);
     expect(palette.whoColor('shared'), CalendarColors.shared);
     expect(CalendarColors.tom, const Color(0xFF3B7DD8));
-    expect(CalendarColors.maria, const Color(0xFFE07A9A));
+    expect(CalendarColors.maria, const Color(0xFFE0B84A));
     expect(CalendarColors.shared, const Color(0xFFC45BA0));
   });
 
-  test('Maria rose is distinct from Shared magenta', () {
+  test('Maria yellow is distinct from Shared pink', () {
     expect(CalendarColors.maria, isNot(CalendarColors.shared));
-    expect(CalendarColors.maria.r, greaterThan(CalendarColors.shared.r));
-    expect(
-      CalendarColors.maria.r - CalendarColors.maria.b,
-      greaterThan(CalendarColors.shared.r - CalendarColors.shared.b),
-    );
+    expect(CalendarColors.maria.g, greaterThan(CalendarColors.shared.g));
+    expect(CalendarColors.maria.b, lessThan(CalendarColors.shared.b));
     expect(CalendarColors.tom.b, greaterThan(CalendarColors.tom.r));
   });
 
@@ -62,7 +59,7 @@ void main() {
   });
 
   test(
-    'work is grey; leisure is yellow; appointments keep the person colour',
+    'work is grey; leisure is green; appointments keep the person colour',
     () {
       final palette = HubMemberPalette.fromMembers(members);
 
@@ -85,10 +82,10 @@ void main() {
       expect(personal.kind, CalendarColors.personal);
       expect(personal.glanceDot, CalendarColors.personal);
       expect(CalendarColors.work, const Color(0xFF6E7175));
-      expect(CalendarColors.personal, const Color(0xFFE0B84A));
+      expect(CalendarColors.personal, const Color(0xFF2F9A62));
       expect(CalendarColors.work.r, closeTo(CalendarColors.work.g, 0.04));
       expect(CalendarColors.work.g, closeTo(CalendarColors.work.b, 0.04));
-      expect(CalendarColors.personal.r, greaterThan(CalendarColors.personal.b));
+      expect(CalendarColors.personal.g, greaterThan(CalendarColors.personal.r));
       expect(CalendarColors.personal.g, greaterThan(CalendarColors.personal.b));
     },
   );
@@ -118,23 +115,32 @@ void main() {
     expect(CalendarColors.meal, const Color(0xFFC48462));
   });
 
-  test('ink on yellow is dark; ink on blue, grey, and purple is light', () {
-    expect(
-      CalendarColors.inkOn(CalendarColors.personal),
-      CalendarColors.darkInk,
-    );
-    expect(CalendarColors.inkOn(CalendarColors.work), CalendarColors.lightInk);
-    expect(CalendarColors.inkOn(CalendarColors.tom), CalendarColors.lightInk);
-    expect(
-      CalendarColors.inkOn(CalendarColors.birthday),
-      CalendarColors.lightInk,
-    );
-    expect(CalendarColors.inkOn(CalendarColors.maria), CalendarColors.lightInk);
-    expect(
-      CalendarColors.inkOn(CalendarColors.shared),
-      CalendarColors.lightInk,
-    );
-  });
+  test(
+    'ink on Maria yellow is dark; ink on green, blue, grey, and purple is light',
+    () {
+      expect(
+        CalendarColors.inkOn(CalendarColors.maria),
+        CalendarColors.darkInk,
+      );
+      expect(
+        CalendarColors.inkOn(CalendarColors.personal),
+        CalendarColors.lightInk,
+      );
+      expect(
+        CalendarColors.inkOn(CalendarColors.work),
+        CalendarColors.lightInk,
+      );
+      expect(CalendarColors.inkOn(CalendarColors.tom), CalendarColors.lightInk);
+      expect(
+        CalendarColors.inkOn(CalendarColors.birthday),
+        CalendarColors.lightInk,
+      );
+      expect(
+        CalendarColors.inkOn(CalendarColors.shared),
+        CalendarColors.lightInk,
+      );
+    },
+  );
 
   test('EventModel and glance helper share the same category colour', () {
     final palette = HubMemberPalette.fromMembers(members);

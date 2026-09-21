@@ -13,12 +13,12 @@ class CalendarColors {
 
   // Who — left third of the split pill
   static const Color tom = Color(0xFF3B7DD8); // clear blue
-  static const Color maria = Color(0xFFE07A9A); // warmer rose
-  static const Color shared = Color(0xFFC45BA0); // cooler magenta
+  static const Color maria = Color(0xFFE0B84A); // kitchen-tablet yellow
+  static const Color shared = Color(0xFFC45BA0); // cooler magenta / pink
 
   // Kind — right two-thirds of the split pill
   static const Color work = Color(0xFF6E7175); // stone grey
-  static const Color personal = Color(0xFFE0B84A); // leisure yellow
+  static const Color personal = Color(0xFF2F9A62); // leisure / general green
 
   // Special category fills / icon accents
   static const Color birthday = Color(0xFF8B5BB5); // purple category fill
@@ -37,14 +37,14 @@ class CalendarColors {
 
   static const Color unknownMember = Color(0xFF7A7A80);
 
-  /// Readable ink for a solid fill. Yellow leisure needs dark; the rest
+  /// Readable ink for a solid fill. Maria yellow needs dark; the rest
   /// of the kitchen-tablet palette reads better in warm white.
   static Color inkOn(Color fill) {
     return fill.computeLuminance() > 0.45 ? darkInk : lightInk;
   }
 
   /// Right-side category fill. Birthday is purple; meals fold into leisure
-  /// so the glance set stays grey / yellow / purple.
+  /// so the glance set stays grey / green / purple.
   static Color categoryFill(String category) {
     switch (category) {
       case 'work':
@@ -113,7 +113,7 @@ class CalendarColors {
 /// Resolved colours for one event.
 ///
 /// [who] paints the left third. [kind] paints the right two-thirds
-/// (work grey, leisure yellow, or birthday purple). [special] is an icon
+/// (work grey, leisure green, or birthday purple). [special] is an icon
 /// accent — birthday purple or meal terracotta.
 class CalendarEventStyle {
   const CalendarEventStyle({

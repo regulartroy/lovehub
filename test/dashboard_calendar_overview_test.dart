@@ -73,6 +73,14 @@ void main() {
         'category': 'general',
         'assignedTo': 'shared',
       },
+      {
+        'summary': 'Half-term walk',
+        'start': at(150, 10, 0),
+        'end': at(150, 12, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'shared',
+      },
     ];
   }
 
@@ -126,9 +134,9 @@ void main() {
     );
   });
 
-  test('look-ahead weeks are Monday–Sunday rows covering ~4 weeks ahead', () {
+  test('look-ahead weeks are Monday–Sunday rows covering ~6 months ahead', () {
     final saturday = dashboardLookAheadWeeks(now);
-    expect(saturday, hasLength(5));
+    expect(saturday.length, greaterThanOrEqualTo(26));
     expect(saturday.every((week) => week.length == 7), isTrue);
     expect(
       saturday.every((week) => week.first.weekday == DateTime.monday),
@@ -141,25 +149,37 @@ void main() {
     expect(saturday.first.first, DateTime(2026, 9, 14));
     expect(saturday.first.last, DateTime(2026, 9, 20));
     expect(saturday[0][5], DateTime(2026, 9, 19));
-    expect(saturday.last.first, DateTime(2026, 10, 12));
-    expect(saturday.last.last, DateTime(2026, 10, 18));
+    expect(saturday.last.first.isAfter(DateTime(2027, 3, 1)), isTrue);
+    expect(saturday.last.last.isBefore(DateTime(2027, 4, 1)), isTrue);
+
+    final sixMonthsOut = DateTime(2026, 9 + 6, 19);
+    expect(
+      saturday.last.last.isAfter(
+        sixMonthsOut.subtract(const Duration(days: 7)),
+      ),
+      isTrue,
+    );
+    expect(
+      saturday.last.first.isBefore(sixMonthsOut.add(const Duration(days: 7))),
+      isTrue,
+    );
 
     final monday = dashboardLookAheadWeeks(DateTime(2026, 9, 14));
-    expect(monday, hasLength(4));
+    expect(monday.length, greaterThanOrEqualTo(26));
     expect(monday.first.first, DateTime(2026, 9, 14));
-    expect(monday.last.last, DateTime(2026, 10, 11));
+    expect(monday.last.last.isAfter(DateTime(2027, 3, 1)), isTrue);
 
     final sunday = dashboardLookAheadWeeks(DateTime(2026, 9, 20));
-    expect(sunday, hasLength(5));
+    expect(sunday.length, greaterThanOrEqualTo(26));
     expect(sunday.first.first, DateTime(2026, 9, 14));
-    expect(sunday.last.last, DateTime(2026, 10, 18));
+    expect(sunday.last.last.isAfter(DateTime(2027, 3, 1)), isTrue);
   });
 
-  test('look-ahead week count stays 4 on Monday and 5 mid-week', () {
-    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 14)), 4);
-    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 16)), 5);
-    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 19)), 5);
-    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 20)), 5);
+  test('look-ahead week count covers six months from today', () {
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 14)), 26);
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 16)), 27);
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 19)), 27);
+    expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 20)), 27);
   });
 
   testWidgets('look-ahead slide shows Mon–Sun week-strips and no month grid', (
@@ -183,26 +203,21 @@ void main() {
     );
 
     expect(find.text('LOOK AHEAD'), findsOneWidget);
-    expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+    expect(find.text('NEXT 6 MONTHS'), findsOneWidget);
+    expect(find.text('NEXT 4 WEEKS'), findsNothing);
     expect(find.text('NEXT 7 DAYS'), findsNothing);
     expect(find.text('SEP – OCT'), findsNothing);
     expect(find.text('Mo'), findsNothing);
     expect(find.text('Tu'), findsNothing);
+    expect(find.byKey(const ValueKey('look-ahead-week-list')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-2')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('look-ahead-day-2026-09-19')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('look-ahead-day-2026-10-18')),
       findsOneWidget,
     );
     expect(find.text('TODAY'), findsOneWidget);
@@ -267,10 +282,9 @@ void main() {
       );
 
       expect(find.text('LOOK AHEAD'), findsOneWidget);
-      expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+      expect(find.text('NEXT 6 MONTHS'), findsOneWidget);
       expect(find.text('Free'), findsWidgets);
       expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
-      expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
       expect(
         find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
         findsOneWidget,
@@ -304,14 +318,13 @@ void main() {
     );
 
     expect(find.text('LOOK AHEAD'), findsOneWidget);
-    expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+    expect(find.text('NEXT 6 MONTHS'), findsOneWidget);
     expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
       findsOneWidget,
     );
-    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(find.byType(Scrollable), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -336,16 +349,144 @@ void main() {
     );
 
     expect(find.byKey(const ValueKey('look-ahead-week-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-3')), findsOneWidget);
-    expect(find.byKey(const ValueKey('look-ahead-week-4')), findsNothing);
+    expect(find.byKey(const ValueKey('look-ahead-week-1')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('look-ahead-day-2026-09-14')),
       findsOneWidget,
     );
+    expect(find.text('TODAY'), findsOneWidget);
+  });
+
+  testWidgets('look-ahead board scrolls to weeks about six months out', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(1024, 768)),
+            events: sampleEvents(),
+            now: now,
+            members: members,
+          ),
+        ),
+      ),
+    );
+
+    final farDay = find.byKey(const ValueKey('look-ahead-day-2027-02-16'));
+    expect(farDay, findsNothing);
+
+    await tester.scrollUntilVisible(
+      farDay,
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-week-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(farDay, findsOneWidget);
+    expect(find.textContaining('Half-term walk'), findsWidgets);
+
+    final lastDay = dashboardLookAheadWeeks(now).last.last;
+    await tester.scrollUntilVisible(
+      find.byKey(ValueKey(dashboardLookAheadDayKey(lastDay))),
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-week-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
     expect(
-      find.byKey(const ValueKey('look-ahead-day-2026-10-11')),
+      find.byKey(ValueKey(dashboardLookAheadDayKey(lastDay))),
       findsOneWidget,
     );
-    expect(find.text('TODAY'), findsOneWidget);
+  });
+
+  testWidgets('tapping a day opens a detail card and still notifies the host', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    DateTime? tappedDay;
+    var closed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(1024, 768)),
+            events: sampleEvents(),
+            now: now,
+            members: members,
+            onDayTap: (day) => tappedDay = day,
+            onCloseDayDetail: () => closed = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-19')));
+    await tester.pumpAndSettle();
+
+    expect(tappedDay, DateTime(2026, 9, 19));
+    expect(find.byKey(const ValueKey('look-ahead-day-detail')), findsOneWidget);
+    expect(find.textContaining('Today'), findsWidgets);
+    expect(find.text('Farmers market walk'), findsWidgets);
+    expect(find.text('09:30'), findsWidgets);
+    expect(closed, isFalse);
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-detail-close')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('look-ahead-day-detail')), findsNothing);
+    expect(closed, isTrue);
+  });
+
+  testWidgets('tapping a free day shows an empty state; barrier dismisses', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(1024, 768)),
+            events: sampleEvents(),
+            now: now,
+            members: members,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-17')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('look-ahead-day-detail')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-detail-empty')),
+      findsOneWidget,
+    );
+    expect(find.text('Free day — nothing on the calendar'), findsOneWidget);
+    expect(find.text('Nothing planned'), findsOneWidget);
+
+    final barrier = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-day-detail-barrier')),
+    );
+    await tester.tapAt(Offset(barrier.left + 12, barrier.top + 12));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('look-ahead-day-detail')), findsNothing);
   });
 }
