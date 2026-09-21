@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
@@ -10,6 +9,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
 import '../theme/calendar_colors.dart';
+import '../widgets/calendar_month_scroller.dart';
 import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../services/member_profile.dart';
@@ -44,8 +44,6 @@ class _CalendarScreenState extends State<CalendarScreen>
   @override
   bool get wantKeepAlive => true;
   late TabController _tabController;
-  CalendarFormat _calendarFormat = CalendarFormat.month;
-  DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   List<Map<String, dynamic>> _birthdays = [];
   // CLEAN ARCHITECTURE
@@ -352,7 +350,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                       DateTime endInclusive = e.end!.date!.subtract(
                         const Duration(days: 1),
                       );
-                      if (isSameDay(start, endInclusive))
+                      if (DateUtils.isSameDay(start, endInclusive))
                         timeStr =
                             "All Day [${DateFormat('d MMM').format(start)}]";
                       else
@@ -591,7 +589,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
-                          label: Text(cat == 'general' ? 'Personal' : cat.capitalize()),
+                          label: Text(
+                            cat == 'general' ? 'Personal' : cat.capitalize(),
+                          ),
                           selected: category == cat,
                           selectedColor: catColor.withValues(alpha: 0.28),
                           onSelected: (v) => setSheetState(() {
@@ -648,7 +648,8 @@ class _CalendarScreenState extends State<CalendarScreen>
                               );
                               final safeEnd =
                                   endDt ?? n.add(const Duration(hours: 1));
-                              if (n.isAfter(safeEnd) || isSameDay(n, safeEnd)) {
+                              if (n.isAfter(safeEnd) ||
+                                  DateUtils.isSameDay(n, safeEnd)) {
                                 endDt = DateTime(
                                   d.year,
                                   d.month,
@@ -840,7 +841,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                     ChoiceChip(
                       label: const Text("Shared"),
                       selected: assignedTo == 'shared',
-                      selectedColor: CalendarColors.shared.withValues(alpha: 0.28),
+                      selectedColor: CalendarColors.shared.withValues(
+                        alpha: 0.28,
+                      ),
                       onSelected: (v) =>
                           setSheetState(() => assignedTo = 'shared'),
                     ),
@@ -1173,14 +1176,13 @@ class _CalendarScreenState extends State<CalendarScreen>
               child: ChoiceChip(
                 showCheckmark: false,
                 avatar: CircleAvatar(
-                  backgroundColor: isSelected ? Colors.white : who.withValues(alpha: 0.18),
+                  backgroundColor: isSelected
+                      ? Colors.white
+                      : who.withValues(alpha: 0.18),
                   radius: 10,
                   child: Text(
                     member['name'][0],
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: who,
-                    ),
+                    style: TextStyle(fontSize: 10, color: who),
                   ),
                 ),
                 label: Text(member['name']),
@@ -1370,7 +1372,10 @@ class _CalendarScreenState extends State<CalendarScreen>
             const Divider(),
             SwitchListTile(
               title: const Text("Shared Plans"),
-              secondary: const Icon(Icons.favorite, color: CalendarColors.shared),
+              secondary: const Icon(
+                Icons.favorite,
+                color: CalendarColors.shared,
+              ),
               value: _filters['shared']!,
               activeColor: CalendarColors.shared,
               onChanged: (v) => setState(() => _filters['shared'] = v),
@@ -1415,111 +1420,33 @@ class _CalendarScreenState extends State<CalendarScreen>
                   return TabBarView(
                     controller: _tabController,
                     children: [
-                      SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            TableCalendar(
-                              firstDay: DateTime.utc(2020, 1, 1),
-                              lastDay: DateTime.utc(2030, 12, 31),
-                              focusedDay: _focusedDay,
-                              calendarFormat: _calendarFormat,
-                              selectedDayPredicate: (day) =>
-                                  isSameDay(_selectedDay, day),
-                              onDaySelected: (s, f) => setState(() {
-                                _selectedDay = s;
-                                _focusedDay = f;
-                              }),
-                              eventLoader: _getEventsForDay,
-                              calendarStyle: const CalendarStyle(
-                                todayDecoration: BoxDecoration(
-                                  color: Color(0xFF8A8680),
-                                  shape: BoxShape.circle,
-                                ),
-                                selectedDecoration: BoxDecoration(
-                                  color: Colors.black,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              headerStyle: const HeaderStyle(
-                                formatButtonVisible: false,
-                                titleCentered: true,
-                              ),
-                              calendarBuilders: CalendarBuilders(
-                                markerBuilder: (context, date, dynamicEvents) {
-                                  if (dynamicEvents.isEmpty)
-                                    return const SizedBox();
-                                  final events = dynamicEvents
-                                      .cast<EventModel>();
-                                  return Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: events.take(3).map((e) {
-                                      final style = CalendarColors.fromEvent(
-                                        e,
-                                        palette: _palette,
-                                      );
-                                      return CalendarGlanceDot(
-                                        style: style,
-                                        size: 7,
-                                      );
-                                    }).toList(),
-                                  );
-                                },
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                              child: CalendarGlanceLegend(
+                      Column(
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                              child: CalendarMonthScroller(
+                                now: DateTime.now(),
                                 palette: _palette,
-                                compact: true,
-                                dark: false,
+                                selectedDay: _selectedDay,
+                                eventsForDay: _getEventsForDay,
+                                onDayTap: (day) => setState(() {
+                                  _selectedDay = DateUtils.dateOnly(day);
+                                }),
                               ),
                             ),
-                            const Divider(),
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Text(
-                                "Schedule for ${DateFormat('MMM d').format(_selectedDay ?? DateTime.now())}",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                ),
-                              ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                            child: CalendarGlanceLegend(
+                              palette: _palette,
+                              compact: true,
+                              dark: false,
                             ),
-                            Builder(
-                              builder: (context) {
-                                final events = _getEventsForDay(
-                                  _selectedDay ?? DateTime.now(),
-                                );
-                                // --- FIX: Sort overview by time ---
-                                events.sort(
-                                  (a, b) => a.start.compareTo(b.start),
-                                );
-
-                                if (events.isEmpty)
-                                  return const Padding(
-                                    padding: EdgeInsets.all(20),
-                                    child: Text(
-                                      "No events",
-                                      style: TextStyle(color: Colors.grey),
-                                    ),
-                                  );
-
-                                return ListView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: events.length,
-                                  // --- FIX: Add Avatar to overview items ---
-                                  itemBuilder: (context, index) =>
-                                      _buildEventTile(
-                                        events[index],
-                                        showAvatar: true,
-                                      ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 100),
-                          ],
-                        ),
+                          ),
+                          const Divider(height: 1),
+                          _buildSelectedDayPanel(),
+                        ],
                       ),
 
                       _buildFilteredList(
@@ -1562,6 +1489,52 @@ class _CalendarScreenState extends State<CalendarScreen>
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildSelectedDayPanel() {
+    final day = DateUtils.dateOnly(_selectedDay ?? DateTime.now());
+    final events = _getEventsForDay(day)
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final label = DateFormat('EEE d MMM').format(day);
+    final title = DateUtils.isSameDay(day, DateTime.now())
+        ? 'Today • $label'
+        : label;
+
+    return SizedBox(
+      height: 220,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF5A564E),
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+          Expanded(
+            child: events.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text(
+                      'No events',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    itemCount: events.length,
+                    itemBuilder: (context, index) =>
+                        _buildEventTile(events[index], showAvatar: true),
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -1702,7 +1675,7 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   Widget _buildDateHeader(DateTime date) {
     String label = DateFormat('EEEE, d MMMM').format(date);
-    if (isSameDay(date, DateTime.now())) label = "Today • $label";
+    if (DateUtils.isSameDay(date, DateTime.now())) label = "Today • $label";
     return Padding(
       padding: const EdgeInsets.only(top: 20, bottom: 10),
       child: Row(
@@ -1741,7 +1714,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   }) {
     final style = CalendarColors.fromEvent(event, palette: _palette);
 
-    bool isMulti = !isSameDay(event.start, event.end);
+    bool isMulti = !DateUtils.isSameDay(event.start, event.end);
     String cleanTitle = event.summary.replaceAll(RegExp(r'\[.*?\]'), '').trim();
     if (cleanTitle.isEmpty) cleanTitle = event.summary;
 
@@ -1759,11 +1732,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         foregroundColor: style.inkOnWho,
       );
     } else if (event.assignedTo == 'shared') {
-      avatarWidget = Icon(
-        Icons.favorite,
-        size: 16,
-        color: style.inkOnWho,
-      );
+      avatarWidget = Icon(Icons.favorite, size: 16, color: style.inkOnWho);
     }
 
     final timeLabel = hideSubtitle || (event.allDay && !isMulti)
