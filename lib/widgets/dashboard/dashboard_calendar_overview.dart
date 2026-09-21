@@ -110,6 +110,105 @@ List<List<DateTime>> dashboardLookAheadWeeks(DateTime now, {int? weekCount}) {
   });
 }
 
+DateTime dashboardLookAheadMonthOf(DateTime day) {
+  final date = DateUtils.dateOnly(day);
+  return DateTime(date.year, date.month);
+}
+
+String dashboardLookAheadMonthKey(DateTime month) {
+  final date = dashboardLookAheadMonthOf(month);
+  return 'look-ahead-month-${date.year}-${date.month.toString().padLeft(2, '0')}';
+}
+
+String dashboardLookAheadMonthGapKey(DateTime month) {
+  final date = dashboardLookAheadMonthOf(month);
+  return 'look-ahead-month-gap-${date.year}-${date.month.toString().padLeft(2, '0')}';
+}
+
+/// Kitchen-tablet month label: "October", with a year when the month is not
+/// in the same calendar year as [now] (the ~6 month board crosses New Year).
+String dashboardLookAheadMonthLabel(DateTime month, DateTime now) {
+  final date = dashboardLookAheadMonthOf(month);
+  final today = DateUtils.dateOnly(now);
+  final raw = date.year == today.year
+      ? DateFormat('MMMM').format(date)
+      : DateFormat('MMMM y').format(date);
+  return raw.toUpperCase();
+}
+
+/// One labeled month in the LOOK AHEAD week list.
+///
+/// Boundary rule: the first week is always headed with the month of [now], so
+/// TODAY sits under the current month. Each later week opens a new section as
+/// soon as any day in that row belongs to a calendar month that has not yet
+/// been labeled. A week that spans two months (Mon 28 Sep–Sun 4 Oct) is
+/// therefore headed "October" because 1 Oct lands in the row.
+///
+/// If today is still in the old month on a spanning first week (e.g. 30 Dec
+/// with 1 Jan in the same row), the first header stays on today's month and
+/// the new month is labeled on the following week.
+class DashboardLookAheadMonthSection {
+  DashboardLookAheadMonthSection({
+    required this.month,
+    required this.label,
+    required List<List<DateTime>> weeks,
+  }) : weeks = List<List<DateTime>>.from(weeks);
+
+  /// First day of the labeled calendar month.
+  final DateTime month;
+  final String label;
+  final List<List<DateTime>> weeks;
+}
+
+int _lookAheadMonthId(DateTime day) {
+  final month = dashboardLookAheadMonthOf(day);
+  return month.year * 12 + month.month;
+}
+
+/// Groups Monday–Sunday [weeks] into month sections. See
+/// [DashboardLookAheadMonthSection] for the spanning-week rule.
+List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
+  List<List<DateTime>> weeks, {
+  required DateTime now,
+}) {
+  if (weeks.isEmpty) return const [];
+
+  final today = DateUtils.dateOnly(now);
+  final labeled = <int>{};
+  final sections = <DashboardLookAheadMonthSection>[];
+
+  for (var i = 0; i < weeks.length; i++) {
+    final week = weeks[i];
+    DateTime? headerMonth;
+    if (i == 0) {
+      headerMonth = dashboardLookAheadMonthOf(today);
+    } else {
+      for (final day in week) {
+        final id = _lookAheadMonthId(day);
+        if (!labeled.contains(id)) {
+          headerMonth = dashboardLookAheadMonthOf(day);
+          break;
+        }
+      }
+    }
+
+    if (headerMonth != null) {
+      labeled.add(_lookAheadMonthId(headerMonth));
+      sections.add(
+        DashboardLookAheadMonthSection(
+          month: headerMonth,
+          label: dashboardLookAheadMonthLabel(headerMonth, today),
+          weeks: [week],
+        ),
+      );
+    } else {
+      sections.last.weeks.add(week);
+    }
+  }
+
+  return sections;
+}
+
 /// Second dashboard slide: Monday–Sunday week-strips for the next ~6 months.
 ///
 /// Each row is a real calendar week (Mon→Sun). Tapping a day opens a detail
@@ -321,6 +420,39 @@ class _CardLabel extends StatelessWidget {
   }
 }
 
+class _MonthSectionHeader extends StatelessWidget {
+  const _MonthSectionHeader({required this.label, required this.compact});
+
+  final String label;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: const Color(0xFF8FB0C8),
+            fontSize: compact ? 12 : 14,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Divider(
+            color: DashboardTheme.fade(Colors.white, 0.14),
+            height: 1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _LookAheadWeekBoard extends StatelessWidget {
   const _LookAheadWeekBoard({
     required this.metrics,
@@ -347,9 +479,13 @@ class _LookAheadWeekBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rowGap = metrics.isCompact ? 8.0 : 10.0;
+    // Modest extra air between months so the board reads as sections, not one
+    // continuous grid. Tight enough for a wall tablet.
+    final monthGap = metrics.isCompact ? 16.0 : 22.0;
     // Keep day boxes tall enough for the weekday, date, and one chip.
     // Shorter than this and we scroll instead of crushing.
     final minRow = metrics.isCompact ? 108.0 : 96.0;
+    final sections = dashboardLookAheadMonthSections(weeks, now: today);
 
     return DashboardGlassCard(
       tint: DashboardTheme.schedule,
@@ -374,24 +510,49 @@ class _LookAheadWeekBoard extends StatelessWidget {
           ],
           SizedBox(height: metrics.isCompact ? 8 : 12),
           Expanded(
-            child: ListView.separated(
+            child: ListView.builder(
               key: const ValueKey('look-ahead-week-list'),
               physics: const BouncingScrollPhysics(),
-              itemCount: weeks.length,
-              separatorBuilder: (_, __) => SizedBox(height: rowGap),
-              itemBuilder: (context, index) {
-                return SizedBox(
-                  height: minRow,
-                  child: _WeekDayRow(
-                    key: ValueKey('look-ahead-week-$index'),
-                    metrics: metrics,
-                    days: weeks[index],
-                    events: events,
-                    today: today,
-                    selectedDay: selectedDay,
-                    palette: palette,
-                    onDayTap: onDayTap,
-                  ),
+              itemCount: sections.length,
+              itemBuilder: (context, sectionIndex) {
+                final section = sections[sectionIndex];
+                var weekIndex = 0;
+                for (var i = 0; i < sectionIndex; i++) {
+                  weekIndex += sections[i].weeks.length;
+                }
+                return Column(
+                  key: ValueKey(dashboardLookAheadMonthKey(section.month)),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (sectionIndex > 0)
+                      SizedBox(
+                        key: ValueKey(
+                          dashboardLookAheadMonthGapKey(section.month),
+                        ),
+                        height: monthGap,
+                      ),
+                    _MonthSectionHeader(
+                      label: section.label,
+                      compact: metrics.isCompact,
+                    ),
+                    SizedBox(height: metrics.isCompact ? 8 : 10),
+                    for (var i = 0; i < section.weeks.length; i++) ...[
+                      if (i > 0) SizedBox(height: rowGap),
+                      SizedBox(
+                        height: minRow,
+                        child: _WeekDayRow(
+                          key: ValueKey('look-ahead-week-${weekIndex + i}'),
+                          metrics: metrics,
+                          days: section.weeks[i],
+                          events: events,
+                          today: today,
+                          selectedDay: selectedDay,
+                          palette: palette,
+                          onDayTap: onDayTap,
+                        ),
+                      ),
+                    ],
+                  ],
                 );
               },
             ),

@@ -182,6 +182,71 @@ void main() {
     expect(dashboardLookAheadWeekCount(DateTime(2026, 9, 20)), 27);
   });
 
+  test('month labels stay short, with a year after New Year', () {
+    expect(
+      dashboardLookAheadMonthLabel(DateTime(2026, 10), DateTime(2026, 9, 19)),
+      'OCTOBER',
+    );
+    expect(
+      dashboardLookAheadMonthLabel(DateTime(2026, 9), DateTime(2026, 9, 19)),
+      'SEPTEMBER',
+    );
+    expect(
+      dashboardLookAheadMonthLabel(DateTime(2027, 1), DateTime(2026, 9, 19)),
+      'JANUARY 2027',
+    );
+  });
+
+  test('month sections header a spanning week when any day is a new month', () {
+    final weeks = dashboardLookAheadWeeks(now);
+    final sections = dashboardLookAheadMonthSections(weeks, now: now);
+
+    expect(sections.first.month, DateTime(2026, 9));
+    expect(sections.first.label, 'SEPTEMBER');
+    expect(sections.first.weeks, hasLength(2));
+    expect(sections.first.weeks.first.first, DateTime(2026, 9, 14));
+    expect(sections.first.weeks.last.last, DateTime(2026, 9, 27));
+
+    expect(sections[1].month, DateTime(2026, 10));
+    expect(sections[1].label, 'OCTOBER');
+    // Mon 28 Sep–Sun 4 Oct belongs to October because 1 Oct lands in the row.
+    expect(sections[1].weeks.first.first, DateTime(2026, 9, 28));
+    expect(sections[1].weeks.first.last, DateTime(2026, 10, 4));
+
+    final january = sections.firstWhere(
+      (section) => section.month.year == 2027,
+    );
+    expect(january.month, DateTime(2027, 1));
+    expect(january.label, 'JANUARY 2027');
+    expect(january.weeks.first.first, DateTime(2026, 12, 28));
+    expect(january.weeks.first.last, DateTime(2027, 1, 3));
+  });
+
+  test('first week is headed with today even when the row spans months', () {
+    final lateDecember = DateTime(2026, 12, 30);
+    final sections = dashboardLookAheadMonthSections(
+      dashboardLookAheadWeeks(lateDecember),
+      now: lateDecember,
+    );
+
+    expect(sections.first.month, DateTime(2026, 12));
+    expect(sections.first.label, 'DECEMBER');
+    expect(sections.first.weeks.first.first, DateTime(2026, 12, 28));
+    expect(sections.first.weeks.first.last, DateTime(2027, 1, 3));
+    expect(sections[1].month, DateTime(2027, 1));
+    expect(sections[1].label, 'JANUARY 2027');
+    expect(sections[1].weeks.first.first, DateTime(2027, 1, 4));
+
+    final earlyJanuary = DateTime(2027, 1, 2);
+    final januarySections = dashboardLookAheadMonthSections(
+      dashboardLookAheadWeeks(earlyJanuary),
+      now: earlyJanuary,
+    );
+    expect(januarySections.first.month, DateTime(2027, 1));
+    expect(januarySections.first.label, 'JANUARY');
+    expect(januarySections.first.weeks.first.first, DateTime(2026, 12, 28));
+  });
+
   testWidgets('look-ahead slide shows Mon–Sun week-strips and no month grid', (
     tester,
   ) async {
@@ -206,6 +271,8 @@ void main() {
     expect(find.text('NEXT 6 MONTHS'), findsOneWidget);
     expect(find.text('NEXT 4 WEEKS'), findsNothing);
     expect(find.text('NEXT 7 DAYS'), findsNothing);
+    expect(find.text('SEPTEMBER'), findsOneWidget);
+    expect(find.text('OCTOBER'), findsOneWidget);
     expect(find.text('SEP – OCT'), findsNothing);
     expect(find.text('Mo'), findsNothing);
     expect(find.text('Tu'), findsNothing);
@@ -488,5 +555,104 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('look-ahead-day-detail')), findsNothing);
+  });
+
+  testWidgets('look-ahead shows month headers and a gap between months', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(1024, 768)),
+            events: sampleEvents(),
+            now: now,
+            members: members,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('look-ahead-month-2026-09')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('look-ahead-month-2026-10')),
+      findsOneWidget,
+    );
+    expect(find.text('SEPTEMBER'), findsOneWidget);
+    expect(find.text('OCTOBER'), findsOneWidget);
+
+    final monthGap = tester.getSize(
+      find.byKey(const ValueKey('look-ahead-month-gap-2026-10')),
+    );
+    expect(monthGap.height, 22);
+
+    final septemberWeek = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-week-1')),
+    );
+    final octoberWeek = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-week-2')),
+    );
+    final sameMonthWeek = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-week-0')),
+    );
+    final inMonthGap = septemberWeek.top - sameMonthWeek.bottom;
+    final acrossMonthGap = octoberWeek.top - septemberWeek.bottom;
+    expect(inMonthGap, 10);
+    expect(acrossMonthGap, greaterThan(inMonthGap));
+    expect(acrossMonthGap, greaterThanOrEqualTo(22));
+  });
+
+  testWidgets('scrolling into a later month keeps the header for orientation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(1024, 768)),
+            events: sampleEvents(),
+            now: now,
+            members: members,
+          ),
+        ),
+      ),
+    );
+
+    final januaryHeader = find.byKey(
+      const ValueKey('look-ahead-month-2027-01'),
+    );
+    expect(januaryHeader, findsNothing);
+
+    await tester.scrollUntilVisible(
+      januaryHeader,
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-week-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(januaryHeader, findsOneWidget);
+    expect(find.text('JANUARY 2027'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('look-ahead-month-gap-2027-01')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-2027-01-01')),
+      findsOneWidget,
+    );
   });
 }
