@@ -659,13 +659,20 @@ class _WeekDayColumn extends StatelessWidget {
                   0.0,
                   constraints.maxHeight,
                 );
-            final chipBudget = eventAreaHeight < 26
+            var chipBudget = eventAreaHeight < 26
                 ? 0
                 : eventAreaHeight < 54
                 ? 1
                 : eventAreaHeight < 82
                 ? 2
                 : 3;
+            // "+N more" needs extra air; if it will not fit, drop to a count
+            // label instead of overflowing a chip out of the day box.
+            if (events.length > chipBudget &&
+                chipBudget > 0 &&
+                eventAreaHeight < 48) {
+              chipBudget = 0;
+            }
             final visible = events.take(chipBudget).toList();
             final overflow = events.length - visible.length;
 
