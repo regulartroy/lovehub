@@ -841,7 +841,9 @@ class _LookAheadDayDetailCard extends StatelessWidget {
 
     return SizedBox(
       width: metrics.isCompact ? double.infinity : 560,
-      height: metrics.isCompact ? 460 : 440,
+      height: events.isEmpty
+          ? (metrics.isCompact ? 220 : 210)
+          : (metrics.isCompact ? 460 : 440),
       child: DashboardGlassCard(
         tint: DashboardTheme.schedule,
         emphasized: true,
