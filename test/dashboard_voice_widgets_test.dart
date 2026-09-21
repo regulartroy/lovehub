@@ -5,6 +5,8 @@ import 'package:lovehub/widgets/dashboard/dashboard_controls_overlay.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_today_answer.dart';
 
+void _noop() {}
+
 void main() {
   final palette = HubMemberPalette.fromMembers(const [
     {'uid': 'tom', 'name': 'Tom'},
@@ -182,6 +184,84 @@ void main() {
     expect(find.text('Free day — nothing on the calendar'), findsOneWidget);
     expect(find.byKey(DashboardTodayAnswerLayer.emptyKey), findsOneWidget);
     expect(find.byKey(DashboardTodayAnswerLayer.eventsKey), findsNothing);
+  });
+
+  testWidgets('a hidden controls pill does not block page swipes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GestureDetector(
+            onTap: () {},
+            child: Stack(
+              children: [
+                PageView(
+                  children: const [
+                    Center(child: Text('Slide one')),
+                    Center(child: Text('Slide two')),
+                  ],
+                ),
+                DashboardControlsOverlay(
+                  visible: false,
+                  isPlaying: true,
+                  isListening: false,
+                  onExit: _noop,
+                  onTogglePlay: _noop,
+                  onMic: _noop,
+                  onOptions: _noop,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(find.text('Slide one'), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Slide two'), findsOneWidget);
+  });
+
+  testWidgets('the today card keeps a horizontal swipe on the page', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              PageView(
+                children: const [
+                  Center(child: Text('Slide one')),
+                  Center(child: Text('Slide two')),
+                ],
+              ),
+              DashboardTodayAnswerLayer(
+                metrics: DashboardMetrics(const Size(1200, 900)),
+                day: day,
+                events: const [],
+                palette: palette,
+                onClose: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(
+      find.byKey(DashboardTodayAnswerLayer.barrierKey),
+      const Offset(-600, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Slide one'), findsOneWidget);
+    expect(find.text('Slide two'), findsNothing);
   });
 
   testWidgets('typed fallback explains when speech is unavailable', (
