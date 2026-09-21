@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:lovehub/models/event_model.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
+import 'package:lovehub/widgets/calendar_month_scroller.dart';
 import 'package:lovehub/widgets/calendar_split_pill.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_chrome.dart';
@@ -31,6 +33,21 @@ class DashboardGalleryPage extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final metrics = DashboardMetrics(size);
     const lookAheadOnly = bool.fromEnvironment('LOOK_AHEAD_ONLY');
+    const calendarBoardOnly = bool.fromEnvironment('CALENDAR_BOARD_ONLY');
+
+    if (lookAheadOnly) {
+      return Scaffold(
+        backgroundColor: DashboardTheme.canvas,
+        body: _lookAheadPreview(metrics),
+      );
+    }
+
+    if (calendarBoardOnly) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF6F3EE),
+        body: SafeArea(child: _calendarBoardPreview()),
+      );
+    }
 
     if (lookAheadOnly) {
       return Scaffold(
@@ -122,6 +139,8 @@ class DashboardGalleryPage extends StatelessWidget {
               height: metrics.isCompact ? 780 : 680,
               child: _lookAheadEmptyPreview(metrics),
             ),
+            const SizedBox(height: 20),
+            _calendarBoardPanel(metrics),
             const SizedBox(height: 20),
             _panel(
               height: 320,
@@ -681,6 +700,70 @@ class DashboardGalleryPage extends StatelessWidget {
       now: _previewNow,
       members: _galleryMembers,
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+    );
+  }
+
+  Widget _calendarBoardPanel(DashboardMetrics metrics) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(DashboardTheme.radiusLg),
+      child: ColoredBox(
+        color: const Color(0xFFF6F3EE),
+        child: SizedBox(
+          height: metrics.isCompact ? 780 : 720,
+          child: _calendarBoardPreview(),
+        ),
+      ),
+    );
+  }
+
+  Widget _calendarBoardPreview() {
+    final palette = HubMemberPalette.fromMembers(_galleryMembers);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Calendar',
+            style: TextStyle(
+              color: Color(0xFF1C1914),
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Same month headers and gaps as LOOK AHEAD, with lazy future scroll.',
+            style: TextStyle(color: Color(0xFF5A564E), fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: CalendarMonthScroller(
+              now: _previewNow,
+              palette: palette,
+              eventsForDay: (day) {
+                return _lookAheadEvents()
+                    .where((event) {
+                      return dashboardEventOverlapsDay(event, day);
+                    })
+                    .map(
+                      (event) => EventModel(
+                        id: event['summary'].toString(),
+                        summary: event['summary'].toString(),
+                        start: event['start'] as DateTime,
+                        end: (event['end'] ?? event['start']) as DateTime,
+                        allDay: event['allDay'] == true,
+                        category: (event['category'] ?? 'general').toString(),
+                        assignedTo: (event['assignedTo'] ?? 'shared')
+                            .toString(),
+                      ),
+                    )
+                    .toList();
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
