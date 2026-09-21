@@ -73,6 +73,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _currentPageIndex = 0;
   bool _isPlaying = true;
   bool _showControls = false;
+  bool _lookAheadDayDetailOpen = false;
   double _slideDuration = 15.0;
   int _secondsSinceLastSlide = 0;
   DateTime? _resumeAutoPlayAt;
@@ -654,6 +655,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         events: _eventsAll,
         now: DateTime.now(),
         members: _hubMembers,
+        onDayTap: _onLookAheadDayTap,
+        onCloseDayDetail: _onLookAheadDayDetailClosed,
       ),
     );
 
@@ -2062,9 +2065,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _onLookAheadDayTap(DateTime _) {
+    _lookAheadDayDetailOpen = true;
+    _showControlsOverlay();
+  }
+
+  void _onLookAheadDayDetailClosed() {
+    _lookAheadDayDetailOpen = false;
+    _showControlsOverlay();
+  }
+
   void _showControlsOverlay() {
     setState(() => _showControls = true);
     _controlsHideTimer?.cancel();
+    // Keep play–pause visible (and auto-advance paused) while a LOOK AHEAD
+    // day card is open so the same tap both inspects a day and shows controls.
+    if (_lookAheadDayDetailOpen) return;
     _controlsHideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showControls = false);
     });
@@ -2184,6 +2200,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _showControls = false;
             _pausedSeconds = 0;
             _resumeAutoPlayAt = null;
+            _lookAheadDayDetailOpen = false;
           });
         }
         return;
