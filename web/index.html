@@ -65,6 +65,100 @@
     <div class="spinner"></div>
     <div class="loading-text">Loading Lovehub...</div>
   </div>
+  <script>
+    // Browser speech bridge for the dashboard mic. No keys; Chrome's
+    // Web Speech API only. Other browsers resolve as unsupported.
+    (function () {
+      var active = null;
+      function ctor() {
+        return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+      }
+      function finish(settled, resolve, payload) {
+        if (settled.done) return;
+        settled.done = true;
+        resolve(payload);
+      }
+      window.lovehubSpeech = {
+        supported: function () {
+          return !!ctor();
+        },
+        cancel: function () {
+          if (!active) return;
+          var rec = active;
+          active = null;
+          try {
+            rec.onresult = null;
+            rec.onerror = null;
+            rec.onend = null;
+            rec.abort();
+          } catch (e) {}
+        },
+        listen: function () {
+          return new Promise(function (resolve) {
+            var Ctor = ctor();
+            var settled = { done: false };
+            if (!Ctor) {
+              finish(settled, resolve, { outcome: 'unavailable', transcript: '', message: '' });
+              return;
+            }
+            if (active) {
+              try { active.abort(); } catch (e) {}
+              active = null;
+            }
+            var rec = new Ctor();
+            active = rec;
+            rec.lang = 'en-GB';
+            rec.interimResults = true;
+            rec.continuous = false;
+            rec.maxAlternatives = 1;
+            var latest = '';
+            rec.onresult = function (event) {
+              var combined = '';
+              var finalText = '';
+              try {
+                for (var i = 0; i < event.results.length; i++) {
+                  var bit = (event.results[i][0] && event.results[i][0].transcript) || '';
+                  combined += bit;
+                  if (event.results[i].isFinal) finalText += bit;
+                }
+              } catch (e) {}
+              latest = (finalText || combined).trim();
+              if (finalText.trim()) {
+                try { rec.stop(); } catch (e2) {}
+                if (active === rec) active = null;
+                finish(settled, resolve, { outcome: 'transcript', transcript: latest, message: '' });
+              }
+            };
+            rec.onerror = function (event) {
+              var code = (event && event.error) ? String(event.error) : 'error';
+              if (active === rec) active = null;
+              if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
+                finish(settled, resolve, { outcome: 'denied', transcript: '', message: code });
+              } else if (code === 'no-speech' || code === 'aborted') {
+                finish(settled, resolve, { outcome: 'empty', transcript: '', message: code });
+              } else {
+                finish(settled, resolve, { outcome: 'error', transcript: '', message: code });
+              }
+            };
+            rec.onend = function () {
+              if (active === rec) active = null;
+              if (latest) {
+                finish(settled, resolve, { outcome: 'transcript', transcript: latest, message: '' });
+              } else {
+                finish(settled, resolve, { outcome: 'empty', transcript: '', message: '' });
+              }
+            };
+            try {
+              rec.start();
+            } catch (e) {
+              if (active === rec) active = null;
+              finish(settled, resolve, { outcome: 'unavailable', transcript: '', message: String(e) });
+            }
+          });
+        }
+      };
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

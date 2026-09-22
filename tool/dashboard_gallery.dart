@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lovehub/models/event_model.dart';
+import 'voice_spike_gallery.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/calendar_month_scroller.dart';
 import 'package:lovehub/widgets/calendar_split_pill.dart';
@@ -34,6 +35,11 @@ class DashboardGalleryPage extends StatelessWidget {
     final metrics = DashboardMetrics(size);
     const lookAheadOnly = bool.fromEnvironment('LOOK_AHEAD_ONLY');
     const calendarBoardOnly = bool.fromEnvironment('CALENDAR_BOARD_ONLY');
+    const voiceSpike = bool.fromEnvironment('VOICE_SPIKE');
+
+    if (voiceSpike) {
+      return const VoiceSpikeGallery();
+    }
 
     if (lookAheadOnly) {
       return Scaffold(

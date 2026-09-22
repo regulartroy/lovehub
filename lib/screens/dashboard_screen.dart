@@ -9,11 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
+import '../services/dashboard_speech.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../theme/calendar_colors.dart';
 import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_chrome.dart';
+import '../widgets/dashboard/dashboard_controls_overlay.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
+import '../widgets/dashboard/dashboard_today_answer.dart';
 import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
 import 'dashboard/city_weather_card.dart';
@@ -22,9 +25,16 @@ import 'dashboard/dashboard_quotes.dart';
 import 'dashboard/dashboard_weather_icons.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key, required this.visibleHubs});
+  const DashboardScreen({
+    super.key,
+    required this.visibleHubs,
+    this.speechRecognizer,
+  });
 
   final List<MapEntry<String, dynamic>> visibleHubs;
+
+  /// Override for tests. Production uses the browser speech recognizer.
+  final DashboardSpeechRecognizer? speechRecognizer;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -74,6 +84,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isPlaying = true;
   bool _showControls = false;
   bool _lookAheadDayDetailOpen = false;
+  DashboardVoiceState _voice = const DashboardVoiceState();
+  late final DashboardSpeechRecognizer _speech;
+  final TextEditingController _voiceQueryController = TextEditingController();
+  int _listenToken = 0;
   double _slideDuration = 15.0;
   int _secondsSinceLastSlide = 0;
   DateTime? _resumeAutoPlayAt;
@@ -98,6 +112,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _speech = widget.speechRecognizer ?? createDashboardSpeechRecognizer();
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 4),
     );
@@ -132,6 +147,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     for (final sub in _subs) {
       sub.cancel();
     }
+    _listenToken++;
+    _speech.cancel();
+    _voiceQueryController.dispose();
     _slideTimer?.cancel();
     _controlsHideTimer?.cancel();
     _quoteTimer?.cancel();
@@ -2079,112 +2097,160 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _showControls = true);
     _controlsHideTimer?.cancel();
     // Keep play–pause visible (and auto-advance paused) while a LOOK AHEAD
-    // day card is open so the same tap both inspects a day and shows controls.
-    if (_lookAheadDayDetailOpen) return;
+    // day card or the voice answer is open, so the same tap both inspects
+    // a day and shows controls.
+    if (_lookAheadDayDetailOpen || _voice.holdsControls) return;
     _controlsHideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showControls = false);
     });
   }
 
+  List<Map<String, dynamic>> _eventsToday() {
+    return dashboardEventsOnDay(_eventsAll, _currentDay);
+  }
+
+  void _dismissVoice() {
+    _listenToken++;
+    _speech.cancel();
+    _voiceQueryController.clear();
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _voice = const DashboardVoiceState());
+    _showControlsOverlay();
+  }
+
+  Future<void> _onMic() async {
+    if (_voice.phase == DashboardVoicePhase.listening) {
+      _dismissVoice();
+      return;
+    }
+
+    if (!_speech.isSupported) {
+      setState(() {
+        _voice = const DashboardVoiceState(
+          phase: DashboardVoicePhase.fallback,
+          notice: DashboardVoiceState.speechUnavailableNotice,
+        );
+      });
+      _showControlsOverlay();
+      return;
+    }
+
+    final token = ++_listenToken;
+    setState(() => _voice = const DashboardVoiceState.listening());
+    _showControlsOverlay();
+
+    DashboardSpeechCapture capture;
+    try {
+      capture = await _speech.listen();
+    } catch (_) {
+      capture = const DashboardSpeechCapture(
+        outcome: DashboardSpeechOutcome.unavailable,
+        message: DashboardVoiceState.speechUnavailableNotice,
+      );
+    }
+    if (!mounted || token != _listenToken) return;
+    if (capture.message == 'cancelled') return;
+
+    final next = _voice.applyCapture(capture, _eventsToday());
+    if (next.phase == DashboardVoicePhase.unrecognized &&
+        next.transcript.isNotEmpty) {
+      _voiceQueryController.text = next.transcript;
+    }
+    setState(() => _voice = next);
+    _showControlsOverlay();
+  }
+
+  void _submitVoiceQuery(String raw) {
+    final next = _voice.submitTyped(raw, _eventsToday());
+    if (next.phase == DashboardVoicePhase.answer) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+    setState(() => _voice = next);
+    _showControlsOverlay();
+  }
+
   Widget _buildControlsOverlay() {
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 280),
-      opacity: _showControls ? 1.0 : 0.0,
-      child: !_showControls
-          ? const SizedBox.shrink()
-          : SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: DashboardTheme.fade(Colors.black, 0.82),
-                    borderRadius: BorderRadius.circular(50),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: 'Exit dashboard',
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white54,
-                          size: 26,
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      IconButton(
-                        tooltip: _isPlaying ? 'Pause' : 'Play',
-                        icon: Icon(
-                          _isPlaying
-                              ? Icons.pause_circle_filled_rounded
-                              : Icons.play_circle_fill_rounded,
-                          color: Colors.white,
-                          size: 48,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _isPlaying = !_isPlaying;
-                            if (_isPlaying) _resumeAutoPlayAt = null;
-                          });
-                          _showControlsOverlay();
-                        },
-                      ),
-                      IconButton(
-                        tooltip: 'Options',
-                        icon: const Icon(
-                          Icons.settings_rounded,
-                          color: Colors.white54,
-                          size: 26,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _showControls = false;
-                            _isPlaying = false;
-                          });
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => DashboardOptionsScreen(
-                                slideDuration: _slideDuration,
-                                onDurationChanged: (v) {
-                                  setState(() => _slideDuration = v);
-                                  final uid =
-                                      FirebaseAuth.instance.currentUser?.uid;
-                                  if (uid != null) {
-                                    FirebaseFirestore.instance
-                                        .collection('users')
-                                        .doc(uid)
-                                        .set({
-                                          'dashboardSlideDuration': v,
-                                        }, SetOptions(merge: true));
-                                  }
-                                },
-                                savedCities: _savedCities,
-                                primaryCity: _primaryCityName,
-                                onSetPrimary: _setPrimaryCity,
-                                onDeleteCity: _deleteCity,
-                                onAddCityTap: _showCitySearchDialog,
-                              ),
-                            ),
-                          ).then((_) {
-                            if (!mounted) return;
-                            setState(() {
-                              _isPlaying = true;
-                              _secondsSinceLastSlide = 0;
-                              _resumeAutoPlayAt = null;
-                            });
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+    return DashboardControlsOverlay(
+      visible: _showControls,
+      isPlaying: _isPlaying,
+      isListening: _voice.phase == DashboardVoicePhase.listening,
+      onExit: () => Navigator.pop(context),
+      onTogglePlay: () {
+        setState(() {
+          _isPlaying = !_isPlaying;
+          if (_isPlaying) _resumeAutoPlayAt = null;
+        });
+        _showControlsOverlay();
+      },
+      onMic: () {
+        unawaited(_onMic());
+      },
+      onOptions: () {
+        _listenToken++;
+        _speech.cancel();
+        _voiceQueryController.clear();
+        setState(() {
+          _voice = const DashboardVoiceState();
+          _showControls = false;
+          _isPlaying = false;
+        });
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DashboardOptionsScreen(
+              slideDuration: _slideDuration,
+              onDurationChanged: (v) {
+                setState(() => _slideDuration = v);
+                final uid = FirebaseAuth.instance.currentUser?.uid;
+                if (uid != null) {
+                  FirebaseFirestore.instance.collection('users').doc(uid).set({
+                    'dashboardSlideDuration': v,
+                  }, SetOptions(merge: true));
+                }
+              },
+              savedCities: _savedCities,
+              primaryCity: _primaryCityName,
+              onSetPrimary: _setPrimaryCity,
+              onDeleteCity: _deleteCity,
+              onAddCityTap: _showCitySearchDialog,
             ),
+          ),
+        ).then((_) {
+          if (!mounted) return;
+          setState(() {
+            _isPlaying = true;
+            _secondsSinceLastSlide = 0;
+            _resumeAutoPlayAt = null;
+          });
+        });
+      },
     );
+  }
+
+  Widget _buildVoiceLayer(DashboardMetrics metrics) {
+    switch (_voice.phase) {
+      case DashboardVoicePhase.idle:
+      case DashboardVoicePhase.listening:
+        return const SizedBox.shrink();
+      case DashboardVoicePhase.answer:
+        return DashboardTodayAnswerLayer(
+          metrics: metrics,
+          day: _currentDay,
+          events: _voice.events,
+          palette: _memberPalette,
+          transcript: _voice.transcript,
+          onClose: _dismissVoice,
+        );
+      case DashboardVoicePhase.fallback:
+      case DashboardVoicePhase.unrecognized:
+        return DashboardVoicePromptLayer(
+          metrics: metrics,
+          notice: _voice.notice,
+          controller: _voiceQueryController,
+          onClose: _dismissVoice,
+          onSubmit: _submitVoiceQuery,
+        );
+    }
   }
 
   void _startTimer() {
@@ -2195,12 +2261,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!_isPlaying || _showControls) {
         _pausedSeconds++;
         if (_pausedSeconds >= 300 && mounted) {
+          _listenToken++;
+          _speech.cancel();
           setState(() {
             _isPlaying = true;
             _showControls = false;
             _pausedSeconds = 0;
             _resumeAutoPlayAt = null;
             _lookAheadDayDetailOpen = false;
+            _voice = const DashboardVoiceState();
           });
         }
         return;
@@ -2320,6 +2389,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             },
           ),
           _buildHeader(metrics),
+          _buildVoiceLayer(metrics),
           _buildControlsOverlay(),
           if (_slides.length > 1)
             Positioned(
