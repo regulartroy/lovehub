@@ -2189,6 +2189,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _showControlsOverlay();
   }
 
+  void _showVoiceWeek() {
+    final day = _voice.answerDay ?? _currentDay;
+    setState(() {
+      _voice = _voice.showWeekContaining(day, eventsOn: _eventsOn);
+    });
+    _showControlsOverlay();
+  }
+
   Widget _buildControlsOverlay() {
     return DashboardControlsOverlay(
       visible: _showControls,
@@ -2253,15 +2261,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case DashboardVoicePhase.listening:
         return const SizedBox.shrink();
       case DashboardVoicePhase.answer:
-        final answerDay = _voice.answerDay ?? _currentDay;
-        return DashboardTodayAnswerLayer(
+        return DashboardVoiceAnswerLayer(
           metrics: metrics,
-          day: answerDay,
-          labelAsToday: DateUtils.isSameDay(answerDay, _currentDay),
-          events: _voice.events,
+          state: _voice,
+          today: _currentDay,
           palette: _memberPalette,
-          transcript: _voice.transcript,
           onClose: _dismissVoice,
+          onShowWeek: _showVoiceWeek,
         );
       case DashboardVoicePhase.fallback:
       case DashboardVoicePhase.unrecognized:

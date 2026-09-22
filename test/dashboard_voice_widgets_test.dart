@@ -409,6 +409,133 @@ void main() {
     expect(find.text('Market morning'), findsOneWidget);
     expect(find.text('Early shift'), findsNothing);
   });
+
+  testWidgets('naming a date’s week opens that Monday–Sunday card', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(today: DateTime(2026, 9, 22), events: _voiceEvents()),
+    );
+
+    await tester.enterText(
+      find.byKey(DashboardVoicePromptLayer.fieldKey),
+      'week of October 23rd',
+    );
+    await tester.pump();
+
+    expect(find.text('Show week'), findsOneWidget);
+    await tester.tap(find.text('Show week'));
+    await tester.pump();
+
+    expect(find.text('Week of 23 October'), findsOneWidget);
+    expect(find.text('Monday 19 – Sunday 25 October'), findsOneWidget);
+    expect(find.text('1 plan · 6 free days'), findsOneWidget);
+    expect(find.text('Half-term train'), findsOneWidget);
+    expect(find.text('08:15'), findsOneWidget);
+    expect(find.text('Early shift'), findsNothing);
+    expect(
+      find.byKey(DashboardWeekAnswerLayer.freeKey(DateTime(2026, 10, 19))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardWeekAnswerLayer.freeKey(DateTime(2026, 10, 25))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardWeekAnswerLayer.dayKey(DateTime(2026, 10, 23))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardWeekAnswerLayer.freeKey(DateTime(2026, 10, 23))),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(DashboardWeekAnswerLayer.closeKey));
+    await tester.pump();
+  });
+
+  testWidgets('show week on a day card opens the week containing that day', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(today: DateTime(2026, 9, 22), events: _voiceEvents()),
+    );
+
+    await tester.enterText(
+      find.byKey(DashboardVoicePromptLayer.fieldKey),
+      'what have I got on 23rd of October',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Show 23 October'));
+    await tester.pump();
+
+    expect(find.text('Friday 23 October'), findsOneWidget);
+    expect(find.byKey(DashboardTodayAnswerLayer.showWeekKey), findsOneWidget);
+
+    await tester.tap(find.byKey(DashboardTodayAnswerLayer.showWeekKey));
+    await tester.pump();
+
+    expect(find.text('Friday 23 October'), findsNothing);
+    expect(find.text('Week of 23 October'), findsOneWidget);
+    expect(find.text('Monday 19 – Sunday 25 October'), findsOneWidget);
+    expect(find.text('Half-term train'), findsOneWidget);
+    expect(find.text('Free'), findsNWidgets(6));
+  });
+
+  testWidgets('a from-to date opens that inclusive range', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(today: DateTime(2026, 9, 22), events: _voiceEvents()),
+    );
+
+    await tester.enterText(
+      find.byKey(DashboardVoicePromptLayer.fieldKey),
+      "what's on from 20 to 25 October",
+    );
+    await tester.pump();
+
+    expect(find.text('Show 20–25 October'), findsOneWidget);
+    await tester.tap(find.text('Show 20–25 October'));
+    await tester.pump();
+
+    expect(find.text('20–25 October'), findsOneWidget);
+    expect(find.text('Tuesday 20 – Sunday 25 October'), findsOneWidget);
+    expect(find.text('1 plan · 5 free days'), findsOneWidget);
+    expect(find.text('Half-term train'), findsOneWidget);
+    expect(find.text('08:15'), findsOneWidget);
+    expect(find.text('Early shift'), findsNothing);
+    expect(find.text('Week of 23 October'), findsNothing);
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.freeKey(DateTime(2026, 10, 20))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.freeKey(DateTime(2026, 10, 25))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.dayKey(DateTime(2026, 10, 23))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.freeKey(DateTime(2026, 10, 23))),
+      findsNothing,
+    );
+  });
 }
 
 List<Map<String, dynamic>> _voiceEvents() {
@@ -506,7 +633,6 @@ class _AskHarnessState extends State<_AskHarness> {
       {'uid': 'tom', 'name': 'Tom'},
       {'uid': 'maria', 'name': 'Maria'},
     ]);
-    final answerDay = _voice.answerDay ?? widget.today;
     final showingAnswer = _voice.phase == DashboardVoicePhase.answer;
     final showingPrompt =
         _voice.phase == DashboardVoicePhase.fallback ||
@@ -520,14 +646,20 @@ class _AskHarnessState extends State<_AskHarness> {
             children: [
               const SizedBox.expand(),
               if (showingAnswer)
-                DashboardTodayAnswerLayer(
+                DashboardVoiceAnswerLayer(
                   metrics: metrics,
-                  day: answerDay,
-                  labelAsToday: DateUtils.isSameDay(answerDay, widget.today),
-                  events: _voice.events,
+                  state: _voice,
+                  today: widget.today,
                   palette: palette,
-                  transcript: _voice.transcript,
                   onClose: () {},
+                  onShowWeek: () {
+                    setState(() {
+                      _voice = _voice.showWeekContaining(
+                        _voice.answerDay ?? widget.today,
+                        eventsOn: _eventsOn,
+                      );
+                    });
+                  },
                 ),
               if (showingPrompt)
                 DashboardVoicePromptLayer(
