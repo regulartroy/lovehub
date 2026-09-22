@@ -1218,9 +1218,7 @@ class _CalendarScreenState extends State<CalendarScreen>
 
     final memberFiltered = eventsOnDay.where((event) {
       if (event.category == 'meal') return false;
-      if (_selectedMemberFilter == null) return true;
-      return event.assignedTo == _selectedMemberFilter ||
-          event.assignedTo == 'shared';
+      return _palette.visibleForFilter(event.assignedTo, _selectedMemberFilter);
     }).toList();
 
     return memberFiltered.where((event) {
@@ -1230,13 +1228,27 @@ class _CalendarScreenState extends State<CalendarScreen>
     }).toList();
   }
 
-  String _getAssignedName(String? uid) {
-    if (uid == 'shared') return 'Shared';
-    final member = _hubMembers.firstWhere(
-      (m) => m['uid'] == uid,
-      orElse: () => {'name': 'Unknown'},
-    );
-    return member['name'];
+  Map<String, dynamic>? _memberForAssignee(String assignedTo) {
+    for (final candidate in _hubMembers) {
+      final candidateUid = candidate['uid']?.toString() ?? '';
+      if (candidateUid.isEmpty) continue;
+      if (candidateUid == assignedTo ||
+          _palette.samePerson(assignedTo, candidateUid)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  String _assigneeFallbackName(String assignedTo) {
+    switch (assignedTo.trim().toLowerCase()) {
+      case 'tom':
+        return 'Tom';
+      case 'maria':
+        return 'Maria';
+      default:
+        return assignedTo;
+    }
   }
 
   List<EventModel> _getProjectedBirthdays() {
@@ -1555,11 +1567,11 @@ class _CalendarScreenState extends State<CalendarScreen>
     final events = _allEvents.where((e) {
       if (e.category == 'meal') return false;
 
-      // If a member is selected, ONLY show their events AND shared events
-      if (_selectedMemberFilter != null) {
-        if (e.assignedTo != _selectedMemberFilter && e.assignedTo != 'shared') {
-          return false;
-        }
+      // If a member is selected, ONLY show their events AND shared events.
+      // Imported rows may say assignedTo "tom" instead of a Firebase uid.
+      if (_selectedMemberFilter != null &&
+          !_palette.visibleForFilter(e.assignedTo, _selectedMemberFilter)) {
+        return false;
       }
 
       // Use e.end to keep multi-day events visible until they finish
@@ -1720,13 +1732,12 @@ class _CalendarScreenState extends State<CalendarScreen>
 
     Widget? avatarWidget;
     if (showAvatar && event.assignedTo != 'shared') {
-      final member = _hubMembers.firstWhere(
-        (m) => m['uid'] == event.assignedTo,
-        orElse: () => {'name': '?', 'photoURL': ''},
-      );
+      final member = _memberForAssignee(event.assignedTo);
       avatarWidget = MemberAvatar(
-        photoURL: member['photoURL']?.toString(),
-        name: member['name']?.toString(),
+        photoURL: member?['photoURL']?.toString(),
+        name:
+            member?['name']?.toString() ??
+            _assigneeFallbackName(event.assignedTo),
         radius: 14,
         backgroundColor: Colors.white.withValues(alpha: 0.22),
         foregroundColor: style.inkOnWho,

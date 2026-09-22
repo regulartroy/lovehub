@@ -12,6 +12,18 @@ class EventModel {
   final String? ownerId;
   final bool isLovehubContext;
 
+  /// Importer that created this doc (`c2-rota`, `seb`, `rot90s`, …).
+  final String? source;
+
+  /// Stable id inside [source]. Together they form the Firestore doc id.
+  final String? externalId;
+
+  /// Free text from the importer. Kept off [summary] so titles stay clean.
+  final String? notes;
+
+  /// `tentative` or `confirmed`. Null is a legacy event and displays as confirmed.
+  final String? status;
+
   EventModel({
     required this.id,
     required this.summary,
@@ -23,24 +35,43 @@ class EventModel {
     this.gcalId,
     this.ownerId,
     this.isLovehubContext = true,
+    this.source,
+    this.externalId,
+    this.notes,
+    this.status,
   });
+
+  bool get isTentative => isTentativeEventStatus(status);
 
   factory EventModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    return EventModel.fromMap(data, id: doc.id);
+  }
+
+  factory EventModel.fromMap(Map<String, dynamic> data, {required String id}) {
+    final start = _readDate(data['start']);
     return EventModel(
-      id: doc.id,
+      id: id,
       summary: data['summary'] ?? 'Untitled Event',
-      start: (data['start'] as Timestamp).toDate(),
-      end: data['end'] != null
-          ? (data['end'] as Timestamp).toDate()
-          : (data['start'] as Timestamp).toDate(),
+      start: start,
+      end: data['end'] != null ? _readDate(data['end']) : start,
       allDay: data['allDay'] ?? false,
       category: data['category'] ?? 'general',
       assignedTo: data['assignedTo'] ?? 'shared',
       gcalId: data['gcalId'],
       ownerId: data['ownerId'],
       isLovehubContext: data['isLovehubContext'] ?? true,
+      source: data['source'],
+      externalId: data['externalId'],
+      notes: data['notes'],
+      status: readStoredEventStatus(data['status']),
     );
+  }
+
+  static DateTime _readDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    throw ArgumentError('Expected a Firestore Timestamp or DateTime');
   }
 
   Map<String, dynamic> toMap() {
@@ -58,7 +89,32 @@ class EventModel {
     // Now it will happily accept potentially null values!
     if (gcalId != null) map['gcalId'] = gcalId;
     if (ownerId != null) map['ownerId'] = ownerId;
+    if (source != null) map['source'] = source;
+    if (externalId != null) map['externalId'] = externalId;
+    if (notes != null) map['notes'] = notes;
+    if (status != null) map['status'] = status;
 
     return map;
   }
 }
+
+const _eventStatusTentative = 'tentative';
+const _eventStatusConfirmed = 'confirmed';
+
+/// Firestore may omit [status] on events created before imports. Those stay
+/// confirmed. Unknown values are treated the same way so a bad write cannot
+/// blank the calendar.
+String? readStoredEventStatus(Object? raw) {
+  if (raw is! String) return null;
+  switch (raw.trim().toLowerCase()) {
+    case _eventStatusTentative:
+      return _eventStatusTentative;
+    case _eventStatusConfirmed:
+      return _eventStatusConfirmed;
+    default:
+      return null;
+  }
+}
+
+bool isTentativeEventStatus(Object? raw) =>
+    readStoredEventStatus(raw) == _eventStatusTentative;

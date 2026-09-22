@@ -1,0 +1,35 @@
+[
+  {
+    "source": "c2-rota",
+    "externalId": "2026-09-20",
+    "summary": "C2 Show — Artist",
+    "start": "2026-09-20T15:00:00+01:00",
+    "end": "2026-09-20T23:30:00+01:00",
+    "allDay": false,
+    "category": "work",
+    "assignedTo": "tom",
+    "status": "tentative",
+    "notes": "optional"
+  },
+  {
+    "source": "seb",
+    "externalId": "2026-10-03-london",
+    "summary": "Sophie Ellis-Bextor — London",
+    "start": "2026-10-03T19:00:00+01:00",
+    "end": "2026-10-03T23:00:00+01:00",
+    "allDay": false,
+    "category": "work",
+    "assignedTo": "tom"
+  },
+  {
+    "source": "rot90s",
+    "externalId": "2026-11-14",
+    "summary": "ROT90s",
+    "start": "2026-11-14T20:00:00+00:00",
+    "end": "2026-11-15T01:00:00+00:00",
+    "allDay": false,
+    "category": "work",
+    "assignedTo": "tom",
+    "notes": "load-in 16:00"
+  }
+]

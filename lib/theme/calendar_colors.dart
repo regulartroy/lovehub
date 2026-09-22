@@ -56,9 +56,16 @@ class CalendarColors {
     }
   }
 
+  /// Lift a booked colour toward warm paper so a tentative shift reads as a
+  /// sketch: still the same hue, quieter than Tom blue or work grey, dark ink.
+  static Color mute(Color color) {
+    return Color.lerp(const Color(0xFFE6E1D6), color, 0.30)!;
+  }
+
   static CalendarEventStyle resolve({
     required String assignedTo,
     String category = 'general',
+    String? status,
     HubMemberPalette? palette,
   }) {
     final whoPalette = palette ?? HubMemberPalette.empty;
@@ -70,7 +77,16 @@ class CalendarColors {
     } else if (category == 'meal') {
       special = meal;
     }
-    return CalendarEventStyle(who: who, kind: kind, special: special);
+    final tentative = isTentativeEventStatus(status);
+    if (!tentative) {
+      return CalendarEventStyle(who: who, kind: kind, special: special);
+    }
+    return CalendarEventStyle(
+      who: mute(who),
+      kind: mute(kind),
+      special: special == null ? null : mute(special),
+      tentative: true,
+    );
   }
 
   static CalendarEventStyle fromEvent(
@@ -80,6 +96,7 @@ class CalendarColors {
     return resolve(
       assignedTo: event.assignedTo,
       category: event.category,
+      status: event.status,
       palette: palette,
     );
   }
@@ -91,6 +108,7 @@ class CalendarColors {
     return resolve(
       assignedTo: (data['assignedTo'] ?? 'shared').toString(),
       category: (data['category'] ?? 'general').toString(),
+      status: data['status']?.toString(),
       palette: palette,
     );
   }
@@ -120,11 +138,15 @@ class CalendarEventStyle {
     required this.who,
     required this.kind,
     this.special,
+    this.tentative = false,
   });
 
   final Color who;
   final Color kind;
   final Color? special;
+
+  /// Provisional work date. Chips mute [who] and [kind] and show a question mark.
+  final bool tentative;
 
   /// Category fill used by chips, dots, and the right half of the pill.
   Color get signal => kind;
@@ -204,7 +226,42 @@ class HubMemberPalette {
     if (assignedTo.isEmpty || assignedTo == 'shared') {
       return CalendarColors.shared;
     }
-    return _whoByUid[assignedTo] ?? CalendarColors.unknownMember;
+    final direct = _whoByUid[assignedTo];
+    if (direct != null) return direct;
+    for (final uid in _whoByUid.keys) {
+      if (samePerson(assignedTo, uid)) {
+        return _whoByUid[uid]!;
+      }
+    }
+    // Imported rota rows use the tokens Roger was given, even before the
+    // hub member list has loaded.
+    final token = assignedTo.trim().toLowerCase();
+    if (token == 'tom') return CalendarColors.tom;
+    if (token == 'maria') return CalendarColors.maria;
+    return CalendarColors.unknownMember;
+  }
+
+  /// True when [assignedTo] is this member's uid or a name token such as `tom`.
+  bool samePerson(String assignedTo, String uid) {
+    if (assignedTo == uid) return true;
+    final token = assignedTo.trim().toLowerCase();
+    if (token.isEmpty || token == 'shared') return false;
+    final name = (_namesByUid[uid] ?? '').toLowerCase();
+    if (name.isEmpty) return false;
+    final first = name.split(RegExp(r'\s+')).first;
+    if (name == token || first == token) return true;
+    if ((token == 'tom' || token == 'maria') && name.contains(token)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Member chip filter: shared stays visible; `tom` matches Tom's uid.
+  bool visibleForFilter(String assignedTo, String? selectedUid) {
+    if (selectedUid == null || selectedUid.isEmpty) return true;
+    if (assignedTo == 'shared') return true;
+    if (assignedTo == selectedUid) return true;
+    return samePerson(assignedTo, selectedUid);
   }
 
   String labelFor(String uid) => _namesByUid[uid] ?? uid;

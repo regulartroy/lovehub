@@ -157,4 +157,65 @@ void main() {
     expect(who.color, CalendarColors.tom);
     expect(kind.color, CalendarColors.work);
   });
+
+  testWidgets('tentative chip is muted and shows a question mark', (
+    tester,
+  ) async {
+    final palette = HubMemberPalette.fromMembers([
+      {'uid': 'uid-tom', 'displayName': 'Tom Workman'},
+    ]);
+    final confirmed = CalendarColors.resolve(
+      assignedTo: 'tom',
+      category: 'work',
+      palette: palette,
+    );
+    final tentative = CalendarColors.resolve(
+      assignedTo: 'tom',
+      category: 'work',
+      status: 'tentative',
+      palette: palette,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              CalendarSplitPill(
+                key: const Key('confirmed'),
+                style: confirmed,
+                title: 'C2 Show — Artist',
+                subtitle: '15:00',
+              ),
+              CalendarSplitPill(
+                key: const Key('tentative'),
+                style: tentative,
+                title: 'C2 Show — Artist',
+                subtitle: '15:00',
+                density: CalendarSplitPillDensity.compact,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(CalendarSplitPill.tentativeMarkKey), findsOneWidget);
+    expect(find.text('?'), findsOneWidget);
+    final confirmedKind = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byKey(const Key('confirmed')),
+        matching: find.byKey(CalendarSplitPill.kindKey),
+      ),
+    );
+    final tentativeKind = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byKey(const Key('tentative')),
+        matching: find.byKey(CalendarSplitPill.kindKey),
+      ),
+    );
+    expect(confirmedKind.color, CalendarColors.work);
+    expect(tentativeKind.color, tentative.kind);
+    expect(tentativeKind.color, isNot(CalendarColors.work));
+  });
 }
