@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/dashboard_today_intent.dart';
+import '../../services/dashboard_voice.dart';
 import '../../theme/calendar_colors.dart';
 import '../calendar_split_pill.dart';
 import 'dashboard_calendar_overview.dart';
@@ -23,6 +24,7 @@ class DashboardTodayAnswerLayer extends StatelessWidget {
     required this.events,
     required this.palette,
     required this.onClose,
+    this.onShowWeek,
     this.transcript = '',
     this.labelAsToday = true,
   });
@@ -32,6 +34,9 @@ class DashboardTodayAnswerLayer extends StatelessWidget {
   final List<Map<String, dynamic>> events;
   final HubMemberPalette palette;
   final VoidCallback onClose;
+
+  /// Opens the Monday–Sunday week that contains [day].
+  final VoidCallback? onShowWeek;
   final String transcript;
 
   /// Prefixes the heading with "Today" for the household's current day.
@@ -42,6 +47,7 @@ class DashboardTodayAnswerLayer extends StatelessWidget {
   static const closeKey = ValueKey('dashboard-today-answer-close');
   static const emptyKey = ValueKey('dashboard-today-answer-empty');
   static const eventsKey = ValueKey('dashboard-today-answer-events');
+  static const showWeekKey = ValueKey('dashboard-today-answer-show-week');
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +62,56 @@ class DashboardTodayAnswerLayer extends StatelessWidget {
         transcript: transcript,
         labelAsToday: labelAsToday,
         onClose: onClose,
+        onShowWeek: onShowWeek,
       ),
+    );
+  }
+}
+
+/// Day or week card for a schedule answer already held in [state].
+class DashboardVoiceAnswerLayer extends StatelessWidget {
+  const DashboardVoiceAnswerLayer({
+    super.key,
+    required this.metrics,
+    required this.state,
+    required this.today,
+    required this.palette,
+    required this.onClose,
+    this.onShowWeek,
+  });
+
+  final DashboardMetrics metrics;
+  final DashboardVoiceState state;
+  final DateTime today;
+  final HubMemberPalette palette;
+  final VoidCallback onClose;
+  final VoidCallback? onShowWeek;
+
+  @override
+  Widget build(BuildContext context) {
+    final weekStart = state.answerWeekStart;
+    if (weekStart != null) {
+      return DashboardWeekAnswerLayer(
+        metrics: metrics,
+        anchorDay: state.answerDay ?? weekStart,
+        weekStart: weekStart,
+        weekEvents: state.weekEvents,
+        palette: palette,
+        today: today,
+        transcript: state.transcript,
+        onClose: onClose,
+      );
+    }
+    final answerDay = state.answerDay ?? today;
+    return DashboardTodayAnswerLayer(
+      metrics: metrics,
+      day: answerDay,
+      labelAsToday: DateUtils.isSameDay(answerDay, today),
+      events: state.events,
+      palette: palette,
+      transcript: state.transcript,
+      onClose: onClose,
+      onShowWeek: onShowWeek,
     );
   }
 }
@@ -156,6 +211,7 @@ class _TodayAnswerCard extends StatelessWidget {
     required this.transcript,
     required this.labelAsToday,
     required this.onClose,
+    this.onShowWeek,
   });
 
   final DashboardMetrics metrics;
@@ -165,6 +221,7 @@ class _TodayAnswerCard extends StatelessWidget {
   final String transcript;
   final bool labelAsToday;
   final VoidCallback onClose;
+  final VoidCallback? onShowWeek;
 
   @override
   Widget build(BuildContext context) {
@@ -175,9 +232,10 @@ class _TodayAnswerCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = math.min(560.0, constraints.maxWidth);
+        final showWeekExtra = onShowWeek == null ? 0.0 : 48.0;
         final desired = events.isEmpty
-            ? (metrics.isCompact ? 250.0 : 240.0)
-            : (metrics.isCompact ? 480.0 : 460.0);
+            ? (metrics.isCompact ? 250.0 : 240.0) + showWeekExtra
+            : (metrics.isCompact ? 480.0 : 460.0) + showWeekExtra;
         final height = math.min(desired, constraints.maxHeight);
 
         return SizedBox(
@@ -244,6 +302,29 @@ class _TodayAnswerCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (onShowWeek != null) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: DashboardTodayAnswerLayer.showWeekKey,
+                      style: TextButton.styleFrom(
+                        foregroundColor: DashboardTheme.schedule,
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: onShowWeek,
+                      icon: const Icon(
+                        Icons.calendar_view_week_rounded,
+                        size: 20,
+                      ),
+                      label: const Text('Show week'),
+                    ),
+                  ),
+                ],
                 SizedBox(height: metrics.isCompact ? 12 : 16),
                 Expanded(child: _body()),
               ],
@@ -283,23 +364,23 @@ class _TodayAnswerCard extends StatelessWidget {
           density: metrics.isCompact
               ? CalendarSplitPillDensity.regular
               : CalendarSplitPillDensity.comfortable,
-          trailing: Icon(_eventIcon(event), size: 16),
+          trailing: Icon(dashboardVoiceEventIcon(event), size: 16),
         );
       },
     );
   }
+}
 
-  IconData _eventIcon(Map<String, dynamic> event) {
-    switch (event['category']) {
-      case 'birthday':
-        return Icons.cake_rounded;
-      case 'meal':
-        return Icons.restaurant;
-      case 'work':
-        return Icons.work_outline;
-      default:
-        return Icons.circle;
-    }
+IconData dashboardVoiceEventIcon(Map<String, dynamic> event) {
+  switch (event['category']) {
+    case 'birthday':
+      return Icons.cake_rounded;
+    case 'meal':
+      return Icons.restaurant;
+    case 'work':
+      return Icons.work_outline;
+    default:
+      return Icons.circle;
   }
 }
 
@@ -379,7 +460,7 @@ class _VoicePromptCard extends StatelessWidget {
                   style: const TextStyle(color: Colors.white, fontSize: 18),
                   cursorColor: DashboardTheme.accent,
                   decoration: InputDecoration(
-                    hintText: "what's on today, or 23 October",
+                    hintText: "what's on today, 23 October, or the week of",
                     hintStyle: const TextStyle(color: DashboardTheme.inkFaint),
                     filled: true,
                     fillColor: DashboardTheme.fade(Colors.white, 0.06),
@@ -442,11 +523,13 @@ class _VoicePromptCard extends StatelessWidget {
 
 /// Button label for the typed prompt.
 ///
-/// A recognised other day is named on the button. Anything else stays
-/// "Show today", including an empty field and a phrase the hub cannot
-/// answer — that tap must still open today's events.
+/// A recognised week says "Show week". A recognised other day is named on
+/// the button. Anything else stays "Show today", including an empty field
+/// and a phrase the hub cannot answer — that tap must still open today's
+/// events.
 String dashboardVoicePromptActionLabel(String raw, {required DateTime today}) {
   final question = dashboardVoiceQuestion(raw, today: today);
+  if (question.isWeek) return 'Show week';
   final day = question.day;
   if (question.matched && day != null) {
     return 'Show ${DateFormat('d MMMM').format(day)}';
@@ -467,4 +550,354 @@ void _activateVoicePrompt({
     return;
   }
   onSubmit(text);
+}
+
+/// Dismissible glass card for "the week of …": seven Mon–Sun rows.
+class DashboardWeekAnswerLayer extends StatelessWidget {
+  const DashboardWeekAnswerLayer({
+    super.key,
+    required this.metrics,
+    required this.anchorDay,
+    required this.weekStart,
+    required this.weekEvents,
+    required this.palette,
+    required this.today,
+    required this.onClose,
+    this.transcript = '',
+  });
+
+  final DashboardMetrics metrics;
+  final DateTime anchorDay;
+  final DateTime weekStart;
+  final List<List<Map<String, dynamic>>> weekEvents;
+  final HubMemberPalette palette;
+  final DateTime today;
+  final VoidCallback onClose;
+  final String transcript;
+
+  static const barrierKey = ValueKey('dashboard-week-answer-barrier');
+  static const cardKey = ValueKey('dashboard-week-answer');
+  static const closeKey = ValueKey('dashboard-week-answer-close');
+  static const daysKey = ValueKey('dashboard-week-answer-days');
+
+  static Key dayKey(DateTime day) =>
+      ValueKey('dashboard-week-day-${_ymd(day)}');
+
+  static Key freeKey(DateTime day) =>
+      ValueKey('dashboard-week-free-${_ymd(day)}');
+
+  static String _ymd(DateTime day) =>
+      '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    return _VoiceScrim(
+      barrierKey: barrierKey,
+      onDismiss: onClose,
+      child: _WeekAnswerCard(
+        metrics: metrics,
+        anchorDay: anchorDay,
+        weekStart: weekStart,
+        weekEvents: weekEvents,
+        palette: palette,
+        today: today,
+        transcript: transcript,
+        onClose: onClose,
+      ),
+    );
+  }
+}
+
+/// "Week of 23 October" plus the Monday–Sunday bounds.
+String dashboardWeekOfLabel(DateTime anchor) {
+  return 'Week of ${DateFormat('d MMMM').format(anchor)}';
+}
+
+String dashboardWeekBoundsLabel(DateTime monday) {
+  final sunday = DateTime(monday.year, monday.month, monday.day + 6);
+  if (monday.year == sunday.year && monday.month == sunday.month) {
+    return '${DateFormat('EEEE d').format(monday)} – ${DateFormat('EEEE d MMMM').format(sunday)}';
+  }
+  if (monday.year == sunday.year) {
+    return '${DateFormat('EEEE d MMMM').format(monday)} – ${DateFormat('EEEE d MMMM').format(sunday)}';
+  }
+  return '${DateFormat('EEEE d MMMM y').format(monday)} – ${DateFormat('EEEE d MMMM y').format(sunday)}';
+}
+
+class _WeekAnswerCard extends StatelessWidget {
+  const _WeekAnswerCard({
+    required this.metrics,
+    required this.anchorDay,
+    required this.weekStart,
+    required this.weekEvents,
+    required this.palette,
+    required this.today,
+    required this.transcript,
+    required this.onClose,
+  });
+
+  final DashboardMetrics metrics;
+  final DateTime anchorDay;
+  final DateTime weekStart;
+  final List<List<Map<String, dynamic>>> weekEvents;
+  final HubMemberPalette palette;
+  final DateTime today;
+  final String transcript;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final week = DashboardHouseholdWeek(weekStart);
+    final heard = transcript.trim();
+    final planCount = weekEvents.fold<int>(0, (sum, day) => sum + day.length);
+    var freeCount = 0;
+    for (var i = 0; i < week.days.length; i++) {
+      if (i >= weekEvents.length || weekEvents[i].isEmpty) freeCount++;
+    }
+    final plansLabel = planCount == 1 ? '1 plan' : '$planCount plans';
+    final freeLabel = freeCount == 1 ? '1 free day' : '$freeCount free days';
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = math.min(680.0, constraints.maxWidth);
+        final height = math.min(
+          metrics.isCompact ? 640.0 : 700.0,
+          constraints.maxHeight,
+        );
+
+        return SizedBox(
+          width: width,
+          height: height,
+          child: DashboardGlassCard(
+            tint: DashboardTheme.schedule,
+            emphasized: true,
+            padding: EdgeInsets.all(metrics.isCompact ? 14 : 20),
+            child: Column(
+              key: DashboardWeekAnswerLayer.cardKey,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        dashboardWeekOfLabel(anchorDay),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: metrics.isCompact ? 18 : 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: DashboardWeekAnswerLayer.closeKey,
+                      tooltip: 'Close',
+                      onPressed: onClose,
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  dashboardWeekBoundsLabel(week.monday),
+                  style: TextStyle(
+                    color: DashboardTheme.ink,
+                    fontSize: metrics.isCompact ? 14 : 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$plansLabel · $freeLabel',
+                  style: const TextStyle(
+                    color: DashboardTheme.inkMuted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                if (heard.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Heard: $heard',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: DashboardTheme.inkFaint,
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+                SizedBox(height: metrics.isCompact ? 10 : 14),
+                Expanded(
+                  child: ListView.separated(
+                    key: DashboardWeekAnswerLayer.daysKey,
+                    itemCount: week.days.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final day = week.days[index];
+                      final events = index < weekEvents.length
+                          ? weekEvents[index]
+                          : const <Map<String, dynamic>>[];
+                      return _WeekDayRow(
+                        metrics: metrics,
+                        day: day,
+                        events: events,
+                        palette: palette,
+                        isToday: DateUtils.isSameDay(day, today),
+                        isAsked: DateUtils.isSameDay(day, anchorDay),
+                        spansMonths:
+                            week.monday.month != week.sunday.month ||
+                            week.monday.year != week.sunday.year,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _WeekDayRow extends StatelessWidget {
+  const _WeekDayRow({
+    required this.metrics,
+    required this.day,
+    required this.events,
+    required this.palette,
+    required this.isToday,
+    required this.isAsked,
+    required this.spansMonths,
+  });
+
+  final DashboardMetrics metrics;
+  final DateTime day;
+  final List<Map<String, dynamic>> events;
+  final HubMemberPalette palette;
+  final bool isToday;
+  final bool isAsked;
+  final bool spansMonths;
+
+  @override
+  Widget build(BuildContext context) {
+    final wash = isToday ? Colors.greenAccent : DashboardTheme.schedule;
+    final label = isToday
+        ? 'TODAY'
+        : DateFormat('EEE').format(day).toUpperCase();
+    final dateLabel = spansMonths
+        ? DateFormat('d MMM').format(day)
+        : '${day.day}';
+    final labelColor = isToday
+        ? Colors.greenAccent
+        : isAsked
+        ? DashboardTheme.schedule
+        : const Color(0xFF8FB0C8);
+
+    return DecoratedBox(
+      key: DashboardWeekAnswerLayer.dayKey(day),
+      decoration: BoxDecoration(
+        color: DashboardTheme.fade(
+          wash,
+          isAsked
+              ? 0.16
+              : isToday
+              ? 0.08
+              : 0.04,
+        ),
+        borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
+        border: Border.all(
+          color: DashboardTheme.fade(
+            wash,
+            isAsked
+                ? 0.70
+                : isToday
+                ? 0.40
+                : 0.14,
+          ),
+          width: isAsked ? 1.6 : 1,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          metrics.isCompact ? 8 : 12,
+          8,
+          metrics.isCompact ? 8 : 12,
+          8,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: spansMonths ? 72 : 56,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: labelColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                  Text(
+                    dateLabel,
+                    style: TextStyle(
+                      color: isToday ? Colors.greenAccent : DashboardTheme.ink,
+                      fontSize: metrics.isCompact ? 18 : 20,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(child: _events()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _events() {
+    if (events.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text(
+          'Free',
+          key: DashboardWeekAnswerLayer.freeKey(day),
+          style: const TextStyle(
+            color: DashboardTheme.inkFaint,
+            fontSize: 16,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (var i = 0; i < events.length; i++)
+          CalendarSplitPill(
+            style: CalendarColors.fromMap(events[i], palette: palette),
+            title: dashboardGlanceTitle(events[i]),
+            subtitle: dashboardGlanceTimeLabel(events[i]),
+            density: CalendarSplitPillDensity.regular,
+            margin: EdgeInsets.only(bottom: i == events.length - 1 ? 0 : 6),
+            trailing: Icon(dashboardVoiceEventIcon(events[i]), size: 16),
+          ),
+      ],
+    );
+  }
 }

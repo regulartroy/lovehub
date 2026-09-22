@@ -304,6 +304,14 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
     _showControlsOverlay();
   }
 
+  void _showVoiceWeek() {
+    final day = _voice.answerDay ?? DateUtils.dateOnly(DateTime.now());
+    setState(() {
+      _voice = _voice.showWeekContaining(day, eventsOn: _eventsOn);
+    });
+    _showControlsOverlay();
+  }
+
   bool get _controlsVisible =>
       _showControls || _voice.holdsControls || _scene != _VoiceScene.live;
 
@@ -387,14 +395,13 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
               ),
             ),
             if (_voice.phase == DashboardVoicePhase.answer)
-              DashboardTodayAnswerLayer(
+              DashboardVoiceAnswerLayer(
                 metrics: metrics,
-                day: _voice.answerDay ?? DateUtils.dateOnly(now),
-                labelAsToday: DateUtils.isSameDay(_voice.answerDay ?? now, now),
-                events: _voice.events,
+                state: _voice,
+                today: now,
                 palette: palette,
-                transcript: _voice.transcript,
                 onClose: _dismissVoice,
+                onShowWeek: _showVoiceWeek,
               ),
             if (_voice.phase == DashboardVoicePhase.fallback ||
                 _voice.phase == DashboardVoicePhase.unrecognized)

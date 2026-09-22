@@ -1,9 +1,12 @@
 /// Narrow, read-only questions for the dashboard voice spike.
 ///
 /// [dashboardVoiceAsksForToday] matches "what's on today" and close
-/// synonyms. [dashboardVoiceQuestion] also matches a single calendar day.
+/// synonyms. [dashboardVoiceQuestion] also matches a single calendar day,
+/// or the Monday–Sunday household week that contains a named date
+/// ("the week of 23 October", "week of the 23rd", "week containing
+/// October 23rd", and the same schedule wording as a day question).
 /// Create, delete, and remind phrases stay unmatched. Weekdays, tomorrow,
-/// and ranges stay unmatched too.
+/// "this week", weekends, and ranges stay unmatched too.
 ///
 /// Date rule, compared with the household's current day:
 /// - A month and day with no year means the next occurrence on or after
@@ -124,20 +127,73 @@ const Set<String> _todayPhrases = {
   'what is today looking like',
 };
 
+/// Monday–Sunday household week, the same weekday rule as LOOK AHEAD.
+///
+/// Days are calendar dates, so a week that crosses a clock change still
+/// runs Monday through Sunday.
+class DashboardHouseholdWeek {
+  DashboardHouseholdWeek(DateTime day) : monday = dashboardHouseholdMonday(day);
+
+  final DateTime monday;
+
+  DateTime get sunday => DateTime(monday.year, monday.month, monday.day + 6);
+
+  List<DateTime> get days => List<DateTime>.generate(
+    7,
+    (index) => DateTime(monday.year, monday.month, monday.day + index),
+    growable: false,
+  );
+
+  bool contains(DateTime day) {
+    final date = DateTime(day.year, day.month, day.day);
+    return !date.isBefore(monday) && !date.isAfter(sunday);
+  }
+}
+
+DateTime dashboardHouseholdMonday(DateTime day) {
+  final date = DateTime(day.year, day.month, day.day);
+  return DateTime(
+    date.year,
+    date.month,
+    date.day - (date.weekday - DateTime.monday),
+  );
+}
+
 /// A read-only schedule question, if [raw] is one.
 class DashboardVoiceQuestion {
-  const DashboardVoiceQuestion.none() : day = null, isToday = false;
+  const DashboardVoiceQuestion.none()
+    : day = null,
+      isToday = false,
+      isWeek = false;
 
-  const DashboardVoiceQuestion.today() : day = null, isToday = true;
+  const DashboardVoiceQuestion.today()
+    : day = null,
+      isToday = true,
+      isWeek = false;
 
   DashboardVoiceQuestion.day(DateTime day)
     : day = DateTime(day.year, day.month, day.day),
-      isToday = false;
+      isToday = false,
+      isWeek = false;
 
+  DashboardVoiceQuestion.week(DateTime day)
+    : day = DateTime(day.year, day.month, day.day),
+      isToday = false,
+      isWeek = true;
+
+  /// For a day, that calendar day. For a week, the named date inside it.
   final DateTime? day;
   final bool isToday;
 
+  /// True when [day] names the date whose household week was asked for.
+  final bool isWeek;
+
   bool get matched => isToday || day != null;
+
+  DashboardHouseholdWeek? get householdWeek {
+    if (!isWeek || day == null) return null;
+    return DashboardHouseholdWeek(day!);
+  }
 }
 
 DashboardVoiceQuestion dashboardVoiceQuestion(
@@ -165,10 +221,47 @@ DashboardVoiceQuestion dashboardVoiceQuestion(
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim(),
   );
+  if (_isWeekOfDateAsk(remainder)) {
+    return DashboardVoiceQuestion.week(hit.day);
+  }
   if (!_dateAsks.contains(remainder)) {
     return const DashboardVoiceQuestion.none();
   }
   return DashboardVoiceQuestion.day(hit.day);
+}
+
+/// "the week of" / "week containing" wrapped around an otherwise normal
+/// schedule question. "this week" has no date, so it never reaches here.
+final RegExp _weekOfMarker = RegExp(
+  r'\b(?:the\s+|this\s+)?week\s+(?:of|containing)\b',
+);
+
+bool _isWeekOfDateAsk(String remainder) {
+  if (_weekOfMarker.allMatches(remainder).length != 1) return false;
+  final stripped = remainder
+      .replaceFirst(_weekOfMarker, ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (_dateAsks.contains(stripped)) return true;
+  final loosened = _stripWeekConnectors(stripped);
+  return loosened != stripped && _dateAsks.contains(loosened);
+}
+
+/// Words that can sit beside "the week of" without changing the question.
+/// Trailing "on" and "for" stay put so "what's on" / "planned for" survive.
+String _stripWeekConnectors(String text) {
+  final leading = RegExp(r'^(?:during|around|about|over|in|for|on)(?:\s+|$)');
+  final trailing = RegExp(r'\s+(?:during|around|about|over)$');
+  var current = text;
+  for (var i = 0; i < 3; i++) {
+    final next = current
+        .replaceFirst(leading, '')
+        .replaceFirst(trailing, '')
+        .trim();
+    if (next == current) break;
+    current = next;
+  }
+  return current;
 }
 
 String _prepareDateText(String raw) {

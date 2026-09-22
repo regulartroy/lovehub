@@ -51,7 +51,9 @@ class DashboardVoiceState {
     this.transcript = '',
     this.notice = '',
     this.events = const [],
+    this.weekEvents = const [],
     this.answerDay,
+    this.answerWeekStart,
   });
 
   final DashboardVoicePhase phase;
@@ -59,17 +61,26 @@ class DashboardVoiceState {
   final String notice;
   final List<Map<String, dynamic>> events;
 
-  /// Calendar day for an answer. Null unless [phase] is answer.
+  /// Seven Monday–Sunday event lists when this answer is a week.
+  final List<List<Map<String, dynamic>>> weekEvents;
+
+  /// Calendar day for an answer. For a week, the named date inside it.
+  /// Null unless [phase] is answer.
   final DateTime? answerDay;
+
+  /// Monday of a week answer. Null for a single day.
+  final DateTime? answerWeekStart;
+
+  bool get isWeekAnswer => answerWeekStart != null;
 
   static const speechUnavailableNotice =
       'Speech not available — try Chrome. You can type a day below.';
   static const micBlockedNotice =
       'Microphone blocked. Type a day below, or allow the mic in Chrome.';
   static const emptyNotice =
-      'Didn’t catch that. Try “what’s on today” or “what’s on 23 October”.';
+      'Didn’t catch that. Try “what’s on today”, “23 October”, or “the week of 23 October”.';
   static const unrecognizedNotice =
-      'I can answer “what’s on today”, or a date like “23 October”.';
+      'I can answer “what’s on today”, a date like “23 October”, or “the week of 23 October”.';
 
   bool get holdsControls => phase != DashboardVoicePhase.idle;
 
@@ -78,7 +89,9 @@ class DashboardVoiceState {
       transcript = '',
       notice = '',
       events = const [],
-      answerDay = null;
+      weekEvents = const [],
+      answerDay = null,
+      answerWeekStart = null;
 
   DashboardVoiceState applyCapture(
     DashboardSpeechCapture capture,
@@ -169,6 +182,20 @@ class DashboardVoiceState {
         notice: unrecognizedNotice,
       );
     }
+    if (question.isWeek) {
+      final anchor = question.day!;
+      final week = question.householdWeek!;
+      return DashboardVoiceState(
+        phase: DashboardVoicePhase.answer,
+        transcript: text.trim(),
+        weekEvents: [
+          for (final date in week.days)
+            eventsOn != null ? eventsOn(date) : const <Map<String, dynamic>>[],
+        ],
+        answerDay: anchor,
+        answerWeekStart: week.monday,
+      );
+    }
     final day = question.isToday
         ? DateTime(today.year, today.month, today.day)
         : question.day!;
@@ -180,6 +207,22 @@ class DashboardVoiceState {
       transcript: text.trim(),
       events: events,
       answerDay: day,
+    );
+  }
+
+  /// Opens the Monday–Sunday week that contains [day], keeping [transcript].
+  DashboardVoiceState showWeekContaining(
+    DateTime day, {
+    required List<Map<String, dynamic>> Function(DateTime day) eventsOn,
+  }) {
+    final anchor = DateTime(day.year, day.month, day.day);
+    final week = DashboardHouseholdWeek(anchor);
+    return DashboardVoiceState(
+      phase: DashboardVoicePhase.answer,
+      transcript: transcript,
+      weekEvents: [for (final date in week.days) eventsOn(date)],
+      answerDay: anchor,
+      answerWeekStart: week.monday,
     );
   }
 
