@@ -733,12 +733,13 @@ class _WeekAnswerCard extends StatelessWidget {
                     ),
                   ),
                 ],
-                SizedBox(height: metrics.isCompact ? 10 : 14),
+                SizedBox(height: metrics.isCompact ? 8 : 10),
                 Expanded(
                   child: ListView.separated(
                     key: DashboardWeekAnswerLayer.daysKey,
+                    padding: const EdgeInsets.only(bottom: 4),
                     itemCount: week.days.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 4),
                     itemBuilder: (context, index) {
                       final day = week.days[index];
                       final events = index < weekEvents.length
@@ -828,9 +829,9 @@ class _WeekDayRow extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           metrics.isCompact ? 8 : 12,
-          8,
+          5,
           metrics.isCompact ? 8 : 12,
-          8,
+          5,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -872,12 +873,12 @@ class _WeekDayRow extends StatelessWidget {
 
   Widget _events() {
     if (events.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 6),
+      return Align(
+        alignment: Alignment.centerLeft,
         child: Text(
           'Free',
           key: DashboardWeekAnswerLayer.freeKey(day),
-          style: const TextStyle(
+          style: TextStyle(
             color: DashboardTheme.inkFaint,
             fontSize: 16,
             fontStyle: FontStyle.italic,
