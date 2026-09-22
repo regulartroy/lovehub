@@ -51,6 +51,7 @@ class DashboardVoiceState {
     this.transcript = '',
     this.notice = '',
     this.events = const [],
+    this.answerDay,
   });
 
   final DashboardVoicePhase phase;
@@ -58,12 +59,17 @@ class DashboardVoiceState {
   final String notice;
   final List<Map<String, dynamic>> events;
 
-  static const speechUnavailableNotice = 'Speech not available — try Chrome';
+  /// Calendar day for an answer. Null unless [phase] is answer.
+  final DateTime? answerDay;
+
+  static const speechUnavailableNotice =
+      'Speech not available — try Chrome. You can type a day below.';
   static const micBlockedNotice =
-      'Microphone blocked. Type a question, or allow the mic in Chrome.';
+      'Microphone blocked. Type a day below, or allow the mic in Chrome.';
   static const emptyNotice =
-      'Didn’t catch that. Try “what’s on today”, or type it below.';
-  static const unrecognizedNotice = 'I can answer “what’s on today”.';
+      'Didn’t catch that. Try “what’s on today” or “what’s on 23 October”.';
+  static const unrecognizedNotice =
+      'I can answer “what’s on today”, or a date like “23 October”.';
 
   bool get holdsControls => phase != DashboardVoicePhase.idle;
 
@@ -71,12 +77,15 @@ class DashboardVoiceState {
     : phase = DashboardVoicePhase.listening,
       transcript = '',
       notice = '',
-      events = const [];
+      events = const [],
+      answerDay = null;
 
   DashboardVoiceState applyCapture(
     DashboardSpeechCapture capture,
-    List<Map<String, dynamic>> todayEvents,
-  ) {
+    List<Map<String, dynamic>> todayEvents, {
+    DateTime? today,
+    List<Map<String, dynamic>> Function(DateTime day)? eventsOn,
+  }) {
     switch (capture.outcome) {
       case DashboardSpeechOutcome.transcript:
         final heard = capture.transcript.trim();
@@ -86,7 +95,12 @@ class DashboardVoiceState {
             notice: emptyNotice,
           );
         }
-        return fromTranscript(heard, todayEvents);
+        return answerQuestion(
+          heard,
+          today: today ?? DateTime.now(),
+          todayEvents: todayEvents,
+          eventsOn: eventsOn,
+        );
       case DashboardSpeechOutcome.unavailable:
       case DashboardSpeechOutcome.error:
         return const DashboardVoiceState(
@@ -108,33 +122,78 @@ class DashboardVoiceState {
 
   DashboardVoiceState submitTyped(
     String raw,
-    List<Map<String, dynamic>> todayEvents,
-  ) {
+    List<Map<String, dynamic>> todayEvents, {
+    DateTime? today,
+    List<Map<String, dynamic>> Function(DateTime day)? eventsOn,
+  }) {
     final text = raw.trim();
+    final day = today ?? DateTime.now();
     if (text.isEmpty) {
+      return showToday(todayEvents, day: day);
+    }
+    return answerQuestion(
+      text,
+      today: day,
+      todayEvents: todayEvents,
+      eventsOn: eventsOn,
+    );
+  }
+
+  /// Opens today's events directly.
+  ///
+  /// The prompt's Show today button uses this when the field is empty or
+  /// not a schedule question. Re-submitting that text used to stay on the
+  /// same unrecognized card, so the tap looked like it did nothing.
+  DashboardVoiceState showToday(
+    List<Map<String, dynamic>> todayEvents, {
+    required DateTime day,
+  }) {
+    return DashboardVoiceState(
+      phase: DashboardVoicePhase.answer,
+      events: todayEvents,
+      answerDay: DateTime(day.year, day.month, day.day),
+    );
+  }
+
+  DashboardVoiceState answerQuestion(
+    String text, {
+    required DateTime today,
+    List<Map<String, dynamic>> todayEvents = const [],
+    List<Map<String, dynamic>> Function(DateTime day)? eventsOn,
+  }) {
+    final question = dashboardVoiceQuestion(text, today: today);
+    if (!question.matched) {
       return DashboardVoiceState(
-        phase: DashboardVoicePhase.fallback,
-        notice: notice.isEmpty ? unrecognizedNotice : notice,
+        phase: DashboardVoicePhase.unrecognized,
+        transcript: text.trim(),
+        notice: unrecognizedNotice,
       );
     }
-    return fromTranscript(text, todayEvents);
+    final day = question.isToday
+        ? DateTime(today.year, today.month, today.day)
+        : question.day!;
+    final events = eventsOn != null
+        ? eventsOn(day)
+        : (question.isToday ? todayEvents : const <Map<String, dynamic>>[]);
+    return DashboardVoiceState(
+      phase: DashboardVoicePhase.answer,
+      transcript: text.trim(),
+      events: events,
+      answerDay: day,
+    );
   }
 
   DashboardVoiceState fromTranscript(
     String text,
-    List<Map<String, dynamic>> todayEvents,
-  ) {
-    if (dashboardVoiceAsksForToday(text)) {
-      return DashboardVoiceState(
-        phase: DashboardVoicePhase.answer,
-        transcript: text.trim(),
-        events: todayEvents,
-      );
-    }
-    return DashboardVoiceState(
-      phase: DashboardVoicePhase.unrecognized,
-      transcript: text.trim(),
-      notice: unrecognizedNotice,
+    List<Map<String, dynamic>> todayEvents, {
+    DateTime? today,
+    List<Map<String, dynamic>> Function(DateTime day)? eventsOn,
+  }) {
+    return answerQuestion(
+      text,
+      today: today ?? DateTime.now(),
+      todayEvents: todayEvents,
+      eventsOn: eventsOn,
     );
   }
 }

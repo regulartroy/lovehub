@@ -3,13 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../services/dashboard_today_intent.dart';
 import '../../theme/calendar_colors.dart';
 import '../calendar_split_pill.dart';
 import 'dashboard_calendar_overview.dart';
 import 'dashboard_chrome.dart';
 import 'dashboard_theme.dart';
 
-/// Dismissible glass card for a "what's on today" answer.
+/// Dismissible glass card for a "what's on …" answer.
 ///
 /// Same family as the LOOK AHEAD day detail: dark scrim, glass card, and
 /// split-pill event chips. Horizontal drags are claimed so the slide
@@ -23,6 +24,7 @@ class DashboardTodayAnswerLayer extends StatelessWidget {
     required this.palette,
     required this.onClose,
     this.transcript = '',
+    this.labelAsToday = true,
   });
 
   final DashboardMetrics metrics;
@@ -31,6 +33,9 @@ class DashboardTodayAnswerLayer extends StatelessWidget {
   final HubMemberPalette palette;
   final VoidCallback onClose;
   final String transcript;
+
+  /// Prefixes the heading with "Today" for the household's current day.
+  final bool labelAsToday;
 
   static const barrierKey = ValueKey('dashboard-today-answer-barrier');
   static const cardKey = ValueKey('dashboard-today-answer');
@@ -49,6 +54,7 @@ class DashboardTodayAnswerLayer extends StatelessWidget {
         events: events,
         palette: palette,
         transcript: transcript,
+        labelAsToday: labelAsToday,
         onClose: onClose,
       ),
     );
@@ -60,17 +66,23 @@ class DashboardVoicePromptLayer extends StatelessWidget {
   const DashboardVoicePromptLayer({
     super.key,
     required this.metrics,
+    required this.today,
     required this.notice,
     required this.controller,
     required this.onClose,
     required this.onSubmit,
+    required this.onShowToday,
   });
 
   final DashboardMetrics metrics;
+  final DateTime today;
   final String notice;
   final TextEditingController controller;
   final VoidCallback onClose;
   final ValueChanged<String> onSubmit;
+
+  /// Opens today's events when the field is empty or not a question.
+  final VoidCallback onShowToday;
 
   static const barrierKey = ValueKey('dashboard-voice-prompt-barrier');
   static const cardKey = ValueKey('dashboard-voice-prompt');
@@ -85,10 +97,12 @@ class DashboardVoicePromptLayer extends StatelessWidget {
       onDismiss: onClose,
       child: _VoicePromptCard(
         metrics: metrics,
+        today: today,
         notice: notice,
         controller: controller,
         onClose: onClose,
         onSubmit: onSubmit,
+        onShowToday: onShowToday,
       ),
     );
   }
@@ -140,6 +154,7 @@ class _TodayAnswerCard extends StatelessWidget {
     required this.events,
     required this.palette,
     required this.transcript,
+    required this.labelAsToday,
     required this.onClose,
   });
 
@@ -148,11 +163,13 @@ class _TodayAnswerCard extends StatelessWidget {
   final List<Map<String, dynamic>> events;
   final HubMemberPalette palette;
   final String transcript;
+  final bool labelAsToday;
   final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('EEEE d MMMM').format(day);
+    final heading = labelAsToday ? 'Today · $dateLabel' : dateLabel;
     final heard = transcript.trim();
 
     return LayoutBuilder(
@@ -178,7 +195,7 @@ class _TodayAnswerCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Today · $dateLabel',
+                        heading,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -289,17 +306,21 @@ class _TodayAnswerCard extends StatelessWidget {
 class _VoicePromptCard extends StatelessWidget {
   const _VoicePromptCard({
     required this.metrics,
+    required this.today,
     required this.notice,
     required this.controller,
     required this.onClose,
     required this.onSubmit,
+    required this.onShowToday,
   });
 
   final DashboardMetrics metrics;
+  final DateTime today;
   final String notice;
   final TextEditingController controller;
   final VoidCallback onClose;
   final ValueChanged<String> onSubmit;
+  final VoidCallback onShowToday;
 
   @override
   Widget build(BuildContext context) {
@@ -353,12 +374,12 @@ class _VoicePromptCard extends StatelessWidget {
                 TextField(
                   key: DashboardVoicePromptLayer.fieldKey,
                   controller: controller,
-                  autofocus: true,
+                  autofocus: controller.text.trim().isEmpty,
                   textInputAction: TextInputAction.done,
                   style: const TextStyle(color: Colors.white, fontSize: 18),
                   cursorColor: DashboardTheme.accent,
                   decoration: InputDecoration(
-                    hintText: "what's on today",
+                    hintText: "what's on today, or 23 October",
                     hintStyle: const TextStyle(color: DashboardTheme.inkFaint),
                     filled: true,
                     fillColor: DashboardTheme.fade(Colors.white, 0.06),
@@ -380,21 +401,35 @@ class _VoicePromptCard extends StatelessWidget {
                   onSubmitted: onSubmit,
                 ),
                 const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    key: DashboardVoicePromptLayer.submitKey,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: DashboardTheme.schedule,
-                      foregroundColor: const Color(0xFF102033),
-                      textStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                ListenableBuilder(
+                  listenable: controller,
+                  builder: (context, _) {
+                    final label = dashboardVoicePromptActionLabel(
+                      controller.text,
+                      today: today,
+                    );
+                    return Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton(
+                        key: DashboardVoicePromptLayer.submitKey,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: DashboardTheme.schedule,
+                          foregroundColor: const Color(0xFF102033),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        onPressed: () => _activateVoicePrompt(
+                          controller: controller,
+                          today: today,
+                          onShowToday: onShowToday,
+                          onSubmit: onSubmit,
+                        ),
+                        child: Text(label),
                       ),
-                    ),
-                    onPressed: () => onSubmit(controller.text),
-                    child: const Text('Show today'),
-                  ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -403,4 +438,33 @@ class _VoicePromptCard extends StatelessWidget {
       },
     );
   }
+}
+
+/// Button label for the typed prompt.
+///
+/// A recognised other day is named on the button. Anything else stays
+/// "Show today", including an empty field and a phrase the hub cannot
+/// answer — that tap must still open today's events.
+String dashboardVoicePromptActionLabel(String raw, {required DateTime today}) {
+  final question = dashboardVoiceQuestion(raw, today: today);
+  final day = question.day;
+  if (question.matched && day != null) {
+    return 'Show ${DateFormat('d MMMM').format(day)}';
+  }
+  return 'Show today';
+}
+
+void _activateVoicePrompt({
+  required TextEditingController controller,
+  required DateTime today,
+  required VoidCallback onShowToday,
+  required ValueChanged<String> onSubmit,
+}) {
+  final text = controller.text.trim();
+  final question = dashboardVoiceQuestion(text, today: today);
+  if (text.isEmpty || !question.matched) {
+    onShowToday();
+    return;
+  }
+  onSubmit(text);
 }

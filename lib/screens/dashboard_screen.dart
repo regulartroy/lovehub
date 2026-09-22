@@ -2106,7 +2106,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   List<Map<String, dynamic>> _eventsToday() {
-    return dashboardEventsOnDay(_eventsAll, _currentDay);
+    return _eventsOn(_currentDay);
+  }
+
+  List<Map<String, dynamic>> _eventsOn(DateTime day) {
+    return dashboardEventsOnDay(_eventsAll, day);
   }
 
   void _dismissVoice() {
@@ -2151,7 +2155,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (!mounted || token != _listenToken) return;
     if (capture.message == 'cancelled') return;
 
-    final next = _voice.applyCapture(capture, _eventsToday());
+    final next = _voice.applyCapture(
+      capture,
+      _eventsToday(),
+      today: _currentDay,
+      eventsOn: _eventsOn,
+    );
     if (next.phase == DashboardVoicePhase.unrecognized &&
         next.transcript.isNotEmpty) {
       _voiceQueryController.text = next.transcript;
@@ -2161,10 +2170,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _submitVoiceQuery(String raw) {
-    final next = _voice.submitTyped(raw, _eventsToday());
+    final next = _voice.answerQuestion(
+      raw,
+      today: _currentDay,
+      eventsOn: _eventsOn,
+    );
     if (next.phase == DashboardVoicePhase.answer) {
       FocusManager.instance.primaryFocus?.unfocus();
     }
+    setState(() => _voice = next);
+    _showControlsOverlay();
+  }
+
+  void _showVoiceToday() {
+    final next = _voice.showToday(_eventsToday(), day: _currentDay);
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _voice = next);
     _showControlsOverlay();
   }
@@ -2233,9 +2253,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case DashboardVoicePhase.listening:
         return const SizedBox.shrink();
       case DashboardVoicePhase.answer:
+        final answerDay = _voice.answerDay ?? _currentDay;
         return DashboardTodayAnswerLayer(
           metrics: metrics,
-          day: _currentDay,
+          day: answerDay,
+          labelAsToday: DateUtils.isSameDay(answerDay, _currentDay),
           events: _voice.events,
           palette: _memberPalette,
           transcript: _voice.transcript,
@@ -2245,10 +2267,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case DashboardVoicePhase.unrecognized:
         return DashboardVoicePromptLayer(
           metrics: metrics,
+          today: _currentDay,
           notice: _voice.notice,
           controller: _voiceQueryController,
           onClose: _dismissVoice,
           onSubmit: _submitVoiceQuery,
+          onShowToday: _showVoiceToday,
         );
     }
   }
