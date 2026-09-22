@@ -385,7 +385,7 @@ void main() {
       "what's on February 29 2026",
       'week of February 29 2026',
       "what's on the week of today",
-      "what's on 23 October and 30 October",
+      'from 32 to 35 October',
     ];
 
     for (final phrase in phrases) {
@@ -464,6 +464,196 @@ void main() {
     expect(week.answerDay, DateTime(2026, 10, 23));
     expect(week.weekEvents.first.single['summary'], 'Monday meeting');
     expect(week.weekEvents[4].single['summary'], 'Half-term train');
+  });
+
+  test('date ranges stay distinct from a single day and a week', () {
+    final today = DateTime(2026, 9, 22);
+
+    final range = dashboardVoiceQuestion(
+      "what's on from 20 to 25 October",
+      today: today,
+    );
+    expect(range.isRange, isTrue);
+    expect(range.isWeek, isFalse);
+    expect(range.day, DateTime(2026, 10, 20));
+    expect(range.rangeEnd, DateTime(2026, 10, 25));
+    expect(range.rangeDays, hasLength(6));
+    expect(range.rangeDays.first, DateTime(2026, 10, 20));
+    expect(range.rangeDays.last, DateTime(2026, 10, 25));
+
+    expect(
+      dashboardVoiceQuestion("what's on 23 October", today: today).isRange,
+      isFalse,
+    );
+    expect(
+      dashboardVoiceQuestion(
+        "what's on the week of 23 October",
+        today: today,
+      ).isWeek,
+      isTrue,
+    );
+    expect(
+      dashboardVoiceQuestion(
+        "what's on the week of 23 October",
+        today: today,
+      ).isRange,
+      isFalse,
+    );
+    expect(
+      dashboardVoiceQuestion("what's on Monday", today: today).matched,
+      isFalse,
+    );
+  });
+
+  test('range phrases resolve an inclusive span', () {
+    final today = DateTime(2026, 9, 22);
+
+    void expectRange(String phrase, DateTime start, DateTime end) {
+      final question = dashboardVoiceQuestion(phrase, today: today);
+      expect(question.isRange, isTrue, reason: phrase);
+      expect(question.isWeek, isFalse, reason: phrase);
+      expect(question.day, start, reason: phrase);
+      expect(question.rangeEnd, end, reason: phrase);
+      expect(
+        question.rangeDays.length,
+        lessThanOrEqualTo(dashboardVoiceRangeDayCap),
+        reason: phrase,
+      );
+    }
+
+    expectRange(
+      "what's on from 20 to 25 October",
+      DateTime(2026, 10, 20),
+      DateTime(2026, 10, 25),
+    );
+    expectRange(
+      'show me 1–7 November',
+      DateTime(2026, 11, 1),
+      DateTime(2026, 11, 7),
+    );
+    expectRange(
+      'show me 1-7 November',
+      DateTime(2026, 11, 1),
+      DateTime(2026, 11, 7),
+    );
+    expectRange(
+      'what have I got between Friday and Sunday',
+      DateTime(2026, 9, 25),
+      DateTime(2026, 9, 27),
+    );
+    expectRange(
+      'October 20 through 25',
+      DateTime(2026, 10, 20),
+      DateTime(2026, 10, 25),
+    );
+    expectRange(
+      'from the 20th to the 25th of October',
+      DateTime(2026, 10, 20),
+      DateTime(2026, 10, 25),
+    );
+    expectRange(
+      '20 October to 25 October',
+      DateTime(2026, 10, 20),
+      DateTime(2026, 10, 25),
+    );
+    expectRange(
+      "what's on 23 October and 30 October",
+      DateTime(2026, 10, 23),
+      DateTime(2026, 10, 30),
+    );
+    expectRange(
+      'from 28 October to 2 November',
+      DateTime(2026, 10, 28),
+      DateTime(2026, 11, 2),
+    );
+    expectRange(
+      'from 20 to 25 October 2024',
+      DateTime(2024, 10, 20),
+      DateTime(2024, 10, 25),
+    );
+
+    final inside = dashboardVoiceQuestion(
+      'from 20 to 25 October',
+      today: DateTime(2026, 10, 22),
+    );
+    expect(inside.day, DateTime(2026, 10, 20));
+    expect(inside.rangeEnd, DateTime(2026, 10, 25));
+
+    final passed = dashboardVoiceQuestion(
+      'from 20 to 25 October',
+      today: DateTime(2026, 10, 26),
+    );
+    expect(passed.day, DateTime(2027, 10, 20));
+    expect(passed.rangeEnd, DateTime(2027, 10, 25));
+
+    final weekend = dashboardVoiceQuestion(
+      'between Friday and Sunday',
+      today: DateTime(2026, 9, 26),
+    );
+    expect(weekend.day, DateTime(2026, 9, 25));
+    expect(weekend.rangeEnd, DateTime(2026, 9, 27));
+  });
+
+  test('a range longer than 31 days explains the cap', () {
+    final today = DateTime(2026, 9, 22);
+    final question = dashboardVoiceQuestion(
+      "what's on from 1 January to 15 February",
+      today: today,
+    );
+    expect(question.overLongRange, isTrue);
+    expect(question.matched, isFalse);
+
+    final state = const DashboardVoiceState().answerQuestion(
+      "what's on from 1 January to 15 February",
+      today: today,
+    );
+    expect(state.phase, DashboardVoicePhase.unrecognized);
+    expect(state.notice, DashboardVoiceState.rangeTooLongNotice);
+    expect(state.isRangeAnswer, isFalse);
+
+    expect(
+      dashboardVoiceQuestion(
+        "what's the weather from 1 January to 15 February",
+        today: today,
+      ).overLongRange,
+      isFalse,
+    );
+    expect(
+      dashboardVoiceQuestion(
+        'add lunch from 20 to 25 October',
+        today: today,
+      ).matched,
+      isFalse,
+    );
+  });
+
+  test('a spoken range keeps each day’s events', () {
+    final state = const DashboardVoiceState().applyCapture(
+      const DashboardSpeechCapture(
+        outcome: DashboardSpeechOutcome.transcript,
+        transcript: "what's on from 20 to 25 October",
+      ),
+      const [],
+      today: DateTime(2026, 9, 22),
+      eventsOn: (day) {
+        if (day == DateTime(2026, 10, 23)) {
+          return const [
+            {'summary': 'Half-term train'},
+          ];
+        }
+        return const [];
+      },
+    );
+
+    expect(state.phase, DashboardVoicePhase.answer);
+    expect(state.isRangeAnswer, isTrue);
+    expect(state.isWeekAnswer, isFalse);
+    expect(state.answerDay, DateTime(2026, 10, 20));
+    expect(state.answerRangeEnd, DateTime(2026, 10, 25));
+    expect(state.weekEvents, hasLength(6));
+    expect(state.weekEvents[0], isEmpty);
+    expect(state.weekEvents[3].single['summary'], 'Half-term train');
+    expect(state.events, isEmpty);
   });
 }
 

@@ -1,12 +1,17 @@
 /// Narrow, read-only questions for the dashboard voice spike.
 ///
 /// [dashboardVoiceAsksForToday] matches "what's on today" and close
-/// synonyms. [dashboardVoiceQuestion] also matches a single calendar day,
-/// or the Monday–Sunday household week that contains a named date
-/// ("the week of 23 October", "week of the 23rd", "week containing
-/// October 23rd", and the same schedule wording as a day question).
-/// Create, delete, and remind phrases stay unmatched. Weekdays, tomorrow,
-/// "this week", weekends, and ranges stay unmatched too.
+/// synonyms. [dashboardVoiceQuestion] also matches:
+/// - a single calendar day
+/// - the Monday–Sunday household week that contains a named date
+///   ("the week of 23 October")
+/// - an inclusive date range ("from 20 to 25 October", "1–7 November",
+///   "between Friday and Sunday")
+///
+/// A range is at most [dashboardVoiceRangeDayCap] days. Longer stretches
+/// set [DashboardVoiceQuestion.overLongRange] and stay unmatched.
+/// Create, delete, and remind phrases stay unmatched. A bare weekday,
+/// tomorrow, "this week", and the weekend stay unmatched too.
 ///
 /// Date rule, compared with the household's current day:
 /// - A month and day with no year means the next occurrence on or after
@@ -159,40 +164,90 @@ DateTime dashboardHouseholdMonday(DateTime day) {
   );
 }
 
+/// Inclusive limit for a spoken schedule range. A longer ask is refused
+/// with [DashboardVoiceQuestion.overLongRange] instead of a giant card.
+const int dashboardVoiceRangeDayCap = 31;
+
 /// A read-only schedule question, if [raw] is one.
 class DashboardVoiceQuestion {
   const DashboardVoiceQuestion.none()
     : day = null,
+      rangeEnd = null,
       isToday = false,
-      isWeek = false;
+      isWeek = false,
+      overLongRange = false;
 
   const DashboardVoiceQuestion.today()
     : day = null,
+      rangeEnd = null,
       isToday = true,
-      isWeek = false;
+      isWeek = false,
+      overLongRange = false;
+
+  const DashboardVoiceQuestion.overLongRange()
+    : day = null,
+      rangeEnd = null,
+      isToday = false,
+      isWeek = false,
+      overLongRange = true;
 
   DashboardVoiceQuestion.day(DateTime day)
     : day = DateTime(day.year, day.month, day.day),
+      rangeEnd = null,
       isToday = false,
-      isWeek = false;
+      isWeek = false,
+      overLongRange = false;
 
   DashboardVoiceQuestion.week(DateTime day)
     : day = DateTime(day.year, day.month, day.day),
+      rangeEnd = null,
       isToday = false,
-      isWeek = true;
+      isWeek = true,
+      overLongRange = false;
+
+  DashboardVoiceQuestion.range(DateTime start, DateTime end)
+    : day = DateTime(start.year, start.month, start.day),
+      rangeEnd = DateTime(end.year, end.month, end.day),
+      isToday = false,
+      isWeek = false,
+      overLongRange = false;
 
   /// For a day, that calendar day. For a week, the named date inside it.
+  /// For a range, the first day.
   final DateTime? day;
+
+  /// Last day of an inclusive range. Null for today, a single day, or a week.
+  final DateTime? rangeEnd;
   final bool isToday;
 
   /// True when [day] names the date whose household week was asked for.
   final bool isWeek;
 
-  bool get matched => isToday || day != null;
+  /// True when the phrase was a schedule range longer than
+  /// [dashboardVoiceRangeDayCap]. [matched] stays false.
+  final bool overLongRange;
+
+  bool get isRange => rangeEnd != null;
+
+  bool get matched => (isToday || day != null) && !overLongRange;
 
   DashboardHouseholdWeek? get householdWeek {
     if (!isWeek || day == null) return null;
     return DashboardHouseholdWeek(day!);
+  }
+
+  /// Inclusive days from [day] through [rangeEnd].
+  List<DateTime> get rangeDays {
+    final start = day;
+    final end = rangeEnd;
+    if (start == null || end == null) return const [];
+    final days = <DateTime>[];
+    var cursor = start;
+    while (!cursor.isAfter(end) && days.length <= dashboardVoiceRangeDayCap) {
+      days.add(cursor);
+      cursor = DateTime(cursor.year, cursor.month, cursor.day + 1);
+    }
+    return days;
   }
 }
 
@@ -211,6 +266,12 @@ DashboardVoiceQuestion dashboardVoiceQuestion(
   // A today word plus some other day is ambiguous, so leave it unmatched.
   if (RegExp(r'\btoday\b').hasMatch(text)) {
     return const DashboardVoiceQuestion.none();
+  }
+
+  final range = _findAskedRange(text, today);
+  if (range != null) {
+    if (range.tooLong) return const DashboardVoiceQuestion.overLongRange();
+    return DashboardVoiceQuestion.range(range.start, range.end);
   }
 
   final hit = _findAskedDate(text, today);
@@ -266,6 +327,8 @@ String _stripWeekConnectors(String text) {
 
 String _prepareDateText(String raw) {
   var text = raw.toLowerCase().replaceAll(RegExp("[’']"), '');
+  // "1–7 November" and "1-7 November" are the same range as "1 to 7".
+  text = text.replaceAll(RegExp(r'[–—−-]'), ' to ');
   text = text
       .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
@@ -512,3 +575,378 @@ const Set<String> _dateAsks = {
   'whats our plan',
   'whats our plan for',
 };
+
+const Set<String> _rangeConnectors = {
+  'to',
+  'through',
+  'thru',
+  'until',
+  'till',
+  'and',
+};
+
+const Map<String, int> _weekdayNumbers = {
+  'monday': DateTime.monday,
+  'tuesday': DateTime.tuesday,
+  'wednesday': DateTime.wednesday,
+  'thursday': DateTime.thursday,
+  'friday': DateTime.friday,
+  'saturday': DateTime.saturday,
+  'sunday': DateTime.sunday,
+};
+
+class _RangeHit {
+  const _RangeHit(this.start, this.end, {required this.tooLong});
+
+  final DateTime start;
+  final DateTime end;
+  final bool tooLong;
+}
+
+class _Endpoint {
+  const _Endpoint({
+    required this.consumed,
+    this.day,
+    this.month,
+    this.year,
+    this.weekday,
+  });
+
+  final int consumed;
+  final int? day;
+  final int? month;
+  final int? year;
+  final int? weekday;
+
+  bool get isWeekdayOnly => weekday != null && day == null;
+}
+
+class _DatedSpan {
+  const _DatedSpan(this.start, this.end);
+
+  final DateTime start;
+  final DateTime end;
+}
+
+/// A from/to (or between/and) schedule range, if [text] is one.
+///
+/// One named month covers both day numbers when they run forward
+/// ("20 to 25 October", "October 20 to 25"). A later day number that is
+/// lower crosses into the neighbouring month ("28 to 2 November" is
+/// 28 October–2 November). Weekdays use the earliest Mon–Sun span whose
+/// end is today or still ahead ("between Friday and Sunday" on Saturday
+/// is this weekend). An explicit year is kept even when it is already past.
+_RangeHit? _findAskedRange(String text, DateTime today) {
+  final tokens = text.split(' ');
+  if (tokens.length < 3) return null;
+  final todayDate = DateTime(today.year, today.month, today.day);
+
+  for (var i = 0; i < tokens.length; i++) {
+    if (!_rangeConnectors.contains(tokens[i])) continue;
+    final left = _readEndingAt(tokens, i);
+    final right = _readEndpoint(tokens, i + 1);
+    if (left == null || right == null) continue;
+
+    final span = _resolveRangeEndpoints(left, right, todayDate);
+    if (span == null) continue;
+
+    var spanStart = left.start;
+    if (spanStart > 0 &&
+        (tokens[spanStart - 1] == 'from' ||
+            tokens[spanStart - 1] == 'between')) {
+      spanStart -= 1;
+    }
+    final spanEnd = i + 1 + right.consumed;
+    final remainder = _stripFiller(
+      '${tokens.sublist(0, spanStart).join(' ')} ${tokens.sublist(spanEnd).join(' ')}'
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim(),
+    );
+    if (!_dateAsks.contains(remainder)) continue;
+
+    final length = _inclusiveDays(span.start, span.end);
+    if (length < 1) continue;
+    if (length > dashboardVoiceRangeDayCap) {
+      return _RangeHit(span.start, span.end, tooLong: true);
+    }
+    return _RangeHit(span.start, span.end, tooLong: false);
+  }
+  return null;
+}
+
+class _PlacedEndpoint extends _Endpoint {
+  const _PlacedEndpoint({
+    required this.start,
+    required super.consumed,
+    super.day,
+    super.month,
+    super.year,
+    super.weekday,
+  });
+
+  final int start;
+}
+
+_PlacedEndpoint? _readEndingAt(List<String> tokens, int endExclusive) {
+  _PlacedEndpoint? best;
+  final earliest = endExclusive > 6 ? endExclusive - 6 : 0;
+  for (var start = earliest; start < endExclusive; start++) {
+    final read = _readEndpoint(tokens, start);
+    if (read == null || start + read.consumed != endExclusive) continue;
+    if (best == null || read.consumed > best.consumed) {
+      best = _PlacedEndpoint(
+        start: start,
+        consumed: read.consumed,
+        day: read.day,
+        month: read.month,
+        year: read.year,
+        weekday: read.weekday,
+      );
+    }
+  }
+  return best;
+}
+
+_Endpoint? _readEndpoint(List<String> tokens, int index) {
+  if (index >= tokens.length) return null;
+  var cursor = index;
+  if (tokens[cursor] == 'the') {
+    cursor++;
+    if (cursor >= tokens.length) return null;
+  }
+
+  final weekday = _weekdayNumbers[tokens[cursor]];
+  if (weekday != null && cursor == index) {
+    final after = _readEndpoint(tokens, cursor + 1);
+    if (after != null && after.day != null) {
+      return _Endpoint(
+        consumed: 1 + after.consumed,
+        day: after.day,
+        month: after.month,
+        year: after.year,
+      );
+    }
+    return _Endpoint(consumed: 1, weekday: weekday);
+  }
+
+  final month = _monthNumbers[tokens[cursor]];
+  if (month != null) {
+    var dayIndex = cursor + 1;
+    if (dayIndex < tokens.length && tokens[dayIndex] == 'the') dayIndex++;
+    if (dayIndex >= tokens.length) return null;
+    final day = _dayNumber(tokens[dayIndex]);
+    if (day == null) return null;
+    var consumed = dayIndex + 1 - index;
+    int? year;
+    final yearIndex = dayIndex + 1;
+    if (yearIndex < tokens.length && _isYearToken(tokens[yearIndex])) {
+      year = int.parse(tokens[yearIndex]);
+      consumed = yearIndex + 1 - index;
+    }
+    return _Endpoint(consumed: consumed, day: day, month: month, year: year);
+  }
+
+  final day = _dayNumber(tokens[cursor]);
+  if (day == null) return null;
+  var next = cursor + 1;
+  if (next < tokens.length && tokens[next] == 'of') next++;
+  int? endpointMonth;
+  int? year;
+  var consumed = next - index;
+  if (next < tokens.length && _monthNumbers.containsKey(tokens[next])) {
+    endpointMonth = _monthNumbers[tokens[next]];
+    next++;
+    consumed = next - index;
+    if (next < tokens.length && _isYearToken(tokens[next])) {
+      year = int.parse(tokens[next]);
+      consumed = next + 1 - index;
+    }
+  }
+  return _Endpoint(
+    consumed: consumed,
+    day: day,
+    month: endpointMonth,
+    year: year,
+  );
+}
+
+int? _dayNumber(String token) {
+  final match = RegExp(r'^(\d{1,2})(?:st|nd|rd|th)?$').firstMatch(token);
+  if (match == null) return null;
+  final day = int.parse(match.group(1)!);
+  if (day < 1 || day > 31) return null;
+  return day;
+}
+
+bool _isYearToken(String token) {
+  if (!RegExp(r'^\d{4}$').hasMatch(token)) return false;
+  final year = int.parse(token);
+  return year >= 1900 && year <= 2100;
+}
+
+_DatedSpan? _resolveRangeEndpoints(
+  _Endpoint left,
+  _Endpoint right,
+  DateTime today,
+) {
+  if (left.isWeekdayOnly && right.isWeekdayOnly) {
+    return _resolveWeekdayRange(today, left.weekday!, right.weekday!);
+  }
+  final startDay = left.day;
+  final endDay = right.day;
+  if (startDay == null || endDay == null) return null;
+
+  if (left.month == null && right.month == null) {
+    return _resolveBareDayRange(
+      today,
+      startDay,
+      endDay,
+      left.year ?? right.year,
+    );
+  }
+  return _resolveMonthRange(
+    today: today,
+    startDay: startDay,
+    endDay: endDay,
+    startMonth: left.month,
+    endMonth: right.month,
+    year: left.year ?? right.year,
+  );
+}
+
+_DatedSpan? _resolveWeekdayRange(DateTime today, int startWd, int endWd) {
+  final monday = dashboardHouseholdMonday(today);
+  for (var week = -1; week <= 8; week++) {
+    final weekMonday = DateTime(
+      monday.year,
+      monday.month,
+      monday.day + 7 * week,
+    );
+    final start = DateTime(
+      weekMonday.year,
+      weekMonday.month,
+      weekMonday.day + (startWd - DateTime.monday),
+    );
+    var delta = endWd - startWd;
+    if (delta < 0) delta += 7;
+    final end = DateTime(start.year, start.month, start.day + delta);
+    if (!end.isBefore(today)) return _DatedSpan(start, end);
+  }
+  return null;
+}
+
+_DatedSpan? _resolveBareDayRange(
+  DateTime today,
+  int startDay,
+  int endDay,
+  int? year,
+) {
+  if (year != null) {
+    for (var month = 1; month <= 12; month++) {
+      final span = _bareSpanInMonth(year, month, startDay, endDay);
+      if (span != null && !span.end.isBefore(today)) return span;
+    }
+    for (var month = 1; month <= 12; month++) {
+      final span = _bareSpanInMonth(year, month, startDay, endDay);
+      if (span != null) return span;
+    }
+    return null;
+  }
+
+  var cursor = DateTime(today.year, today.month, 1);
+  for (var i = 0; i < 18; i++) {
+    final span = _bareSpanInMonth(cursor.year, cursor.month, startDay, endDay);
+    if (span != null && !span.end.isBefore(today)) return span;
+    cursor = DateTime(cursor.year, cursor.month + 1, 1);
+  }
+  return null;
+}
+
+_DatedSpan? _bareSpanInMonth(int year, int month, int startDay, int endDay) {
+  if (!_isRealDate(year, month, startDay)) return null;
+  final start = DateTime(year, month, startDay);
+  if (endDay >= startDay) {
+    if (!_isRealDate(year, month, endDay)) return null;
+    return _DatedSpan(start, DateTime(year, month, endDay));
+  }
+  var cursor = DateTime(year, month + 1, 1);
+  for (var i = 0; i < 3; i++) {
+    if (_isRealDate(cursor.year, cursor.month, endDay)) {
+      return _DatedSpan(start, DateTime(cursor.year, cursor.month, endDay));
+    }
+    cursor = DateTime(cursor.year, cursor.month + 1, 1);
+  }
+  return null;
+}
+
+_DatedSpan? _resolveMonthRange({
+  required DateTime today,
+  required int startDay,
+  required int endDay,
+  required int? startMonth,
+  required int? endMonth,
+  required int? year,
+}) {
+  var startMonthValue = startMonth;
+  var endMonthValue = endMonth;
+  var startYearOffset = 0;
+  var endYearOffset = 0;
+
+  if (startMonthValue == null && endMonthValue != null) {
+    if (endDay >= startDay) {
+      startMonthValue = endMonthValue;
+    } else if (endMonthValue == 1) {
+      startMonthValue = 12;
+      startYearOffset = -1;
+    } else {
+      startMonthValue = endMonthValue - 1;
+    }
+  } else if (endMonthValue == null && startMonthValue != null) {
+    if (endDay >= startDay) {
+      endMonthValue = startMonthValue;
+    } else if (startMonthValue == 12) {
+      endMonthValue = 1;
+      endYearOffset = 1;
+    } else {
+      endMonthValue = startMonthValue + 1;
+    }
+  }
+  if (startMonthValue == null || endMonthValue == null) return null;
+
+  _DatedSpan? build(int startYear) {
+    final startY = startYear + startYearOffset;
+    final endY = startYear + endYearOffset;
+    if (!_isRealDate(startY, startMonthValue!, startDay)) return null;
+    if (!_isRealDate(endY, endMonthValue!, endDay)) return null;
+    var start = DateTime(startY, startMonthValue, startDay);
+    var end = DateTime(endY, endMonthValue, endDay);
+    if (end.isBefore(start)) {
+      if (start.month == end.month) {
+        final swap = start;
+        start = end;
+        end = swap;
+      } else {
+        final rolled = DateTime(end.year + 1, end.month, end.day);
+        if (!_isRealDate(rolled.year, rolled.month, rolled.day)) return null;
+        end = rolled;
+      }
+    }
+    return _DatedSpan(start, end);
+  }
+
+  if (year != null) return build(year);
+  for (var y = today.year - 1; y <= today.year + 8; y++) {
+    final span = build(y);
+    if (span != null && !span.end.isBefore(today)) return span;
+  }
+  return null;
+}
+
+int _inclusiveDays(DateTime start, DateTime end) {
+  return DateTime.utc(
+        end.year,
+        end.month,
+        end.day,
+      ).difference(DateTime.utc(start.year, start.month, start.day)).inDays +
+      1;
+}

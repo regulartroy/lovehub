@@ -54,6 +54,7 @@ class DashboardVoiceState {
     this.weekEvents = const [],
     this.answerDay,
     this.answerWeekStart,
+    this.answerRangeEnd,
   });
 
   final DashboardVoicePhase phase;
@@ -61,26 +62,33 @@ class DashboardVoiceState {
   final String notice;
   final List<Map<String, dynamic>> events;
 
-  /// Seven Monday–Sunday event lists when this answer is a week.
+  /// One event list per day for a week answer or a date-range answer.
   final List<List<Map<String, dynamic>>> weekEvents;
 
   /// Calendar day for an answer. For a week, the named date inside it.
-  /// Null unless [phase] is answer.
+  /// For a range, the first day. Null unless [phase] is answer.
   final DateTime? answerDay;
 
-  /// Monday of a week answer. Null for a single day.
+  /// Monday of a week answer. Null for a single day or a date range.
   final DateTime? answerWeekStart;
 
+  /// Last day of an inclusive range answer. Null otherwise.
+  final DateTime? answerRangeEnd;
+
   bool get isWeekAnswer => answerWeekStart != null;
+
+  bool get isRangeAnswer => answerRangeEnd != null;
 
   static const speechUnavailableNotice =
       'Speech not available — try Chrome. You can type a day below.';
   static const micBlockedNotice =
       'Microphone blocked. Type a day below, or allow the mic in Chrome.';
   static const emptyNotice =
-      'Didn’t catch that. Try “what’s on today”, “23 October”, or “the week of 23 October”.';
+      'Didn’t catch that. Try “what’s on today”, “23 October”, “the week of 23 October”, or “20 to 25 October”.';
   static const unrecognizedNotice =
-      'I can answer “what’s on today”, a date like “23 October”, or “the week of 23 October”.';
+      'I can answer “what’s on today”, a date like “23 October”, “the week of 23 October”, or a stretch like “20 to 25 October” (up to 31 days).';
+  static const rangeTooLongNotice =
+      'That’s longer than 31 days. Try a shorter stretch.';
 
   bool get holdsControls => phase != DashboardVoicePhase.idle;
 
@@ -91,7 +99,8 @@ class DashboardVoiceState {
       events = const [],
       weekEvents = const [],
       answerDay = null,
-      answerWeekStart = null;
+      answerWeekStart = null,
+      answerRangeEnd = null;
 
   DashboardVoiceState applyCapture(
     DashboardSpeechCapture capture,
@@ -175,11 +184,38 @@ class DashboardVoiceState {
     List<Map<String, dynamic>> Function(DateTime day)? eventsOn,
   }) {
     final question = dashboardVoiceQuestion(text, today: today);
+    if (question.overLongRange) {
+      return DashboardVoiceState(
+        phase: DashboardVoicePhase.unrecognized,
+        transcript: text.trim(),
+        notice: rangeTooLongNotice,
+      );
+    }
     if (!question.matched) {
       return DashboardVoiceState(
         phase: DashboardVoicePhase.unrecognized,
         transcript: text.trim(),
         notice: unrecognizedNotice,
+      );
+    }
+    if (question.isRange) {
+      final days = question.rangeDays;
+      if (days.isEmpty) {
+        return DashboardVoiceState(
+          phase: DashboardVoicePhase.unrecognized,
+          transcript: text.trim(),
+          notice: unrecognizedNotice,
+        );
+      }
+      return DashboardVoiceState(
+        phase: DashboardVoicePhase.answer,
+        transcript: text.trim(),
+        weekEvents: [
+          for (final date in days)
+            eventsOn != null ? eventsOn(date) : const <Map<String, dynamic>>[],
+        ],
+        answerDay: days.first,
+        answerRangeEnd: days.last,
       );
     }
     if (question.isWeek) {

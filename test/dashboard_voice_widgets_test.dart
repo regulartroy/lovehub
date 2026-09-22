@@ -491,6 +491,51 @@ void main() {
     expect(find.text('Half-term train'), findsOneWidget);
     expect(find.text('Free'), findsNWidgets(6));
   });
+
+  testWidgets('a from-to date opens that inclusive range', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(today: DateTime(2026, 9, 22), events: _voiceEvents()),
+    );
+
+    await tester.enterText(
+      find.byKey(DashboardVoicePromptLayer.fieldKey),
+      "what's on from 20 to 25 October",
+    );
+    await tester.pump();
+
+    expect(find.text('Show 20–25 October'), findsOneWidget);
+    await tester.tap(find.text('Show 20–25 October'));
+    await tester.pump();
+
+    expect(find.text('20–25 October'), findsOneWidget);
+    expect(find.text('Tuesday 20 – Sunday 25 October'), findsOneWidget);
+    expect(find.text('1 plan · 5 free days'), findsOneWidget);
+    expect(find.text('Half-term train'), findsOneWidget);
+    expect(find.text('08:15'), findsOneWidget);
+    expect(find.text('Early shift'), findsNothing);
+    expect(find.text('Week of 23 October'), findsNothing);
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.freeKey(DateTime(2026, 10, 20))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.freeKey(DateTime(2026, 10, 25))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.dayKey(DateTime(2026, 10, 23))),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(DashboardRangeAnswerLayer.freeKey(DateTime(2026, 10, 23))),
+      findsNothing,
+    );
+  });
 }
 
 List<Map<String, dynamic>> _voiceEvents() {
