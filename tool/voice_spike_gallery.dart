@@ -23,7 +23,7 @@ class VoiceSpikeGallery extends StatefulWidget {
   State<VoiceSpikeGallery> createState() => _VoiceSpikeGalleryState();
 }
 
-enum _VoiceScene { live, controls, listening, events, empty }
+enum _VoiceScene { live, controls, listening, events, empty, ask }
 
 class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
   final PageController _pageController = PageController();
@@ -52,6 +52,15 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
     _showMenu = Uri.base.queryParameters['menu'] != '0';
     _showControls = _scene != _VoiceScene.live;
     _voice = _voiceForScene(_scene);
+    final preset = Uri.base.queryParameters['q'];
+    if (_scene == _VoiceScene.ask && preset != null && preset.isNotEmpty) {
+      _voiceQueryController.text = preset;
+      _voice = DashboardVoiceState(
+        phase: DashboardVoicePhase.unrecognized,
+        transcript: preset,
+        notice: DashboardVoiceState.unrecognizedNotice,
+      );
+    }
   }
 
   @override
@@ -74,6 +83,8 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
         return _VoiceScene.events;
       case 'empty':
         return _VoiceScene.empty;
+      case 'ask':
+        return _VoiceScene.ask;
       default:
         return _VoiceScene.live;
     }
@@ -133,14 +144,36 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
         'category': 'meal',
         'assignedTo': 'shared',
       },
+      ..._october23(today),
     ];
+  }
+
+  /// 23 October this year and next, so a dated question finds the trip
+  /// whether or not that day has already passed.
+  List<Map<String, dynamic>> _october23(DateTime today) {
+    Map<String, dynamic> trip(int year) {
+      return {
+        'summary': 'Half-term train',
+        'start': DateTime(year, 10, 23, 8, 15),
+        'end': DateTime(year, 10, 23, 12, 0),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'tom',
+      };
+    }
+
+    return [trip(today.year), trip(today.year + 1)];
   }
 
   List<Map<String, dynamic>> get _events =>
       _sampleEvents(empty: _scene == _VoiceScene.empty);
 
+  List<Map<String, dynamic>> _eventsOn(DateTime day) {
+    return dashboardEventsOnDay(_events, day);
+  }
+
   List<Map<String, dynamic>> _eventsToday() {
-    return dashboardEventsOnDay(_events, DateUtils.dateOnly(DateTime.now()));
+    return _eventsOn(DateUtils.dateOnly(DateTime.now()));
   }
 
   DashboardVoiceState _voiceForScene(_VoiceScene scene) {
@@ -159,6 +192,11 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
         return const DashboardVoiceState().fromTranscript(
           "what's on today",
           const [],
+        );
+      case _VoiceScene.ask:
+        return const DashboardVoiceState(
+          phase: DashboardVoicePhase.fallback,
+          notice: DashboardVoiceState.unrecognizedNotice,
         );
     }
   }
@@ -234,6 +272,8 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
     final next = const DashboardVoiceState().applyCapture(
       capture,
       _eventsToday(),
+      today: DateTime.now(),
+      eventsOn: _eventsOn,
     );
     if (next.phase == DashboardVoicePhase.unrecognized &&
         next.transcript.isNotEmpty) {
@@ -244,10 +284,22 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
   }
 
   void _submitVoiceQuery(String raw) {
-    final next = _voice.submitTyped(raw, _eventsToday());
+    final next = _voice.answerQuestion(
+      raw,
+      today: DateTime.now(),
+      eventsOn: _eventsOn,
+    );
     if (next.phase == DashboardVoicePhase.answer) {
       FocusManager.instance.primaryFocus?.unfocus();
     }
+    setState(() => _voice = next);
+    _showControlsOverlay();
+  }
+
+  void _showVoiceToday() {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final next = _voice.showToday(_eventsOn(today), day: today);
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _voice = next);
     _showControlsOverlay();
   }
@@ -337,7 +389,8 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
             if (_voice.phase == DashboardVoicePhase.answer)
               DashboardTodayAnswerLayer(
                 metrics: metrics,
-                day: DateUtils.dateOnly(now),
+                day: _voice.answerDay ?? DateUtils.dateOnly(now),
+                labelAsToday: DateUtils.isSameDay(_voice.answerDay ?? now, now),
                 events: _voice.events,
                 palette: palette,
                 transcript: _voice.transcript,
@@ -347,10 +400,12 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
                 _voice.phase == DashboardVoicePhase.unrecognized)
               DashboardVoicePromptLayer(
                 metrics: metrics,
+                today: now,
                 notice: _voice.notice,
                 controller: _voiceQueryController,
                 onClose: _dismissVoice,
                 onSubmit: _submitVoiceQuery,
+                onShowToday: _showVoiceToday,
               ),
             DashboardControlsOverlay(
               visible: _controlsVisible,
@@ -425,6 +480,11 @@ class _VoiceSpikeGalleryState extends State<VoiceSpikeGallery> {
                     'Free day',
                     _VoiceScene.empty,
                     'voice-gallery-scene-empty',
+                  ),
+                  _sceneButton(
+                    'Ask',
+                    _VoiceScene.ask,
+                    'voice-gallery-scene-ask',
                   ),
                   TextButton(
                     key: const ValueKey('voice-gallery-hide-menu'),

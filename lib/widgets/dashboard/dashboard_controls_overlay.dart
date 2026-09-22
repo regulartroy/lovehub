@@ -82,7 +82,7 @@ class DashboardControlsOverlay extends StatelessWidget {
                         key: micKey,
                         tooltip: isListening
                             ? 'Listening. Tap to stop'
-                            : "Ask what's on today",
+                            : "Ask what's on",
                         icon: Icon(
                           isListening
                               ? Icons.mic_rounded

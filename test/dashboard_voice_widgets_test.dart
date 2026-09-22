@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lovehub/services/dashboard_voice.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_controls_overlay.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
@@ -84,7 +85,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byIcon(Icons.pause_circle_filled_rounded), findsOneWidget);
-    expect(find.byTooltip("Ask what's on today"), findsOneWidget);
+    expect(find.byTooltip("Ask what's on"), findsOneWidget);
     expect(find.byKey(DashboardControlsOverlay.listeningKey), findsNothing);
   });
 
@@ -283,10 +284,13 @@ void main() {
             children: [
               DashboardVoicePromptLayer(
                 metrics: DashboardMetrics(const Size(1200, 900)),
-                notice: 'Speech not available — try Chrome',
+                today: DateTime(2026, 9, 22),
+                notice:
+                    'Speech not available — try Chrome. You can type a day below.',
                 controller: controller,
                 onClose: () {},
                 onSubmit: (value) => submitted = value,
+                onShowToday: () {},
               ),
             ],
           ),
@@ -294,7 +298,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Speech not available — try Chrome'), findsOneWidget);
+    expect(
+      find.text('Speech not available — try Chrome. You can type a day below.'),
+      findsOneWidget,
+    );
     await tester.enterText(
       find.byKey(DashboardVoicePromptLayer.fieldKey),
       "what's on today",
@@ -302,4 +309,255 @@ void main() {
     await tester.tap(find.byKey(DashboardVoicePromptLayer.submitKey));
     expect(submitted, "what's on today");
   });
+
+  testWidgets('tapping Show today opens today’s answer', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(
+        today: DateTime(2026, 9, 22),
+        initialText: "what's the weather",
+        events: _voiceEvents(),
+      ),
+    );
+
+    expect(find.text('Show today'), findsOneWidget);
+    expect(find.byKey(DashboardTodayAnswerLayer.cardKey), findsNothing);
+
+    await tester.tap(find.text('Show today'));
+    await tester.pump();
+
+    expect(find.byKey(DashboardTodayAnswerLayer.cardKey), findsOneWidget);
+    expect(find.text('Today · Tuesday 22 September'), findsOneWidget);
+    expect(find.text('Early shift'), findsOneWidget);
+    expect(find.text('2 plans'), findsOneWidget);
+    expect(find.text('Show today'), findsNothing);
+    expect(find.byKey(DashboardVoicePromptLayer.cardKey), findsNothing);
+  });
+
+  testWidgets('an empty Show today button still opens today’s answer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(today: DateTime(2026, 9, 22), events: const []),
+    );
+
+    await tester.tap(find.text('Show today'));
+    await tester.pump();
+
+    expect(find.text('Today · Tuesday 22 September'), findsOneWidget);
+    expect(find.text('Free day — nothing on the calendar'), findsOneWidget);
+  });
+
+  testWidgets('typing a date and tapping the button opens that day', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(today: DateTime(2026, 9, 22), events: _voiceEvents()),
+    );
+
+    await tester.enterText(
+      find.byKey(DashboardVoicePromptLayer.fieldKey),
+      'what have I got on 23rd of October',
+    );
+    await tester.pump();
+
+    expect(find.text('Show 23 October'), findsOneWidget);
+    await tester.tap(find.text('Show 23 October'));
+    await tester.pump();
+
+    expect(find.text('Friday 23 October'), findsOneWidget);
+    expect(find.text('Half-term train'), findsOneWidget);
+    expect(find.text('08:15'), findsOneWidget);
+    expect(find.text('Early shift'), findsNothing);
+    expect(find.textContaining('Heard:'), findsOneWidget);
+  });
+
+  testWidgets('pressing done on a date question opens that day', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _AskHarness(today: DateTime(2026, 9, 22), events: _voiceEvents()),
+    );
+
+    await tester.enterText(
+      find.byKey(DashboardVoicePromptLayer.fieldKey),
+      "what's on the 23rd",
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(find.text('Wednesday 23 September'), findsOneWidget);
+    expect(find.text('Market morning'), findsOneWidget);
+    expect(find.text('Early shift'), findsNothing);
+  });
+}
+
+List<Map<String, dynamic>> _voiceEvents() {
+  return [
+    {
+      'summary': 'Early shift',
+      'start': DateTime(2026, 9, 22, 7),
+      'end': DateTime(2026, 9, 22, 15),
+      'allDay': false,
+      'category': 'work',
+      'assignedTo': 'tom',
+    },
+    {
+      'summary': 'Pasta night',
+      'start': DateTime(2026, 9, 22, 19),
+      'end': DateTime(2026, 9, 22, 20, 30),
+      'allDay': false,
+      'category': 'meal',
+      'assignedTo': 'maria',
+    },
+    {
+      'summary': 'Half-term train',
+      'start': DateTime(2026, 10, 23, 8, 15),
+      'end': DateTime(2026, 10, 23, 12),
+      'allDay': false,
+      'category': 'general',
+      'assignedTo': 'tom',
+    },
+    {
+      'summary': 'Market morning',
+      'start': DateTime(2026, 9, 23, 9),
+      'end': DateTime(2026, 9, 23, 11),
+      'allDay': false,
+      'category': 'general',
+      'assignedTo': 'shared',
+    },
+  ];
+}
+
+/// Same prompt → answer wiring as the dashboard, including the outer tap
+/// target that shows the controls pill.
+class _AskHarness extends StatefulWidget {
+  const _AskHarness({
+    required this.today,
+    required this.events,
+    this.initialText = '',
+  });
+
+  final DateTime today;
+  final List<Map<String, dynamic>> events;
+  final String initialText;
+
+  @override
+  State<_AskHarness> createState() => _AskHarnessState();
+}
+
+class _AskHarnessState extends State<_AskHarness> {
+  late final TextEditingController _controller;
+  late DashboardVoiceState _voice;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+    _voice = DashboardVoiceState(
+      phase: widget.initialText.isEmpty
+          ? DashboardVoicePhase.fallback
+          : DashboardVoicePhase.unrecognized,
+      transcript: widget.initialText,
+      notice: widget.initialText.isEmpty
+          ? DashboardVoiceState.speechUnavailableNotice
+          : DashboardVoiceState.unrecognizedNotice,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> _eventsOn(DateTime day) {
+    return widget.events.where((event) {
+      final start = event['start'] as DateTime;
+      return start.year == day.year &&
+          start.month == day.month &&
+          start.day == day.day;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = DashboardMetrics(const Size(1200, 900));
+    final palette = HubMemberPalette.fromMembers(const [
+      {'uid': 'tom', 'name': 'Tom'},
+      {'uid': 'maria', 'name': 'Maria'},
+    ]);
+    final answerDay = _voice.answerDay ?? widget.today;
+    final showingAnswer = _voice.phase == DashboardVoicePhase.answer;
+    final showingPrompt =
+        _voice.phase == DashboardVoicePhase.fallback ||
+        _voice.phase == DashboardVoicePhase.unrecognized;
+
+    return MaterialApp(
+      home: Scaffold(
+        body: GestureDetector(
+          onTap: () {},
+          child: Stack(
+            children: [
+              const SizedBox.expand(),
+              if (showingAnswer)
+                DashboardTodayAnswerLayer(
+                  metrics: metrics,
+                  day: answerDay,
+                  labelAsToday: DateUtils.isSameDay(answerDay, widget.today),
+                  events: _voice.events,
+                  palette: palette,
+                  transcript: _voice.transcript,
+                  onClose: () {},
+                ),
+              if (showingPrompt)
+                DashboardVoicePromptLayer(
+                  metrics: metrics,
+                  today: widget.today,
+                  notice: _voice.notice,
+                  controller: _controller,
+                  onClose: () {},
+                  onShowToday: () {
+                    setState(() {
+                      _voice = _voice.showToday(
+                        _eventsOn(widget.today),
+                        day: widget.today,
+                      );
+                    });
+                  },
+                  onSubmit: (raw) {
+                    setState(() {
+                      _voice = _voice.answerQuestion(
+                        raw,
+                        today: widget.today,
+                        eventsOn: _eventsOn,
+                      );
+                    });
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
