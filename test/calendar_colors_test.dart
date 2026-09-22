@@ -142,6 +142,37 @@ void main() {
     },
   );
 
+  test('imported tom token is Tom blue and work grey', () {
+    final palette = HubMemberPalette.fromMembers([
+      {'uid': 'firebaseUidTom', 'displayName': 'Tom Workman'},
+      {'uid': 'firebaseUidMaria', 'displayName': 'Maria Cole'},
+    ]);
+
+    final style = CalendarColors.resolve(
+      assignedTo: 'tom',
+      category: 'work',
+      palette: palette,
+    );
+
+    expect(style.who, CalendarColors.tom);
+    expect(style.kind, CalendarColors.work);
+    expect(style.appointmentColor, CalendarColors.tom);
+    expect(style.glanceDot, CalendarColors.work);
+    expect(palette.samePerson('tom', 'firebaseUidTom'), isTrue);
+    expect(palette.samePerson('tom', 'firebaseUidMaria'), isFalse);
+    expect(palette.visibleForFilter('tom', 'firebaseUidTom'), isTrue);
+    expect(palette.visibleForFilter('tom', 'firebaseUidMaria'), isFalse);
+    expect(palette.visibleForFilter('shared', 'firebaseUidTom'), isTrue);
+    expect(
+      CalendarColors.resolve(
+        assignedTo: 'tom',
+        category: 'work',
+        palette: HubMemberPalette.empty,
+      ).who,
+      CalendarColors.tom,
+    );
+  });
+
   test('EventModel and glance helper share the same category colour', () {
     final palette = HubMemberPalette.fromMembers(members);
     final event = EventModel(

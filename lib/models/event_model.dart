@@ -12,6 +12,15 @@ class EventModel {
   final String? ownerId;
   final bool isLovehubContext;
 
+  /// Importer that created this doc (`c2-rota`, `seb`, `rot90s`, …).
+  final String? source;
+
+  /// Stable id inside [source]. Together they form the Firestore doc id.
+  final String? externalId;
+
+  /// Free text from the importer. Kept off [summary] so titles stay clean.
+  final String? notes;
+
   EventModel({
     required this.id,
     required this.summary,
@@ -23,24 +32,39 @@ class EventModel {
     this.gcalId,
     this.ownerId,
     this.isLovehubContext = true,
+    this.source,
+    this.externalId,
+    this.notes,
   });
 
   factory EventModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    return EventModel.fromMap(data, id: doc.id);
+  }
+
+  factory EventModel.fromMap(Map<String, dynamic> data, {required String id}) {
+    final start = _readDate(data['start']);
     return EventModel(
-      id: doc.id,
+      id: id,
       summary: data['summary'] ?? 'Untitled Event',
-      start: (data['start'] as Timestamp).toDate(),
-      end: data['end'] != null
-          ? (data['end'] as Timestamp).toDate()
-          : (data['start'] as Timestamp).toDate(),
+      start: start,
+      end: data['end'] != null ? _readDate(data['end']) : start,
       allDay: data['allDay'] ?? false,
       category: data['category'] ?? 'general',
       assignedTo: data['assignedTo'] ?? 'shared',
       gcalId: data['gcalId'],
       ownerId: data['ownerId'],
       isLovehubContext: data['isLovehubContext'] ?? true,
+      source: data['source'],
+      externalId: data['externalId'],
+      notes: data['notes'],
     );
+  }
+
+  static DateTime _readDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    throw ArgumentError('Expected a Firestore Timestamp or DateTime');
   }
 
   Map<String, dynamic> toMap() {
@@ -58,6 +82,9 @@ class EventModel {
     // Now it will happily accept potentially null values!
     if (gcalId != null) map['gcalId'] = gcalId;
     if (ownerId != null) map['ownerId'] = ownerId;
+    if (source != null) map['source'] = source;
+    if (externalId != null) map['externalId'] = externalId;
+    if (notes != null) map['notes'] = notes;
 
     return map;
   }

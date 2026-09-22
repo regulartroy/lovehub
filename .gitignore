@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Credentials. The event importer reads tokens from the environment only.
+.env
+.env.*
+*serviceAccount*.json
+*service-account*.json
+*firebase-adminsdk*.json

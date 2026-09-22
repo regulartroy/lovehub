@@ -384,13 +384,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    final member = _hubMembers.firstWhere(
-      (m) => m['uid'] == uid,
-      orElse: () => {'name': '?', 'photoURL': ''},
-    );
+    Map<String, dynamic>? member;
+    for (final candidate in _hubMembers) {
+      final candidateUid = candidate['uid']?.toString() ?? '';
+      if (candidateUid.isEmpty) continue;
+      if (candidateUid == uid || _memberPalette.samePerson(uid, candidateUid)) {
+        member = candidate;
+        break;
+      }
+    }
+    final fallback = switch (uid.trim().toLowerCase()) {
+      'tom' => 'Tom',
+      'maria' => 'Maria',
+      _ => null,
+    };
     return MemberAvatar(
-      photoURL: member['photoURL']?.toString(),
-      name: member['name']?.toString(),
+      photoURL: member?['photoURL']?.toString(),
+      name: member?['name']?.toString() ?? fallback,
       radius: radius,
       backgroundColor: who,
     );
