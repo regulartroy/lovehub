@@ -10,6 +10,9 @@ const lovehubFirebaseWebApiKey = 'AIzaSyCaL0oQdTrw2yk-0fAlyBgirOxwQC-G8NU';
 /// Sources Roger was given. Any other non-empty string is accepted too.
 const knownEventImportSources = ['c2-rota', 'seb', 'rot90s'];
 
+const eventStatusTentative = 'tentative';
+const eventStatusConfirmed = 'confirmed';
+
 class EventImportException implements Exception {
   EventImportException(this.message);
 
@@ -53,6 +56,7 @@ class ImportedEvent {
     required this.category,
     required this.assignedTo,
     this.notes,
+    this.status,
   });
 
   final String docId;
@@ -66,8 +70,14 @@ class ImportedEvent {
   final String assignedTo;
   final String? notes;
 
+  /// `tentative` or `confirmed`. Null means "leave whatever is stored"
+  /// and displays as confirmed until a status is written.
+  final String? status;
+
   /// Firestore fields for an upsert. [gcalId] is intentionally absent so a
   /// merge does not clear Google Calendar sync on a doc that already has one.
+  /// [status] is omitted when this payload did not set one, so a later import
+  /// does not undo a confirm.
   Map<String, Object?> toImportFields({String? ownerId}) {
     return {
       'summary': summary,
@@ -80,9 +90,42 @@ class ImportedEvent {
       'source': source,
       'externalId': externalId,
       'notes': notes,
+      if (status != null) 'status': status,
       if (ownerId != null && ownerId.isNotEmpty) 'ownerId': ownerId,
     };
   }
+}
+
+class EventConfirmTarget {
+  const EventConfirmTarget({
+    required this.source,
+    required this.externalId,
+    required this.docId,
+  });
+
+  final String source;
+  final String externalId;
+  final String docId;
+}
+
+class ImportCommand {
+  const ImportCommand({
+    this.hubId,
+    this.file,
+    this.dryRun = false,
+    this.help = false,
+    this.tentative = false,
+    this.confirm = const [],
+  });
+
+  final String? hubId;
+  final String? file;
+  final bool dryRun;
+  final bool help;
+  final bool tentative;
+  final List<EventConfirmTarget> confirm;
+
+  String? get defaultStatus => tentative ? eventStatusTentative : null;
 }
 
 /// Stable Firestore document id for `source:externalId`.
@@ -173,10 +216,17 @@ void validateHubId(String hubId) {
 }
 
 /// Accepts one event, a JSON array, or `{"events":[...]}`.
+///
+/// [defaultStatus] fills in events that omit `status` (the `--tentative`
+/// flag). An envelope `"status"` does the same and wins over [defaultStatus].
+/// A status on the event itself wins over both. Omitted status is left null
+/// so an upsert does not overwrite a confirm.
 List<ImportedEvent> parseEventImport(
   Object? payload, {
   List<HubMemberRef> members = const [],
+  String? defaultStatus,
 }) {
+  final fallback = _envelopeStatus(payload) ?? _optionalStatus(defaultStatus);
   final list = _eventList(payload);
   final events = <ImportedEvent>[];
   for (var i = 0; i < list.length; i++) {
@@ -184,9 +234,128 @@ List<ImportedEvent> parseEventImport(
     if (item is! Map) {
       throw EventImportException('events[$i] must be an object');
     }
-    events.add(_parseOne(Map<String, dynamic>.from(item), i, members));
+    events.add(
+      _parseOne(Map<String, dynamic>.from(item), i, members, fallback),
+    );
   }
   return events;
+}
+
+String? _envelopeStatus(Object? payload) {
+  if (payload is! Map) return null;
+  final map = Map<String, dynamic>.from(payload);
+  if (!map.containsKey('events') || !map.containsKey('status')) return null;
+  return parseEventStatus(map['status'], label: 'status');
+}
+
+String? _optionalStatus(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  return parseEventStatus(raw, label: 'status');
+}
+
+/// `tentative` or `confirmed`. Anything else is rejected.
+String parseEventStatus(Object? raw, {required String label}) {
+  if (raw is! String) {
+    throw EventImportException('$label must be "tentative" or "confirmed"');
+  }
+  switch (raw.trim().toLowerCase()) {
+    case eventStatusTentative:
+      return eventStatusTentative;
+    case eventStatusConfirmed:
+      return eventStatusConfirmed;
+    default:
+      throw EventImportException('$label must be "tentative" or "confirmed"');
+  }
+}
+
+EventConfirmTarget parseConfirmTarget(String raw) {
+  final trimmed = raw.trim();
+  final index = trimmed.indexOf(':');
+  if (index <= 0 || index >= trimmed.length - 1) {
+    throw EventImportException(
+      '--confirm expects source:externalId (for example c2-rota:2026-09-20)',
+    );
+  }
+  final source = trimmed.substring(0, index).trim();
+  final externalId = trimmed.substring(index + 1).trim();
+  if (source.isEmpty || externalId.isEmpty) {
+    throw EventImportException(
+      '--confirm expects source:externalId (for example c2-rota:2026-09-20)',
+    );
+  }
+  return EventConfirmTarget(
+    source: source,
+    externalId: externalId,
+    docId: eventImportDocId(source, externalId),
+  );
+}
+
+ImportCommand parseImportCommand(
+  List<String> args, {
+  String? hubFromEnvironment,
+}) {
+  String? hub = hubFromEnvironment?.trim();
+  String? file;
+  var dryRun = false;
+  var tentative = false;
+  final confirm = <EventConfirmTarget>[];
+  for (var i = 0; i < args.length; i++) {
+    final arg = args[i];
+    switch (arg) {
+      case '--help':
+      case '-h':
+        return const ImportCommand(help: true);
+      case '--dry-run':
+        dryRun = true;
+        break;
+      case '--tentative':
+        tentative = true;
+        break;
+      case '--hub':
+        hub = _nextArg(args, ++i, '--hub');
+        break;
+      case '--file':
+        file = _nextArg(args, ++i, '--file');
+        break;
+      case '--confirm':
+        confirm.add(parseConfirmTarget(_nextArg(args, ++i, '--confirm')));
+        break;
+      default:
+        if (arg.startsWith('-')) {
+          throw EventImportException('Unknown option $arg');
+        }
+        if (file != null) {
+          throw EventImportException('Unexpected argument $arg');
+        }
+        file = arg;
+    }
+  }
+  if (hub != null && hub.isEmpty) hub = null;
+  if (tentative && confirm.isNotEmpty) {
+    throw EventImportException(
+      'Use --tentative when importing a file, not together with --confirm.',
+    );
+  }
+  if (confirm.isNotEmpty && file != null) {
+    throw EventImportException(
+      'Pass a file to import, or --confirm, not both.',
+    );
+  }
+  return ImportCommand(
+    hubId: hub,
+    file: file,
+    dryRun: dryRun,
+    help: false,
+    tentative: tentative,
+    confirm: confirm,
+  );
+}
+
+String _nextArg(List<String> args, int index, String flag) {
+  if (index >= args.length) {
+    throw EventImportException('Missing value for $flag');
+  }
+  return args[index];
 }
 
 List<Object?> _eventList(Object? payload) {
@@ -213,6 +382,7 @@ ImportedEvent _parseOne(
   Map<String, dynamic> json,
   int index,
   List<HubMemberRef> members,
+  String? fallbackStatus,
 ) {
   final source = _requiredString(json, 'source', index);
   final externalId = _requiredString(json, 'externalId', index);
@@ -226,6 +396,9 @@ ImportedEvent _parseOne(
   }
 
   final assignedRaw = _optionalString(json, 'assignedTo', index) ?? 'shared';
+  final status = json.containsKey('status') && json['status'] != null
+      ? parseEventStatus(json['status'], label: 'events[$index].status')
+      : fallbackStatus;
   return ImportedEvent(
     docId: eventImportDocId(source, externalId),
     source: source,
@@ -237,6 +410,7 @@ ImportedEvent _parseOne(
     category: _optionalString(json, 'category', index) ?? 'general',
     assignedTo: resolveAssignedTo(assignedRaw, members),
     notes: _optionalString(json, 'notes', index),
+    status: status,
   );
 }
 
@@ -394,6 +568,26 @@ Map<String, dynamic> firestoreRestValue(Object? value) {
     return {'timestampValue': value.toUtc().toIso8601String()};
   }
   throw ArgumentError('Unsupported Firestore value: $value');
+}
+
+/// Confirm write. Only `status` is touched, and the document must already exist.
+Map<String, dynamic> firestoreRestConfirmWrite({
+  required String projectId,
+  required String hubId,
+  required EventConfirmTarget target,
+}) {
+  validateHubId(hubId);
+  return {
+    'update': {
+      'name':
+          'projects/$projectId/databases/(default)/documents/hubs/$hubId/events/${target.docId}',
+      'fields': {'status': firestoreRestValue(eventStatusConfirmed)},
+    },
+    'updateMask': {
+      'fieldPaths': ['status'],
+    },
+    'currentDocument': {'exists': true},
+  };
 }
 
 /// One Firestore `commit` write. Update mask omits `gcalId`.

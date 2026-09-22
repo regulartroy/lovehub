@@ -918,11 +918,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final start = (data['start'] as Timestamp).toDate();
     final timeStr = isAllDay ? 'All day' : DateFormat('HH:mm').format(start);
 
-    final style = CalendarColors.resolve(
-      assignedTo: ownerId.toString(),
-      category: category.toString(),
-      palette: _memberPalette,
-    );
+    final style = CalendarColors.fromMap(data, palette: _memberPalette);
 
     return CalendarSplitPill(
       style: style,

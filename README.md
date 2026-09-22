@@ -24,5 +24,6 @@ Flutter UI. The JSON schema, hub id, and hub-member auth are in
 ```bash
 export HUB_ID='activeHubId from users/{uid}'
 export FIREBASE_REFRESH_TOKEN='hub member refresh token'
-dart run tool/import_hub_events.dart --file rota.json
+dart run tool/import_hub_events.dart --tentative --file rota.json
+dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-20
 ```

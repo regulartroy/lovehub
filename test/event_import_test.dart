@@ -39,9 +39,9 @@ void main() {
 
   test('doc id is stable across a second parse', () {
     final first = parseEventImport(sample).single.docId;
-    final second = parseEventImport(jsonDecode(jsonEncode(sample)))
-        .single
-        .docId;
+    final second = parseEventImport(
+      jsonDecode(jsonEncode(sample)),
+    ).single.docId;
     expect(first, second);
     expect(eventImportDocId('c2-rota', '2026-09-20'), first);
   });
@@ -92,7 +92,9 @@ void main() {
       'rot90s:2026-11-14',
     ]);
     expect(events.first.notes, 'optional');
+    expect(events.first.status, 'tentative');
     expect(events[1].notes, isNull);
+    expect(events[1].status, isNull);
     expect(events.every((event) => event.category == 'work'), isTrue);
   });
 
@@ -324,6 +326,119 @@ void main() {
     expect(store.hubs['hub-1']!.length, 1);
     expect(store.hubs['hub-1']!.values.single['summary'], 'later copy');
   });
+
+  test(
+    'status is stored, preserved when omitted, and can be confirmed',
+    () async {
+      final store = _MemoryEventWriter();
+      final repo = EventRepository(writer: store);
+      final tentative = {...sample, 'status': 'tentative'};
+      await repo.upsertImportedEvents('hub-1', [
+        parseEventImport(tentative).single,
+      ]);
+      final doc = store.hubs['hub-1']!['c2-rota:2026-09-20']!;
+      expect(doc['status'], 'tentative');
+      expect(doc.containsKey('gcalId'), isFalse);
+
+      await repo.upsertImportedEvents('hub-1', [
+        parseEventImport(sample).single,
+      ]);
+      expect(doc['status'], 'tentative');
+      expect(doc['summary'], 'C2 Show — Artist');
+
+      await repo.confirmImportedEvent('hub-1', 'c2-rota', '2026-09-20');
+      expect(doc['status'], 'confirmed');
+      expect(doc['summary'], 'C2 Show — Artist');
+      expect(doc['notes'], 'call time 14:30');
+
+      await repo.upsertImportedEvents('hub-1', [
+        parseEventImport({
+          ...sample,
+          'status': 'confirmed',
+          'summary': 'Booked',
+        }).single,
+      ]);
+      expect(doc['status'], 'confirmed');
+      expect(doc['summary'], 'Booked');
+
+      expect(
+        () => repo.confirmImportedEvent('hub-1', 'seb', 'missing'),
+        throwsA(isA<EventImportException>()),
+      );
+    },
+  );
+
+  test('a rota envelope or default marks every omitted row tentative', () {
+    final row = {
+      'source': 'c2-rota',
+      'externalId': '2026-09-21',
+      'summary': 'C2 Show — Maybe',
+      'start': '2026-09-21T15:00:00+01:00',
+      'category': 'work',
+      'assignedTo': 'tom',
+    };
+    final envelope = parseEventImport({
+      'status': 'tentative',
+      'events': [
+        row,
+        {...row, 'externalId': '2026-09-22', 'status': 'confirmed'},
+      ],
+    });
+    expect(envelope.first.status, 'tentative');
+    expect(envelope.last.status, 'confirmed');
+    expect(envelope.first.toImportFields()['status'], 'tentative');
+    expect(
+      parseEventImport(sample).single.toImportFields().containsKey('status'),
+      isFalse,
+    );
+
+    final dumped = parseEventImport([
+      row,
+      {...row, 'externalId': '2026-09-23'},
+    ], defaultStatus: eventStatusTentative);
+    expect(dumped.every((event) => event.status == 'tentative'), isTrue);
+
+    expect(
+      () => parseEventImport({...sample, 'status': 'maybe'}),
+      throwsA(isA<EventImportException>()),
+    );
+  });
+
+  test('confirm target and import flags parse source:externalId', () {
+    final target = parseConfirmTarget('c2-rota:2026-09-20');
+    expect(target.source, 'c2-rota');
+    expect(target.externalId, '2026-09-20');
+    expect(target.docId, 'c2-rota:2026-09-20');
+
+    final command = parseImportCommand([
+      '--tentative',
+      '--dry-run',
+      '--file',
+      'rota.json',
+    ], hubFromEnvironment: 'hub-1');
+    expect(command.tentative, isTrue);
+    expect(command.defaultStatus, 'tentative');
+    expect(command.hubId, 'hub-1');
+    expect(command.file, 'rota.json');
+
+    final confirm = parseImportCommand(['--confirm', 'seb:london']);
+    expect(confirm.confirm.single.docId, 'seb:london');
+    expect(
+      () => parseImportCommand(['--tentative', '--confirm', 'seb:london']),
+      throwsA(isA<EventImportException>()),
+    );
+
+    final rest = firestoreRestConfirmWrite(
+      projectId: lovehubFirebaseProjectId,
+      hubId: 'hub-1',
+      target: target,
+    );
+    expect((rest['updateMask'] as Map)['fieldPaths'], ['status']);
+    expect((rest['currentDocument'] as Map)['exists'], isTrue);
+    expect(((rest['update'] as Map)['fields'] as Map)['status'], {
+      'stringValue': 'confirmed',
+    });
+  });
 }
 
 String _jwt(Map<String, Object?> payload) {
@@ -349,5 +464,20 @@ class _MemoryEventWriter implements EventBatchWriter {
         current[key] = value;
       });
     });
+  }
+
+  @override
+  Future<void> updateFields(
+    String hubId,
+    String eventId,
+    Map<String, dynamic> fields,
+  ) async {
+    final doc = hubs[hubId]?[eventId];
+    if (doc == null) {
+      throw EventImportException(
+        'No event $eventId in hub $hubId. Import it before confirming.',
+      );
+    }
+    doc.addAll(fields);
   }
 }

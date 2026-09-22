@@ -21,6 +21,9 @@ class EventModel {
   /// Free text from the importer. Kept off [summary] so titles stay clean.
   final String? notes;
 
+  /// `tentative` or `confirmed`. Null is a legacy event and displays as confirmed.
+  final String? status;
+
   EventModel({
     required this.id,
     required this.summary,
@@ -35,7 +38,10 @@ class EventModel {
     this.source,
     this.externalId,
     this.notes,
+    this.status,
   });
+
+  bool get isTentative => isTentativeEventStatus(status);
 
   factory EventModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -58,6 +64,7 @@ class EventModel {
       source: data['source'],
       externalId: data['externalId'],
       notes: data['notes'],
+      status: readStoredEventStatus(data['status']),
     );
   }
 
@@ -85,7 +92,29 @@ class EventModel {
     if (source != null) map['source'] = source;
     if (externalId != null) map['externalId'] = externalId;
     if (notes != null) map['notes'] = notes;
+    if (status != null) map['status'] = status;
 
     return map;
   }
 }
+
+const _eventStatusTentative = 'tentative';
+const _eventStatusConfirmed = 'confirmed';
+
+/// Firestore may omit [status] on events created before imports. Those stay
+/// confirmed. Unknown values are treated the same way so a bad write cannot
+/// blank the calendar.
+String? readStoredEventStatus(Object? raw) {
+  if (raw is! String) return null;
+  switch (raw.trim().toLowerCase()) {
+    case _eventStatusTentative:
+      return _eventStatusTentative;
+    case _eventStatusConfirmed:
+      return _eventStatusConfirmed;
+    default:
+      return null;
+  }
+}
+
+bool isTentativeEventStatus(Object? raw) =>
+    readStoredEventStatus(raw) == _eventStatusTentative;

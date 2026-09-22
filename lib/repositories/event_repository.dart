@@ -10,6 +10,13 @@ abstract class EventBatchWriter {
     String hubId,
     Map<String, Map<String, dynamic>> docs,
   );
+
+  /// Patch one existing document. Throws [EventImportException] when it is missing.
+  Future<void> updateFields(
+    String hubId,
+    String eventId,
+    Map<String, dynamic> fields,
+  );
 }
 
 class FirestoreEventBatchWriter implements EventBatchWriter {
@@ -36,6 +43,29 @@ class FirestoreEventBatchWriter implements EventBatchWriter {
         );
       }
       await batch.commit();
+    }
+  }
+
+  @override
+  Future<void> updateFields(
+    String hubId,
+    String eventId,
+    Map<String, dynamic> fields,
+  ) async {
+    final ref = _db
+        .collection('hubs')
+        .doc(hubId)
+        .collection('events')
+        .doc(eventId);
+    try {
+      await ref.update(fields);
+    } on FirebaseException catch (error) {
+      if (error.code == 'not-found') {
+        throw EventImportException(
+          'No event $eventId in hub $hubId. Import it before confirming.',
+        );
+      }
+      rethrow;
     }
   }
 }
@@ -134,5 +164,18 @@ class EventRepository {
       docs[event.docId] = firestoreMapFromImport(event, ownerId: ownerId);
     }
     await _batchWriter.commitMerges(hubId.trim(), docs);
+  }
+
+  /// Flip one imported event to confirmed without rewriting the rest of it.
+  Future<void> confirmImportedEvent(
+    String hubId,
+    String source,
+    String externalId,
+  ) async {
+    validateHubId(hubId);
+    final target = parseConfirmTarget('$source:$externalId');
+    await _batchWriter.updateFields(hubId.trim(), target.docId, {
+      'status': eventStatusConfirmed,
+    });
   }
 }

@@ -56,9 +56,16 @@ class CalendarColors {
     }
   }
 
+  /// Lift a booked colour toward warm paper so a tentative shift reads as a
+  /// sketch: still the same hue, quieter than Tom blue or work grey, dark ink.
+  static Color mute(Color color) {
+    return Color.lerp(const Color(0xFFE6E1D6), color, 0.30)!;
+  }
+
   static CalendarEventStyle resolve({
     required String assignedTo,
     String category = 'general',
+    String? status,
     HubMemberPalette? palette,
   }) {
     final whoPalette = palette ?? HubMemberPalette.empty;
@@ -70,7 +77,16 @@ class CalendarColors {
     } else if (category == 'meal') {
       special = meal;
     }
-    return CalendarEventStyle(who: who, kind: kind, special: special);
+    final tentative = isTentativeEventStatus(status);
+    if (!tentative) {
+      return CalendarEventStyle(who: who, kind: kind, special: special);
+    }
+    return CalendarEventStyle(
+      who: mute(who),
+      kind: mute(kind),
+      special: special == null ? null : mute(special),
+      tentative: true,
+    );
   }
 
   static CalendarEventStyle fromEvent(
@@ -80,6 +96,7 @@ class CalendarColors {
     return resolve(
       assignedTo: event.assignedTo,
       category: event.category,
+      status: event.status,
       palette: palette,
     );
   }
@@ -91,6 +108,7 @@ class CalendarColors {
     return resolve(
       assignedTo: (data['assignedTo'] ?? 'shared').toString(),
       category: (data['category'] ?? 'general').toString(),
+      status: data['status']?.toString(),
       palette: palette,
     );
   }
@@ -120,11 +138,15 @@ class CalendarEventStyle {
     required this.who,
     required this.kind,
     this.special,
+    this.tentative = false,
   });
 
   final Color who;
   final Color kind;
   final Color? special;
+
+  /// Provisional work date. Chips mute [who] and [kind] and show a question mark.
+  final bool tentative;
 
   /// Category fill used by chips, dots, and the right half of the pill.
   Color get signal => kind;

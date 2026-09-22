@@ -22,6 +22,7 @@ One event, a JSON array, or `{"events":[...]}`.
   "allDay": false,
   "category": "work",
   "assignedTo": "tom",
+  "status": "tentative",
   "notes": "optional"
 }
 ```
@@ -36,7 +37,24 @@ One event, a JSON array, or `{"events":[...]}`.
 | `allDay` | no | Default `false`. A date-only `2026-09-20` is also accepted. |
 | `category` | no | Use `work` so the chip is stone grey. Default `general`. |
 | `assignedTo` | no | `tom`, `maria`, `shared`, or a Firebase uid. Default `shared`. |
+| `status` | no | `tentative` or `confirmed`. Omit it to leave the stored value alone. A new event with no status displays as confirmed. |
 | `notes` | no | Stored on the `notes` field, not appended to `summary`. |
+
+A whole rota dump can be tentative without editing every row. Either pass
+`--tentative`, or wrap the array:
+
+```json
+{ "status": "tentative", "events": [ /* rows that omit status */ ] }
+```
+
+A status on an individual event wins over the envelope and over `--tentative`.
+Re-posting a payload that says `tentative` marks that show tentative again.
+Re-posting a payload that omits `status` does not change a confirm.
+
+`tentative` shows on the calendar, LOOK AHEAD, and dashboard as a paler chip
+with a **?** . Confirmed work stays Tom blue and work grey.
+
+![Confirmed work next to a muted tentative chip](tentative-vs-confirmed.png)
 
 Document id is `source:externalId` (for example `c2-rota:2026-09-20`).
 `/` and control characters are replaced so the id is legal in Firestore.
@@ -97,7 +115,17 @@ export HUB_ID='paste-activeHubId'
 export FIREBASE_REFRESH_TOKEN='paste-refresh-token'
 
 dart run tool/import_hub_events.dart --dry-run --file tool/event_import_example.json
+dart run tool/import_hub_events.dart --tentative --file rota.json
 dart run tool/import_hub_events.dart --file rota.json
+```
+
+Confirm one show after Tom decides he is working it. This does not repost the
+shift; it only sets `status` to `confirmed` on that document. The document
+must already exist.
+
+```bash
+dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-20
+dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-21 --confirm seb:2026-10-03-london
 ```
 
 `--hub` overrides `HUB_ID`. With no `--file`, the script reads JSON from a

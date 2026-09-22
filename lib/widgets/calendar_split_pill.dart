@@ -33,6 +33,7 @@ class CalendarSplitPill extends StatelessWidget {
 
   static const Key whoKey = Key('calendar-split-who');
   static const Key kindKey = Key('calendar-split-kind');
+  static const Key tentativeMarkKey = Key('calendar-tentative-mark');
 
   bool get _compact => density == CalendarSplitPillDensity.compact;
 
@@ -132,35 +133,49 @@ class CalendarSplitPill extends StatelessWidget {
       ),
     );
 
-    final pill = ClipRRect(
-      borderRadius: BorderRadius.circular(_radius),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final narrowWho =
-                  _compact && leading == null && constraints.maxWidth < 90;
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    narrowWho
-                        ? SizedBox(width: 10, child: _whoBox())
-                        : Expanded(flex: 1, child: _whoBox()),
-                    Expanded(
-                      flex: 2,
-                      child: ColoredBox(
-                        key: kindKey,
-                        color: style.kind,
-                        child: kindContent,
+    final pill = Container(
+      foregroundDecoration: style.tentative
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(_radius),
+              border: Border.all(
+                color: CalendarColors.darkInk.withValues(alpha: 0.55),
+                width: 1.4,
+              ),
+            )
+          : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_radius),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final narrowWho =
+                    _compact &&
+                    leading == null &&
+                    !style.tentative &&
+                    constraints.maxWidth < 90;
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      narrowWho
+                          ? SizedBox(width: 10, child: _whoBox())
+                          : Expanded(flex: 1, child: _whoBox()),
+                      Expanded(
+                        flex: 2,
+                        child: ColoredBox(
+                          key: kindKey,
+                          color: style.kind,
+                          child: kindContent,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -171,17 +186,52 @@ class CalendarSplitPill extends StatelessWidget {
   }
 
   Widget _whoBox() {
+    final mark = style.tentative
+        ? Container(
+            key: CalendarSplitPill.tentativeMarkKey,
+            width: _compact ? 16 : 22,
+            height: _compact ? 16 : 22,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: CalendarColors.darkInk,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '?',
+              semanticsLabel: 'Tentative',
+              style: TextStyle(
+                color: CalendarColors.lightInk,
+                fontSize: _compact ? 11 : 14,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+            ),
+          )
+        : null;
+    final showLeading = leading != null && !(_compact && style.tentative);
     return ColoredBox(
       key: whoKey,
       color: style.who,
-      child: leading == null
+      child: mark == null && !showLeading
           ? const SizedBox.expand()
           : Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: _compact ? 2 : 6,
                 vertical: _compact ? 2 : 6,
               ),
-              child: Center(child: leading),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (mark != null) mark,
+                      if (mark != null && showLeading) const SizedBox(width: 4),
+                      if (showLeading) leading!,
+                    ],
+                  ),
+                ),
+              ),
             ),
     );
   }
@@ -202,8 +252,12 @@ class CalendarGlanceDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fill = style.glanceDot.withValues(alpha: faded ? 0.45 : 0.95);
-    final accent = style.who.withValues(alpha: faded ? 0.5 : 0.95);
+    final fill = style.tentative
+        ? Colors.transparent
+        : style.glanceDot.withValues(alpha: faded ? 0.45 : 0.95);
+    final accent = style.tentative
+        ? style.kind
+        : style.who.withValues(alpha: faded ? 0.5 : 0.95);
     return Container(
       width: size,
       height: size,
@@ -211,7 +265,10 @@ class CalendarGlanceDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: fill,
         shape: BoxShape.circle,
-        border: Border.all(color: accent, width: size >= 7 ? 1.4 : 1.1),
+        border: Border.all(
+          color: accent,
+          width: style.tentative ? 1.6 : (size >= 7 ? 1.4 : 1.1),
+        ),
       ),
     );
   }

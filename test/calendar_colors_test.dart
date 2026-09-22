@@ -173,6 +173,68 @@ void main() {
     );
   });
 
+  test(
+    'tentative work is a paler chip than confirmed Tom blue and work grey',
+    () {
+      final palette = HubMemberPalette.fromMembers([
+        {'uid': 'firebaseUidTom', 'displayName': 'Tom Workman'},
+      ]);
+      final confirmed = CalendarColors.resolve(
+        assignedTo: 'tom',
+        category: 'work',
+        status: 'confirmed',
+        palette: palette,
+      );
+      final tentative = CalendarColors.resolve(
+        assignedTo: 'tom',
+        category: 'work',
+        status: 'tentative',
+        palette: palette,
+      );
+      final legacy = CalendarColors.fromMap(
+        {'assignedTo': 'uid-tom', 'category': 'work'},
+        palette: HubMemberPalette.fromMembers([
+          {'uid': 'uid-tom', 'displayName': 'Tom'},
+        ]),
+      );
+
+      expect(confirmed.tentative, isFalse);
+      expect(confirmed.who, CalendarColors.tom);
+      expect(confirmed.kind, CalendarColors.work);
+      expect(legacy.tentative, isFalse);
+      expect(legacy.kind, CalendarColors.work);
+      expect(tentative.tentative, isTrue);
+      expect(tentative.who, isNot(CalendarColors.tom));
+      expect(tentative.kind, isNot(CalendarColors.work));
+      expect(
+        tentative.who.computeLuminance(),
+        greaterThan(confirmed.who.computeLuminance()),
+      );
+      expect(
+        tentative.kind.computeLuminance(),
+        greaterThan(confirmed.kind.computeLuminance()),
+      );
+      expect(tentative.who.b, greaterThan(tentative.kind.b));
+      expect(CalendarColors.inkOn(tentative.who), CalendarColors.darkInk);
+      expect(CalendarColors.inkOn(tentative.kind), CalendarColors.darkInk);
+      expect(
+        CalendarColors.fromEvent(
+          EventModel(
+            id: 'c2-rota:2026-09-20',
+            summary: 'C2 Show — Artist',
+            start: DateTime.utc(2026, 9, 20, 14),
+            end: DateTime.utc(2026, 9, 20, 22, 30),
+            category: 'work',
+            assignedTo: 'tom',
+            status: 'tentative',
+          ),
+          palette: palette,
+        ).tentative,
+        isTrue,
+      );
+    },
+  );
+
   test('EventModel and glance helper share the same category colour', () {
     final palette = HubMemberPalette.fromMembers(members);
     final event = EventModel(

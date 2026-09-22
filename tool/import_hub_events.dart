@@ -1,6 +1,8 @@
 // Bulk-imports Roger's work-calendar JSON into hubs/{hubId}/events.
 //
 //   dart run tool/import_hub_events.dart --hub <hubId> --file events.json
+//   dart run tool/import_hub_events.dart --tentative --file rota.json
+//   dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-20
 //   dart run tool/import_hub_events.dart --dry-run --file events.json
 //
 // Auth (environment only — never commit these):
@@ -20,8 +22,12 @@ const _usage = '''
 Import work events into a LoveHub hub (idempotent upsert).
 
   dart run tool/import_hub_events.dart --hub <hubId> --file events.json
+  dart run tool/import_hub_events.dart --tentative --file rota.json
+  dart run tool/import_hub_events.dart --hub <hubId> --confirm c2-rota:2026-09-20
   dart run tool/import_hub_events.dart --dry-run --file events.json
 
+--tentative marks events that omit status as tentative (a C2 rota dump).
+--confirm source:externalId flips that one event to confirmed.
 HUB_ID can replace --hub.
 Set FIREBASE_ID_TOKEN or FIREBASE_REFRESH_TOKEN to a hub member's credential.
 Payload: one event, a JSON array, or {"events":[...]}.
@@ -30,23 +36,30 @@ Payload: one event, a JSON array, or {"events":[...]}.
 Future<void> main(List<String> args) async {
   final client = http.Client();
   try {
-    final options = _parseArgs(args);
-    if (options.help) {
+    final command = parseImportCommand(
+      args,
+      hubFromEnvironment: Platform.environment['HUB_ID'],
+    );
+    if (command.help) {
       stdout.writeln(_usage.trim());
       return;
     }
+    if (command.confirm.isNotEmpty) {
+      await _confirm(client, command);
+      return;
+    }
 
-    final raw = await _readPayload(options.file);
+    final raw = await _readPayload(command.file);
     final decoded = jsonDecode(raw);
 
     String? idToken;
     HubDirectory? directory;
-    if (!options.dryRun || _hasCredential()) {
-      idToken = await _resolveIdToken(client, required: !options.dryRun);
+    if (!command.dryRun || _hasCredential()) {
+      idToken = await _resolveIdToken(client, required: !command.dryRun);
     }
 
-    if (!options.dryRun) {
-      final hubId = options.hubId;
+    if (!command.dryRun) {
+      final hubId = command.hubId;
       if (hubId == null) {
         throw EventImportException('Pass --hub <hubId> or set HUB_ID.');
       }
@@ -54,7 +67,11 @@ Future<void> main(List<String> args) async {
       directory = await _loadDirectory(client, idToken!, hubId);
       final uid = uidFromFirebaseIdToken(idToken);
       requireHubMember(uid: uid, memberUids: directory.memberUids);
-      final events = parseEventImport(decoded, members: directory.members);
+      final events = parseEventImport(
+        decoded,
+        members: directory.members,
+        defaultStatus: command.defaultStatus,
+      );
       if (events.isEmpty) {
         stdout.writeln('No events to import.');
         return;
@@ -74,14 +91,16 @@ Future<void> main(List<String> args) async {
         'into hubs/$hubId/events',
       );
       for (final event in events) {
-        stdout.writeln('  ${event.docId}  ${event.summary}');
+        stdout.writeln(
+          '  ${event.docId}  ${_statusLabel(event.status)}  ${event.summary}',
+        );
       }
       return;
     }
 
-    if (idToken != null && options.hubId != null) {
-      validateHubId(options.hubId!);
-      directory = await _loadDirectory(client, idToken, options.hubId!);
+    if (idToken != null && command.hubId != null) {
+      validateHubId(command.hubId!);
+      directory = await _loadDirectory(client, idToken, command.hubId!);
       final uid = uidFromFirebaseIdToken(idToken);
       requireHubMember(uid: uid, memberUids: directory.memberUids);
     }
@@ -89,6 +108,7 @@ Future<void> main(List<String> args) async {
     final events = parseEventImport(
       decoded,
       members: directory?.members ?? const [],
+      defaultStatus: command.defaultStatus,
     );
     stdout.writeln(
       'Dry run: ${events.length} event${events.length == 1 ? '' : 's'} '
@@ -101,7 +121,7 @@ Future<void> main(List<String> args) async {
     }
     for (final event in events) {
       stdout.writeln(
-        '  ${event.docId}  ${event.assignedTo}  '
+        '  ${event.docId}  ${_statusLabel(event.status)}  ${event.assignedTo}  '
         '${event.start.toUtc().toIso8601String()}  ${event.summary}',
       );
     }
@@ -116,58 +136,43 @@ Future<void> main(List<String> args) async {
   }
 }
 
-class _Options {
-  const _Options({
-    this.hubId,
-    this.file,
-    this.dryRun = false,
-    this.help = false,
-  });
+String _statusLabel(String? status) => status ?? 'confirmed (default)';
 
-  final String? hubId;
-  final String? file;
-  final bool dryRun;
-  final bool help;
-}
-
-_Options _parseArgs(List<String> args) {
-  String? hub = Platform.environment['HUB_ID']?.trim();
-  String? file;
-  var dryRun = false;
-  for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
-    switch (arg) {
-      case '--help':
-      case '-h':
-        return const _Options(help: true);
-      case '--dry-run':
-        dryRun = true;
-        break;
-      case '--hub':
-        hub = _next(args, ++i, '--hub');
-        break;
-      case '--file':
-        file = _next(args, ++i, '--file');
-        break;
-      default:
-        if (arg.startsWith('-')) {
-          throw EventImportException('Unknown option $arg\n$_usage');
-        }
-        if (file != null) {
-          throw EventImportException('Unexpected argument $arg\n$_usage');
-        }
-        file = arg;
+Future<void> _confirm(http.Client client, ImportCommand command) async {
+  if (command.dryRun) {
+    stdout.writeln(
+      'Dry run: would confirm ${command.confirm.length} event'
+      '${command.confirm.length == 1 ? '' : 's'} (nothing written)',
+    );
+    for (final target in command.confirm) {
+      stdout.writeln('  ${target.docId}  confirmed');
     }
+    return;
   }
-  if (hub != null && hub.isEmpty) hub = null;
-  return _Options(hubId: hub, file: file, dryRun: dryRun);
-}
 
-String _next(List<String> args, int index, String flag) {
-  if (index >= args.length) {
-    throw EventImportException('Missing value for $flag');
+  final hubId = command.hubId;
+  if (hubId == null) {
+    throw EventImportException('Pass --hub <hubId> or set HUB_ID.');
   }
-  return args[index];
+  validateHubId(hubId);
+  final idToken = await _resolveIdToken(client, required: true);
+  final directory = await _loadDirectory(client, idToken, hubId);
+  final uid = uidFromFirebaseIdToken(idToken);
+  requireHubMember(uid: uid, memberUids: directory.memberUids);
+  for (final target in command.confirm) {
+    try {
+      await _commit(client, idToken, [
+        firestoreRestConfirmWrite(
+          projectId: lovehubFirebaseProjectId,
+          hubId: hubId,
+          target: target,
+        ),
+      ], requireExisting: true);
+    } on EventImportException catch (error) {
+      throw EventImportException('${target.docId}: ${error.message}');
+    }
+    stdout.writeln('Confirmed ${target.docId}');
+  }
 }
 
 bool _hasCredential() {
@@ -282,8 +287,9 @@ Future<Map<String, dynamic>?> _getDocument(
 Future<void> _commit(
   http.Client client,
   String idToken,
-  List<Map<String, dynamic>> writes,
-) async {
+  List<Map<String, dynamic>> writes, {
+  bool requireExisting = false,
+}) async {
   const chunkSize = 400;
   final uri = Uri.parse(
     'https://firestore.googleapis.com/v1/projects/$lovehubFirebaseProjectId'
@@ -300,8 +306,14 @@ Future<void> _commit(
       body: jsonEncode({'writes': writes.sublist(i, end)}),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      final missing =
+          requireExisting &&
+          (response.body.contains('NOT_FOUND') ||
+              response.body.contains('FAILED_PRECONDITION'));
       throw EventImportException(
-        'Firestore commit failed (${response.statusCode}).',
+        missing
+            ? 'No imported event to confirm. Import it first.'
+            : 'Firestore commit failed (${response.statusCode}).',
       );
     }
   }
