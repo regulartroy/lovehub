@@ -23,15 +23,71 @@ DateTime? dashboardEventDateTime(dynamic value) {
   return null;
 }
 
-/// Same inclusive day-span rule as the schedule slide.
+/// Local hour before which an overnight continuation is not a new day.
+///
+/// Club nights that run 23:00 → 04:00 stay on the start day in overviews.
+/// An end at exactly 06:00 still counts on that morning.
+const int dashboardOverviewOvernightCutoffHour = 6;
+
+/// Coloured chips drawn in a LOOK AHEAD day cell. A fourth event replaces
+/// the chips with [dashboardLookAheadEventCountLabel].
+const int dashboardLookAheadMaxVisibleEvents = 3;
+
+/// "4 events" — used only when a day has more than
+/// [dashboardLookAheadMaxVisibleEvents] events.
+String dashboardLookAheadEventCountLabel(int count) {
+  if (count == 1) return '1 event';
+  return '$count events';
+}
+
+/// Kitchen-tablet day box: weekday, date, and three compact chips.
+const double dashboardLookAheadRowHeight = 156;
+
+/// Phone day box. The header is smaller, and three chips still fit.
+const double dashboardLookAheadCompactRowHeight = 144;
+
+/// Whether [start]/[end] should place a chip on [day] in calendar overviews.
+///
+/// The start day always keeps the event. Later days keep it when the event
+/// is all-day, or when it is still going at
+/// [dashboardOverviewOvernightCutoffHour]. A timed event that only touches
+/// the next calendar day because it ends strictly before that hour is left
+/// off that morning. Stored times are not changed.
+bool dashboardEventBelongsOnOverviewDay({
+  required DateTime start,
+  required DateTime end,
+  required DateTime day,
+  bool allDay = false,
+}) {
+  final checkDay = DateUtils.dateOnly(day);
+  final startDay = DateUtils.dateOnly(start);
+  final effectiveEnd = end.isBefore(start) ? start : end;
+  final endDay = DateUtils.dateOnly(effectiveEnd);
+  if (checkDay.isBefore(startDay) || checkDay.isAfter(endDay)) {
+    return false;
+  }
+  if (allDay || DateUtils.isSameDay(checkDay, startDay)) return true;
+  final cutoff = DateTime(
+    checkDay.year,
+    checkDay.month,
+    checkDay.day,
+    dashboardOverviewOvernightCutoffHour,
+  );
+  return !effectiveEnd.isBefore(cutoff);
+}
+
+/// Overview day membership for a Firestore event map. Same rule as
+/// [dashboardEventBelongsOnOverviewDay].
 bool dashboardEventOverlapsDay(Map<String, dynamic> data, DateTime day) {
   final startRaw = dashboardEventDateTime(data['start']);
   if (startRaw == null) return false;
   final endRaw = dashboardEventDateTime(data['end']) ?? startRaw;
-  final checkDay = DateUtils.dateOnly(day);
-  final dayStart = DateUtils.dateOnly(startRaw);
-  final dayEnd = DateUtils.dateOnly(endRaw);
-  return !checkDay.isBefore(dayStart) && !checkDay.isAfter(dayEnd);
+  return dashboardEventBelongsOnOverviewDay(
+    start: startRaw,
+    end: endRaw,
+    day: day,
+    allDay: data['allDay'] == true,
+  );
 }
 
 List<Map<String, dynamic>> dashboardEventsOnDay(
@@ -555,9 +611,11 @@ class _LookAheadWeekBoard extends StatelessWidget {
     // Modest extra air between months so the board reads as sections, not one
     // continuous grid. Tight enough for a wall tablet.
     final monthGap = metrics.isCompact ? 16.0 : 22.0;
-    // Keep day boxes tall enough for the weekday, date, and one chip.
-    // Shorter than this and we scroll instead of crushing.
-    final minRow = metrics.isCompact ? 108.0 : 96.0;
+    // Tall enough for the weekday, the date, and three coloured chips.
+    // A shorter box was collapsing busy days to a count.
+    final minRow = metrics.isCompact
+        ? dashboardLookAheadCompactRowHeight
+        : dashboardLookAheadRowHeight;
     final sections = dashboardLookAheadMonthSections(weeks, now: today);
 
     return DashboardGlassCard(
@@ -720,158 +778,120 @@ class _WeekDayColumn extends StatelessWidget {
         : isPast
         ? DashboardTheme.inkFaint
         : DashboardTheme.ink;
+    // 1–3 events stay as chips. Four or more collapse to a count so the
+    // day box does not try to jam a fourth chip.
+    final showSummary = events.length > dashboardLookAheadMaxVisibleEvents;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final eventAreaHeight =
-                (constraints.maxHeight - (metrics.isCompact ? 52 : 64)).clamp(
-                  0.0,
-                  constraints.maxHeight,
-                );
-            var chipBudget = eventAreaHeight < 26
-                ? 0
-                : eventAreaHeight < 54
-                ? 1
-                : eventAreaHeight < 82
-                ? 2
-                : 3;
-            // "+N more" needs extra air; if it will not fit, drop to a count
-            // label instead of overflowing a chip out of the day box.
-            if (events.length > chipBudget &&
-                chipBudget > 0 &&
-                eventAreaHeight < 48) {
-              chipBudget = 0;
-            }
-            final visible = events.take(chipBudget).toList();
-            final overflow = events.length - visible.length;
-
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                color: DashboardTheme.fade(
-                  wash,
-                  isSelected
-                      ? 0.20
-                      : isToday
-                      ? 0.12
-                      : isPast
-                      ? 0.03
-                      : 0.05,
-                ),
-                borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
-                border: Border.all(
-                  color: DashboardTheme.fade(
-                    wash,
-                    isSelected
-                        ? 0.70
-                        : isToday
-                        ? 0.45
-                        : isPast
-                        ? 0.10
-                        : 0.16,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: DashboardTheme.fade(
+              wash,
+              isSelected
+                  ? 0.20
+                  : isToday
+                  ? 0.12
+                  : isPast
+                  ? 0.03
+                  : 0.05,
+            ),
+            borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
+            border: Border.all(
+              color: DashboardTheme.fade(
+                wash,
+                isSelected
+                    ? 0.70
+                    : isToday
+                    ? 0.45
+                    : isPast
+                    ? 0.10
+                    : 0.16,
+              ),
+              width: isSelected || isToday ? 1.4 : 1,
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              metrics.isCompact ? 5 : 8,
+              metrics.isCompact ? 8 : 10,
+              metrics.isCompact ? 5 : 8,
+              metrics.isCompact ? 6 : 8,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  isToday ? 'TODAY' : weekday,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: labelColor,
+                    fontSize: metrics.isCompact ? 10 : 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
                   ),
-                  width: isSelected || isToday ? 1.4 : 1,
                 ),
-              ),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  metrics.isCompact ? 5 : 8,
-                  metrics.isCompact ? 8 : 10,
-                  metrics.isCompact ? 5 : 8,
-                  metrics.isCompact ? 6 : 8,
+                const SizedBox(height: 2),
+                Text(
+                  '${day.day}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: dateColor,
+                    fontSize: metrics.isCompact ? 20 : 24,
+                    fontWeight: FontWeight.w700,
+                    height: 1.05,
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      isToday ? 'TODAY' : weekday,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: labelColor,
-                        fontSize: metrics.isCompact ? 10 : 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${day.day}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: dateColor,
-                        fontSize: metrics.isCompact ? 20 : 24,
-                        fontWeight: FontWeight.w700,
-                        height: 1.05,
-                      ),
-                    ),
-                    SizedBox(height: metrics.isCompact ? 6 : 8),
-                    Expanded(
-                      child: ClipRect(
-                        child: events.isEmpty
-                            ? Align(
-                                alignment: Alignment.topCenter,
-                                child: Text(
-                                  'Free',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: DashboardTheme.inkFaint,
-                                    fontSize: metrics.isCompact ? 11 : 13,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              )
-                            : chipBudget == 0
-                            ? Align(
-                                alignment: Alignment.topCenter,
-                                child: Text(
-                                  events.length == 1
-                                      ? '1 plan'
-                                      : '${events.length} plans',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: isPast
-                                        ? DashboardTheme.inkFaint
-                                        : DashboardTheme.inkMuted,
-                                    fontSize: metrics.isCompact ? 10 : 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              )
-                            : Column(
-                                children: [
-                                  for (final event in visible)
-                                    _EventChip(
-                                      event: event,
-                                      compact: metrics.isCompact,
-                                      palette: palette,
-                                    ),
-                                  if (overflow > 0)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 2),
-                                      child: Text(
-                                        '+$overflow more',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: DashboardTheme.inkMuted,
-                                          fontSize: metrics.isCompact ? 10 : 11,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                ],
+                SizedBox(height: metrics.isCompact ? 6 : 8),
+                Expanded(
+                  child: ClipRect(
+                    child: events.isEmpty
+                        ? Align(
+                            alignment: Alignment.topCenter,
+                            child: Text(
+                              'Free',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: DashboardTheme.inkFaint,
+                                fontSize: metrics.isCompact ? 11 : 13,
+                                fontStyle: FontStyle.italic,
                               ),
-                      ),
-                    ),
-                  ],
+                            ),
+                          )
+                        : showSummary
+                        ? Align(
+                            alignment: Alignment.topCenter,
+                            child: Text(
+                              dashboardLookAheadEventCountLabel(events.length),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: isPast
+                                    ? DashboardTheme.inkFaint
+                                    : DashboardTheme.inkMuted,
+                                fontSize: metrics.isCompact ? 10 : 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              for (final event in events)
+                                _EventChip(
+                                  event: event,
+                                  compact: metrics.isCompact,
+                                  palette: palette,
+                                ),
+                            ],
+                          ),
+                  ),
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+          ),
         ),
       ),
     );
