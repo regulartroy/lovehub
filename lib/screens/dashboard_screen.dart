@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
+import '../repositories/event_repository.dart';
 import '../services/dashboard_speech.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../theme/calendar_colors.dart';
@@ -679,12 +680,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     slides.add(_buildScheduleSlide(metrics));
     slides.add(
       DashboardCalendarOverviewSlide(
+        key: const ValueKey('look-ahead-slide'),
         metrics: metrics,
         events: _eventsAll,
         now: DateTime.now(),
         members: _hubMembers,
         onDayTap: _onLookAheadDayTap,
         onCloseDayDetail: _onLookAheadDayDetailClosed,
+        onConfirmTentative: _confirmTentativeEvent,
       ),
     );
 
@@ -2087,6 +2090,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       },
     );
+  }
+
+  Future<void> _confirmTentativeEvent(Map<String, dynamic> event) async {
+    final id = event['id']?.toString().trim() ?? '';
+    if (id.isEmpty || widget.visibleHubs.isEmpty) {
+      throw StateError('This shift cannot be confirmed.');
+    }
+    final previous = [
+      for (final row in _rawEvents) Map<String, dynamic>.from(row),
+    ];
+    _applyConfirmedStatus(id);
+    try {
+      await EventRepository().confirmEvent(widget.visibleHubs.first.key, id);
+    } catch (_) {
+      if (!mounted) rethrow;
+      _rawEvents = previous;
+      _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
+      _rebuildSlides(_widthOrDefault);
+      rethrow;
+    }
+  }
+
+  void _applyConfirmedStatus(String id) {
+    if (!mounted) return;
+    _rawEvents = [
+      for (final row in _rawEvents)
+        if (row['id'] == id) {...row, 'status': 'confirmed'} else row,
+    ];
+    _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
+    _rebuildSlides(_widthOrDefault);
   }
 
   void _onLookAheadDayTap(DateTime _) {

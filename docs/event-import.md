@@ -128,6 +128,10 @@ dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-20
 dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-21 --confirm seb:2026-10-03-london
 ```
 
+Tom can confirm the same way in the app, without the CLI. On the Calendar tab, tap the muted chip (it has a **?**). On the kitchen tablet, open LOOK AHEAD, tap the day, and use **Confirm I'm working this**. **Keep tentative** dismisses the prompt and leaves the event in place.
+
+Either path sets `status` to `confirmed` on `hubs/{hubId}/events/{eventId}` and does not rewrite the rest of the document. For an import that id is `source:externalId` (for example `c2-rota:2026-09-20`). A later import that omits `status` still leaves the confirm alone.
+
 `--hub` overrides `HUB_ID`. With no `--file`, the script reads JSON from a
 pipe.
 

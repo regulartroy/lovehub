@@ -43,6 +43,27 @@ class EventModel {
 
   bool get isTentative => isTentativeEventStatus(status);
 
+  /// Same document, with `status` set to confirmed. Other fields stay put.
+  EventModel asConfirmed() {
+    if (!isTentative) return this;
+    return EventModel(
+      id: id,
+      summary: summary,
+      start: start,
+      end: end,
+      allDay: allDay,
+      category: category,
+      assignedTo: assignedTo,
+      gcalId: gcalId,
+      ownerId: ownerId,
+      isLovehubContext: isLovehubContext,
+      source: source,
+      externalId: externalId,
+      notes: notes,
+      status: _eventStatusConfirmed,
+    );
+  }
+
   factory EventModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return EventModel.fromMap(data, id: doc.id);

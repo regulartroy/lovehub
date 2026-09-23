@@ -12,6 +12,7 @@ import '../theme/calendar_colors.dart';
 import '../widgets/calendar_month_scroller.dart';
 import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
+import '../widgets/tentative_event_confirm.dart';
 import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
 
@@ -49,6 +50,9 @@ class _CalendarScreenState extends State<CalendarScreen>
   // CLEAN ARCHITECTURE
   final EventRepository _eventRepo = EventRepository();
   List<EventModel> _allEvents = [];
+
+  /// Event ids confirmed in this session before the snapshot catches up.
+  final Set<String> _locallyConfirmed = {};
 
   List<Map<String, dynamic>> _hubMembers = [];
   String? _activeHubId;
@@ -1427,7 +1431,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                   if (!snapshot.hasData)
                     return const Center(child: CircularProgressIndicator());
 
-                  _allEvents = [...snapshot.data!, ..._getProjectedBirthdays()];
+                  _allEvents = _withLocalConfirms(snapshot.data!);
 
                   return TabBarView(
                     controller: _tabController,
@@ -1719,6 +1723,62 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
+  List<EventModel> _withLocalConfirms(List<EventModel> stored) {
+    _locallyConfirmed.removeWhere(
+      (id) => stored.any((event) => event.id == id && !event.isTentative),
+    );
+    return [
+      for (final event in [...stored, ..._getProjectedBirthdays()])
+        _locallyConfirmed.contains(event.id) ? event.asConfirmed() : event,
+    ];
+  }
+
+  String _eventWhenLabel(EventModel event) {
+    final multi = !DateUtils.isSameDay(event.start, event.end);
+    if (event.allDay && !multi) {
+      return DateFormat('EEE d MMM').format(event.start);
+    }
+    if (multi) {
+      return '${DateFormat('d MMM').format(event.start)} – ${DateFormat('d MMM').format(event.end)}';
+    }
+    return '${DateFormat('EEE d MMM').format(event.start)} · ${DateFormat('HH:mm').format(event.start)}–${DateFormat('HH:mm').format(event.end)}';
+  }
+
+  String _cleanEventTitle(EventModel event) {
+    final clean = event.summary.replaceAll(RegExp(r'\[.*?\]'), '').trim();
+    return clean.isEmpty ? event.summary : clean;
+  }
+
+  Future<void> _confirmTentativeEvent(EventModel event) async {
+    final hubId = _activeHubId;
+    if (hubId == null || event.id.trim().isEmpty) {
+      throw StateError('This shift cannot be confirmed.');
+    }
+    setState(() => _locallyConfirmed.add(event.id));
+    try {
+      await _eventRepo.confirmEvent(hubId, event.id);
+    } catch (_) {
+      if (mounted) setState(() => _locallyConfirmed.remove(event.id));
+      rethrow;
+    }
+  }
+
+  void _offerTentativeConfirm(EventModel event) {
+    showTentativeEventConfirmSheet(
+      context: context,
+      eventId: event.id,
+      title: _cleanEventTitle(event),
+      subtitle: _eventWhenLabel(event),
+      notes: event.notes,
+      onConfirm: () => _confirmTentativeEvent(event),
+      onEdit: () {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showEditOrImportDialog(existingEvent: event);
+        });
+      },
+    );
+  }
+
   Widget _buildEventTile(
     EventModel event, {
     bool hideSubtitle = false,
@@ -1727,8 +1787,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     final style = CalendarColors.fromEvent(event, palette: _palette);
 
     bool isMulti = !DateUtils.isSameDay(event.start, event.end);
-    String cleanTitle = event.summary.replaceAll(RegExp(r'\[.*?\]'), '').trim();
-    if (cleanTitle.isEmpty) cleanTitle = event.summary;
+    final cleanTitle = _cleanEventTitle(event);
 
     Widget? avatarWidget;
     if (showAvatar && event.assignedTo != 'shared') {
@@ -1758,7 +1817,9 @@ class _CalendarScreenState extends State<CalendarScreen>
       subtitle: timeLabel,
       density: CalendarSplitPillDensity.regular,
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      onTap: () => _showEditOrImportDialog(existingEvent: event),
+      onTap: () => event.isTentative
+          ? _offerTentativeConfirm(event)
+          : _showEditOrImportDialog(existingEvent: event),
       leading: avatarWidget,
       trailing: event.category == 'birthday'
           ? Icon(_getBdayIcon(event.id), size: 18)

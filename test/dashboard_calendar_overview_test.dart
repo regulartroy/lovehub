@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
+import 'package:lovehub/widgets/calendar_split_pill.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
 
@@ -654,5 +655,161 @@ void main() {
       find.byKey(const ValueKey('look-ahead-day-2027-01-01')),
       findsOneWidget,
     );
+  });
+
+  List<Map<String, dynamic>> tentativeSunday() {
+    return [
+      {
+        'id': 'c2-rota:2026-09-20',
+        'summary': 'C2 Maybe',
+        'start': DateTime(2026, 9, 20, 15),
+        'end': DateTime(2026, 9, 20, 23, 30),
+        'allDay': false,
+        'category': 'work',
+        'assignedTo': 'tom',
+        'status': 'tentative',
+      },
+      {
+        'id': 'dinner',
+        'summary': 'Dinner',
+        'start': DateTime(2026, 9, 20, 19),
+        'end': DateTime(2026, 9, 20, 21),
+        'allDay': false,
+        'category': 'meal',
+        'assignedTo': 'shared',
+        'status': 'confirmed',
+      },
+    ];
+  }
+
+  Future<void> pumpLookAhead(
+    WidgetTester tester, {
+    required List<Map<String, dynamic>> events,
+    Future<void> Function(Map<String, dynamic> event)? onConfirmTentative,
+  }) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(1024, 768)),
+            events: events,
+            now: now,
+            members: members,
+            onConfirmTentative: onConfirmTentative,
+          ),
+        ),
+      ),
+    );
+  }
+
+  testWidgets('look-ahead day detail can confirm a tentative shift', (
+    tester,
+  ) async {
+    String? confirmedId;
+    await pumpLookAhead(
+      tester,
+      events: tentativeSunday(),
+      onConfirmTentative: (event) async {
+        confirmedId = event['id'] as String;
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-20')));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Confirm I'm working this"), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('tentative-event-confirm-dinner')),
+      findsNothing,
+    );
+    expect(find.byKey(CalendarSplitPill.tentativeMarkKey), findsWidgets);
+
+    final muted = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('C2 Maybe'),
+          matching: find.byType(CalendarSplitPill),
+        ),
+        matching: find.byKey(CalendarSplitPill.kindKey),
+      ),
+    );
+    expect(muted.color, isNot(CalendarColors.work));
+
+    await tester.tap(
+      find.byKey(const ValueKey('tentative-event-confirm-c2-rota:2026-09-20')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(confirmedId, 'c2-rota:2026-09-20');
+    expect(find.text('C2 Maybe'), findsWidgets);
+    expect(find.text("Confirm I'm working this"), findsNothing);
+    expect(find.byKey(CalendarSplitPill.tentativeMarkKey), findsNothing);
+
+    final solid = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('C2 Maybe'),
+          matching: find.byType(CalendarSplitPill),
+        ),
+        matching: find.byKey(CalendarSplitPill.kindKey),
+      ),
+    );
+    expect(solid.color, CalendarColors.work);
+  });
+
+  testWidgets('keep tentative dismisses the prompt and leaves the shift', (
+    tester,
+  ) async {
+    var confirmed = 0;
+    await pumpLookAhead(
+      tester,
+      events: tentativeSunday(),
+      onConfirmTentative: (_) async {
+        confirmed += 1;
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-20')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('tentative-event-keep-c2-rota:2026-09-20')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(confirmed, 0);
+    expect(find.text('C2 Maybe'), findsWidgets);
+    expect(find.text("Confirm I'm working this"), findsNothing);
+    expect(find.byKey(CalendarSplitPill.tentativeMarkKey), findsWidgets);
+
+    await tester.tap(find.text('C2 Maybe'));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Confirm I'm working this"), findsOneWidget);
+    expect(confirmed, 0);
+  });
+
+  testWidgets('a failed confirm restores the tentative chip', (tester) async {
+    await pumpLookAhead(
+      tester,
+      events: tentativeSunday(),
+      onConfirmTentative: (_) async {
+        throw StateError('offline');
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-20')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('tentative-event-confirm-c2-rota:2026-09-20')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(CalendarSplitPill.tentativeMarkKey), findsWidgets);
+    expect(find.text("Confirm I'm working this"), findsOneWidget);
+    expect(find.textContaining('still tentative'), findsOneWidget);
   });
 }

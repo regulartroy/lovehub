@@ -39,9 +39,9 @@ void main() {
 
   test('doc id is stable across a second parse', () {
     final first = parseEventImport(sample).single.docId;
-    final second = parseEventImport(
-      jsonDecode(jsonEncode(sample)),
-    ).single.docId;
+    final second = parseEventImport(jsonDecode(jsonEncode(sample)))
+        .single
+        .docId;
     expect(first, second);
     expect(eventImportDocId('c2-rota', '2026-09-20'), first);
   });
@@ -367,6 +367,56 @@ void main() {
       );
     },
   );
+
+  test('in-app confirm sets status on the document id only', () async {
+    final store = _MemoryEventWriter();
+    final repo = EventRepository(writer: store);
+    await repo.upsertImportedEvents('hub-1', [
+      parseEventImport({...sample, 'status': 'tentative'}).single,
+    ]);
+    final doc = store.hubs['hub-1']!['c2-rota:2026-09-20']!;
+    doc['gcalId'] = 'keep-me';
+
+    await repo.confirmEvent('hub-1', 'c2-rota:2026-09-20');
+
+    expect(doc['status'], 'confirmed');
+    expect(doc['summary'], 'C2 Show — Artist');
+    expect(doc['notes'], 'call time 14:30');
+    expect(doc['gcalId'], 'keep-me');
+    expect(
+      () => repo.confirmEvent('hub-1', ' '),
+      throwsA(isA<EventImportException>()),
+    );
+    expect(
+      () => repo.confirmEvent('hub-1', 'missing'),
+      throwsA(isA<EventImportException>()),
+    );
+  });
+
+  test('asConfirmed clears only the tentative flag', () {
+    final event = EventModel(
+      id: 'c2-rota:2026-09-20',
+      summary: 'C2 Show — Artist',
+      start: DateTime.utc(2026, 9, 20, 14),
+      end: DateTime.utc(2026, 9, 20, 22, 30),
+      category: 'work',
+      assignedTo: 'tom',
+      source: 'c2-rota',
+      externalId: '2026-09-20',
+      notes: 'call time 14:30',
+      status: 'tentative',
+    );
+
+    final confirmed = event.asConfirmed();
+    expect(event.isTentative, isTrue);
+    expect(confirmed.isTentative, isFalse);
+    expect(confirmed.status, 'confirmed');
+    expect(confirmed.id, event.id);
+    expect(confirmed.summary, event.summary);
+    expect(confirmed.notes, event.notes);
+    expect(confirmed.source, 'c2-rota');
+    expect(confirmed.asConfirmed(), same(confirmed));
+  });
 
   test('a rota envelope or default marks every omitted row tentative', () {
     final row = {

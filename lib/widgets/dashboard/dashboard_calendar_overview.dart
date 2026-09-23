@@ -2,8 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../event_import/imported_event.dart';
+import '../../models/event_model.dart';
 import '../../theme/calendar_colors.dart';
 import '../calendar_split_pill.dart';
+import '../tentative_event_confirm.dart';
 import 'dashboard_chrome.dart';
 import 'dashboard_theme.dart';
 
@@ -212,8 +215,9 @@ List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
 /// Second dashboard slide: Monday–Sunday week-strips for the next ~6 months.
 ///
 /// Each row is a real calendar week (Mon→Sun). Tapping a day opens a detail
-/// card listing that day's events. [onDayTap] is fired as well so the host
-/// screen can keep showing play–pause controls on the same touch.
+/// card listing that day's events. Tentative shifts in that card offer
+/// confirm. [onDayTap] is fired as well so the host screen can keep showing
+/// play–pause controls on the same touch.
 class DashboardCalendarOverviewSlide extends StatefulWidget {
   const DashboardCalendarOverviewSlide({
     super.key,
@@ -225,6 +229,7 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
     this.padding,
     this.onDayTap,
     this.onCloseDayDetail,
+    this.onConfirmTentative,
   });
 
   final DashboardMetrics metrics;
@@ -240,6 +245,10 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
   /// Invoked when the day-detail card is dismissed.
   final VoidCallback? onCloseDayDetail;
 
+  /// Writes `status: confirmed` for a tentative shift. The chip paints solid
+  /// immediately; a failed future restores the question mark.
+  final Future<void> Function(Map<String, dynamic> event)? onConfirmTentative;
+
   HubMemberPalette get resolvedPalette =>
       palette ?? HubMemberPalette.fromMembers(members);
 
@@ -251,6 +260,9 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
 class _DashboardCalendarOverviewSlideState
     extends State<DashboardCalendarOverviewSlide> {
   DateTime? _selectedDay;
+  final Set<String> _locallyConfirmed = {};
+  final Set<String> _dismissedConfirm = {};
+  String? _confirmingId;
 
   void _handleDayTap(DateTime day) {
     final date = DateUtils.dateOnly(day);
@@ -260,17 +272,69 @@ class _DashboardCalendarOverviewSlideState
 
   void _closeDayDetail() {
     if (_selectedDay == null) return;
-    setState(() => _selectedDay = null);
+    setState(() {
+      _selectedDay = null;
+      _dismissedConfirm.clear();
+    });
     widget.onCloseDayDetail?.call();
+  }
+
+  String? _eventId(Map<String, dynamic> event) {
+    final raw = event['id'];
+    if (raw is! String) return null;
+    final id = raw.trim();
+    return id.isEmpty ? null : id;
+  }
+
+  List<Map<String, dynamic>> _presentedEvents() {
+    _locallyConfirmed.removeWhere((id) {
+      for (final event in widget.events) {
+        if (_eventId(event) == id && !isTentativeEventStatus(event['status'])) {
+          return true;
+        }
+      }
+      return false;
+    });
+    return [
+      for (final event in widget.events)
+        if (_locallyConfirmed.contains(_eventId(event)))
+          {...event, 'status': eventStatusConfirmed}
+        else
+          event,
+    ];
+  }
+
+  Future<void> _confirmTentative(Map<String, dynamic> event) async {
+    final id = _eventId(event);
+    final confirm = widget.onConfirmTentative;
+    if (id == null || confirm == null || _confirmingId != null) return;
+    setState(() {
+      _confirmingId = id;
+      _locallyConfirmed.add(id);
+    });
+    try {
+      await confirm(event);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _locallyConfirmed.remove(id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't confirm that shift. It's still tentative."),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _confirmingId = null);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final events = _presentedEvents();
     final today = DateUtils.dateOnly(widget.now);
     final weeks = dashboardLookAheadWeeks(today);
     final horizonEnd = weeks.last.last;
     final rangeStart = weeks.first.first;
-    final hasUpcoming = widget.events.any((event) {
+    final hasUpcoming = events.any((event) {
       final startRaw = dashboardEventDateTime(event['start']);
       if (startRaw == null) return false;
       final start = DateUtils.dateOnly(startRaw);
@@ -282,7 +346,7 @@ class _DashboardCalendarOverviewSlideState
     final whoPalette = widget.resolvedPalette;
     final selectedEvents = _selectedDay == null
         ? const <Map<String, dynamic>>[]
-        : dashboardEventsOnDay(widget.events, _selectedDay!);
+        : dashboardEventsOnDay(events, _selectedDay!);
 
     return DashboardSlide(
       metrics: widget.metrics,
@@ -307,7 +371,7 @@ class _DashboardCalendarOverviewSlideState
                 child: _LookAheadWeekBoard(
                   metrics: widget.metrics,
                   weeks: weeks,
-                  events: widget.events,
+                  events: events,
                   today: today,
                   selectedDay: _selectedDay,
                   rangeLabel: dashboardCompactDayRange(today, horizonEnd),
@@ -333,6 +397,15 @@ class _DashboardCalendarOverviewSlideState
               palette: whoPalette,
               isToday: DateUtils.isSameDay(_selectedDay, today),
               onClose: _closeDayDetail,
+              onConfirmTentative: widget.onConfirmTentative == null
+                  ? null
+                  : _confirmTentative,
+              dismissedConfirmIds: _dismissedConfirm,
+              confirmingId: _confirmingId,
+              onKeepTentative: (id) =>
+                  setState(() => _dismissedConfirm.add(id)),
+              onReopenTentativeConfirm: (id) =>
+                  setState(() => _dismissedConfirm.remove(id)),
             ),
         ],
       ),
@@ -856,6 +929,11 @@ class _LookAheadDayDetailLayer extends StatelessWidget {
     required this.palette,
     required this.isToday,
     required this.onClose,
+    this.onConfirmTentative,
+    this.dismissedConfirmIds = const {},
+    this.confirmingId,
+    this.onKeepTentative,
+    this.onReopenTentativeConfirm,
   });
 
   final DashboardMetrics metrics;
@@ -864,6 +942,11 @@ class _LookAheadDayDetailLayer extends StatelessWidget {
   final HubMemberPalette palette;
   final bool isToday;
   final VoidCallback onClose;
+  final Future<void> Function(Map<String, dynamic> event)? onConfirmTentative;
+  final Set<String> dismissedConfirmIds;
+  final String? confirmingId;
+  final ValueChanged<String>? onKeepTentative;
+  final ValueChanged<String>? onReopenTentativeConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -894,6 +977,11 @@ class _LookAheadDayDetailLayer extends StatelessWidget {
                   palette: palette,
                   isToday: isToday,
                   onClose: onClose,
+                  onConfirmTentative: onConfirmTentative,
+                  dismissedConfirmIds: dismissedConfirmIds,
+                  confirmingId: confirmingId,
+                  onKeepTentative: onKeepTentative,
+                  onReopenTentativeConfirm: onReopenTentativeConfirm,
                 ),
               ),
             ),
@@ -912,6 +1000,11 @@ class _LookAheadDayDetailCard extends StatelessWidget {
     required this.palette,
     required this.isToday,
     required this.onClose,
+    this.onConfirmTentative,
+    this.dismissedConfirmIds = const {},
+    this.confirmingId,
+    this.onKeepTentative,
+    this.onReopenTentativeConfirm,
   });
 
   final DashboardMetrics metrics;
@@ -920,6 +1013,18 @@ class _LookAheadDayDetailCard extends StatelessWidget {
   final HubMemberPalette palette;
   final bool isToday;
   final VoidCallback onClose;
+  final Future<void> Function(Map<String, dynamic> event)? onConfirmTentative;
+  final Set<String> dismissedConfirmIds;
+  final String? confirmingId;
+  final ValueChanged<String>? onKeepTentative;
+  final ValueChanged<String>? onReopenTentativeConfirm;
+
+  String? _eventId(Map<String, dynamic> event) {
+    final raw = event['id'];
+    if (raw is! String) return null;
+    final id = raw.trim();
+    return id.isEmpty ? null : id;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -986,48 +1091,92 @@ class _LookAheadDayDetailCard extends StatelessWidget {
               final isBirthday = event['category'] == 'birthday';
               final isMeal = event['category'] == 'meal';
               final isWork = event['category'] == 'work';
-              return CalendarSplitPill(
-                style: style,
-                title: dashboardGlanceTitle(event),
-                subtitle: dashboardGlanceTimeLabel(event),
-                density: metrics.isCompact
-                    ? CalendarSplitPillDensity.regular
-                    : CalendarSplitPillDensity.comfortable,
-                trailing: Icon(
-                  isBirthday
-                      ? Icons.cake_rounded
-                      : isMeal
-                      ? Icons.restaurant
-                      : isWork
-                      ? Icons.work_outline
-                      : Icons.circle,
-                  size: isBirthday || isMeal || isWork ? 16 : 8,
-                ),
+              final id = _eventId(event);
+              final offerConfirm =
+                  onConfirmTentative != null &&
+                  id != null &&
+                  style.tentative &&
+                  !dismissedConfirmIds.contains(id);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CalendarSplitPill(
+                    style: style,
+                    title: dashboardGlanceTitle(event),
+                    subtitle: dashboardGlanceTimeLabel(event),
+                    density: metrics.isCompact
+                        ? CalendarSplitPillDensity.regular
+                        : CalendarSplitPillDensity.comfortable,
+                    onTap:
+                        id != null &&
+                            style.tentative &&
+                            dismissedConfirmIds.contains(id)
+                        ? () => onReopenTentativeConfirm?.call(id)
+                        : null,
+                    trailing: Icon(
+                      isBirthday
+                          ? Icons.cake_rounded
+                          : isMeal
+                          ? Icons.restaurant
+                          : isWork
+                          ? Icons.work_outline
+                          : Icons.circle,
+                      size: isBirthday || isMeal || isWork ? 16 : 8,
+                    ),
+                  ),
+                  if (id != null && offerConfirm) ...[
+                    const SizedBox(height: 8),
+                    TentativeEventActions(
+                      eventId: id,
+                      dark: true,
+                      busy: confirmingId == id,
+                      onConfirm: () => onConfirmTentative!(event),
+                      onKeep: () => onKeepTentative?.call(id),
+                    ),
+                  ],
+                ],
               );
             },
           );
 
-    return SizedBox(
-      width: metrics.isCompact ? double.infinity : 560,
-      height: events.isEmpty
-          ? (metrics.isCompact ? 220 : 210)
-          : (metrics.isCompact ? 460 : 440),
-      child: DashboardGlassCard(
-        tint: DashboardTheme.schedule,
-        emphasized: true,
-        padding: EdgeInsets.all(metrics.isCompact ? 16 : 22),
-        child: Column(
-          key: const ValueKey('look-ahead-day-detail'),
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            header,
-            const SizedBox(height: 4),
-            summary,
-            SizedBox(height: metrics.isCompact ? 12 : 16),
-            Expanded(child: body),
-          ],
-        ),
-      ),
+    final offersConfirm =
+        onConfirmTentative != null &&
+        events.any((event) {
+          final id = _eventId(event);
+          return id != null &&
+              isTentativeEventStatus(event['status']) &&
+              !dismissedConfirmIds.contains(id);
+        });
+    final desired = events.isEmpty
+        ? (metrics.isCompact ? 220.0 : 210.0)
+        : (metrics.isCompact ? 460.0 : 440.0) + (offersConfirm ? 108.0 : 0.0);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxHeight = constraints.maxHeight;
+        final height = maxHeight.isFinite && desired > maxHeight
+            ? maxHeight
+            : desired;
+        return SizedBox(
+          width: metrics.isCompact ? double.infinity : 560,
+          height: height,
+          child: DashboardGlassCard(
+            tint: DashboardTheme.schedule,
+            emphasized: true,
+            padding: EdgeInsets.all(metrics.isCompact ? 16 : 22),
+            child: Column(
+              key: const ValueKey('look-ahead-day-detail'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                const SizedBox(height: 4),
+                summary,
+                SizedBox(height: metrics.isCompact ? 12 : 16),
+                Expanded(child: body),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
