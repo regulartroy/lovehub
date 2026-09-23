@@ -12,6 +12,7 @@ import '../theme/calendar_colors.dart';
 import '../widgets/calendar_month_scroller.dart';
 import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
+import '../widgets/event_tentative_field.dart';
 import '../widgets/tentative_event_confirm.dart';
 import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
@@ -53,6 +54,9 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   /// Event ids confirmed in this session before the snapshot catches up.
   final Set<String> _locallyConfirmed = {};
+
+  /// Event ids marked tentative in this session before the snapshot catches up.
+  final Set<String> _locallyTentative = {};
 
   List<Map<String, dynamic>> _hubMembers = [];
   String? _activeHubId;
@@ -451,6 +455,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     String? gcalId;
 
     String repeatOption = 'Never';
+    bool isTentative = existingEvent?.isTentative ?? false;
     final List<String> repeatOptions = [
       'Never',
       'Daily',
@@ -517,17 +522,18 @@ class _CalendarScreenState extends State<CalendarScreen>
       ),
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) {
+          final keyboard = MediaQuery.viewInsetsOf(context).bottom;
           return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              top: 20,
-              left: 20,
-              right: 20,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+            padding: EdgeInsets.only(bottom: keyboard),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height - keyboard - 8,
+              ),
+              child: ListView(
+                shrinkWrap: true,
+                primary: false,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -621,6 +627,14 @@ class _CalendarScreenState extends State<CalendarScreen>
                   contentPadding: EdgeInsets.zero,
                   onChanged: (val) => setSheetState(() => isAllDay = val),
                 ),
+                if (eventFormWritesStatus(
+                  existingEventId: existingEvent?.id,
+                  category: category,
+                ))
+                  EventTentativeField(
+                    value: isTentative,
+                    onChanged: (val) => setSheetState(() => isTentative = val),
+                  ),
 
                 Row(
                   children: [
@@ -866,7 +880,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                 ),
 
                 const SizedBox(height: 20),
-                FilledButton(
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
                   onPressed: isSaving
                       ? null
                       : () async {
@@ -945,6 +961,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                               assignedTo: assignedTo,
                               gcalId: gcalId,
                               ownerId: widget.user.uid,
+                              status: eventFormStatus(isTentative),
                             );
                             await _eventRepo.updateEvent(
                               _activeHubId!,
@@ -974,6 +991,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                     assignedTo: assignedTo,
                                     gcalId: gcalId,
                                     ownerId: widget.user.uid,
+                                    status: eventFormStatus(isTentative),
                                   ),
                                 );
                               }
@@ -1004,6 +1022,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   assignedTo: assignedTo,
                                   gcalId: gcalId,
                                   ownerId: widget.user.uid,
+                                  status: eventFormStatus(isTentative),
                                 ),
                               );
                             }
@@ -1026,8 +1045,10 @@ class _CalendarScreenState extends State<CalendarScreen>
                           ),
                         )
                       : const Text("Save to Lovehub"),
+                  ),
                 ),
               ],
+              ),
             ),
           );
         },
@@ -1430,7 +1451,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                   if (!snapshot.hasData)
                     return const Center(child: CircularProgressIndicator());
 
-                  _allEvents = _withLocalConfirms(snapshot.data!);
+                  _allEvents = _withLocalStatus(snapshot.data!);
 
                   return TabBarView(
                     controller: _tabController,
@@ -1722,13 +1743,21 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
-  List<EventModel> _withLocalConfirms(List<EventModel> stored) {
+  List<EventModel> _withLocalStatus(List<EventModel> stored) {
     _locallyConfirmed.removeWhere(
       (id) => stored.any((event) => event.id == id && !event.isTentative),
     );
+    _locallyTentative.removeWhere(
+      (id) => stored.any((event) => event.id == id && event.isTentative),
+    );
     return [
       for (final event in [...stored, ..._getProjectedBirthdays()])
-        _locallyConfirmed.contains(event.id) ? event.asConfirmed() : event,
+        if (_locallyTentative.contains(event.id))
+          event.asTentative()
+        else if (_locallyConfirmed.contains(event.id))
+          event.asConfirmed()
+        else
+          event,
     ];
   }
 
@@ -1753,13 +1782,53 @@ class _CalendarScreenState extends State<CalendarScreen>
     if (hubId == null || event.id.trim().isEmpty) {
       throw StateError('This shift cannot be confirmed.');
     }
-    setState(() => _locallyConfirmed.add(event.id));
+    setState(() {
+      _locallyConfirmed.add(event.id);
+      _locallyTentative.remove(event.id);
+    });
     try {
       await _eventRepo.confirmEvent(hubId, event.id);
     } catch (_) {
       if (mounted) setState(() => _locallyConfirmed.remove(event.id));
       rethrow;
     }
+  }
+
+  Future<void> _markEventTentative(EventModel event) async {
+    final hubId = _activeHubId;
+    if (hubId == null ||
+        !canMarkEventTentativeFromChip(
+          eventId: event.id,
+          status: event.status,
+        )) {
+      throw StateError('This shift cannot be marked tentative.');
+    }
+    setState(() {
+      _locallyTentative.add(event.id);
+      _locallyConfirmed.remove(event.id);
+    });
+    try {
+      await _eventRepo.markEventTentative(hubId, event.id);
+    } catch (_) {
+      if (mounted) setState(() => _locallyTentative.remove(event.id));
+      rethrow;
+    }
+  }
+
+  void _offerMarkTentative(EventModel event) {
+    showMarkEventTentativeSheet(
+      context: context,
+      eventId: event.id,
+      title: _cleanEventTitle(event),
+      subtitle: _eventWhenLabel(event),
+      notes: event.notes,
+      onMarkTentative: () => _markEventTentative(event),
+      onEdit: () {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showEditOrImportDialog(existingEvent: event);
+        });
+      },
+    );
   }
 
   void _offerTentativeConfirm(EventModel event) {
@@ -1816,9 +1885,16 @@ class _CalendarScreenState extends State<CalendarScreen>
       subtitle: timeLabel,
       density: CalendarSplitPillDensity.regular,
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      onTap: () => event.isTentative
-          ? _offerTentativeConfirm(event)
-          : _showEditOrImportDialog(existingEvent: event),
+      onTap: () {
+        switch (eventChipStatusAction(event)) {
+          case EventChipStatusAction.confirm:
+            _offerTentativeConfirm(event);
+          case EventChipStatusAction.markTentative:
+            _offerMarkTentative(event);
+          case EventChipStatusAction.edit:
+            _showEditOrImportDialog(existingEvent: event);
+        }
+      },
       leading: avatarWidget,
       trailing: event.category == 'birthday'
           ? Icon(_getBdayIcon(event.id), size: 18)

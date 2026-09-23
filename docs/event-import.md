@@ -132,6 +132,8 @@ Tom can confirm the same way in the app, without the CLI. On the Calendar tab, t
 
 Either path sets `status` to `confirmed` on `hubs/{hubId}/events/{eventId}` and does not rewrite the rest of the document. For an import that id is `source:externalId` (for example `c2-rota:2026-09-20`). A later import that omits `status` still leaves the confirm alone.
 
+Tom can mark a plan tentative from the app as well. On the Calendar tab, create or edit an event and turn **Tentative** on before saving — that writes `status: tentative` with the rest of the document. Off writes explicit `status: confirmed`. For a plan that is already booked, tap its chip (Calendar, or the day card in LOOK AHEAD) and choose **Mark tentative**. That updates only `status` to `tentative`, the same single-field write as confirm, in the other direction. **Keep confirmed** closes the sheet and leaves the document alone. CLI `--tentative` and `--confirm` are unchanged.
+
 `--hub` overrides `HUB_ID`. With no `--file`, the script reads JSON from a
 pipe.
 

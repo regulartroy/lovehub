@@ -39,9 +39,9 @@ void main() {
 
   test('doc id is stable across a second parse', () {
     final first = parseEventImport(sample).single.docId;
-    final second = parseEventImport(jsonDecode(jsonEncode(sample)))
-        .single
-        .docId;
+    final second = parseEventImport(
+      jsonDecode(jsonEncode(sample)),
+    ).single.docId;
     expect(first, second);
     expect(eventImportDocId('c2-rota', '2026-09-20'), first);
   });
@@ -393,6 +393,43 @@ void main() {
     );
   });
 
+  test('in-app mark tentative sets status on the document id only', () async {
+    final store = _MemoryEventWriter();
+    final repo = EventRepository(writer: store);
+    await repo.upsertImportedEvents('hub-1', [
+      parseEventImport({...sample, 'status': 'confirmed'}).single,
+    ]);
+    final doc = store.hubs['hub-1']!['c2-rota:2026-09-20']!;
+    doc['gcalId'] = 'keep-me';
+    final before = Map<String, dynamic>.from(doc);
+
+    await repo.markEventTentative('hub-1', 'c2-rota:2026-09-20');
+
+    expect(doc['status'], 'tentative');
+    expect(doc['summary'], before['summary']);
+    expect(doc['notes'], before['notes']);
+    expect(doc['gcalId'], 'keep-me');
+    expect(doc.keys, before.keys);
+
+    await repo.confirmEvent('hub-1', 'c2-rota:2026-09-20');
+    expect(doc['status'], 'confirmed');
+    expect(doc['gcalId'], 'keep-me');
+    expect(doc['summary'], before['summary']);
+
+    expect(
+      () => repo.markEventTentative('hub-1', ' '),
+      throwsA(isA<EventImportException>()),
+    );
+    expect(
+      () => repo.markEventTentative('hub-1', 'a/b'),
+      throwsA(isA<EventImportException>()),
+    );
+    expect(
+      () => repo.markEventTentative('hub-1', 'missing'),
+      throwsA(isA<EventImportException>()),
+    );
+  });
+
   test('asConfirmed clears only the tentative flag', () {
     final event = EventModel(
       id: 'c2-rota:2026-09-20',
@@ -416,6 +453,47 @@ void main() {
     expect(confirmed.notes, event.notes);
     expect(confirmed.source, 'c2-rota');
     expect(confirmed.asConfirmed(), same(confirmed));
+
+    final again = confirmed.asTentative();
+    expect(again.isTentative, isTrue);
+    expect(again.status, 'tentative');
+    expect(again.summary, event.summary);
+    expect(again.notes, event.notes);
+    expect(again.source, 'c2-rota');
+    expect(again.asTentative(), same(again));
+    expect(event.asTentative(), same(event));
+  });
+
+  test('create/edit status is explicit and survives toMap', () {
+    final start = DateTime.utc(2026, 9, 20, 15);
+    final end = DateTime.utc(2026, 9, 20, 23);
+
+    EventModel drafted(bool tentative) {
+      return EventModel(
+        id: 'new',
+        summary: 'Dinner',
+        start: start,
+        end: end,
+        status: eventFormStatus(tentative),
+      );
+    }
+
+    final on = drafted(true);
+    final off = drafted(false);
+    expect(on.toMap()['status'], 'tentative');
+    expect(on.isTentative, isTrue);
+    expect(off.toMap()['status'], 'confirmed');
+    expect(off.isTentative, isFalse);
+
+    final legacy = EventModel(
+      id: 'legacy',
+      summary: 'Dinner',
+      start: start,
+      end: end,
+    );
+    expect(legacy.toMap().containsKey('status'), isFalse);
+    expect(legacy.asTentative().toMap()['status'], 'tentative');
+    expect(legacy.asConfirmed(), same(legacy));
   });
 
   test('a rota envelope or default marks every omitted row tentative', () {
