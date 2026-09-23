@@ -91,6 +91,21 @@ void main() {
     expect(dashboardMondayOf(DateTime(2026, 9, 20)), DateTime(2026, 9, 14));
   });
 
+  Map<String, dynamic> timedEvent(
+    String summary,
+    DateTime start,
+    DateTime end,
+  ) {
+    return {
+      'summary': summary,
+      'start': start,
+      'end': end,
+      'allDay': false,
+      'category': 'general',
+      'assignedTo': 'shared',
+    };
+  }
+
   test('event overlap includes every day of a multi-day span', () {
     final event = {
       'start': DateTime(2026, 9, 25),
@@ -103,6 +118,63 @@ void main() {
     expect(dashboardEventOverlapsDay(event, DateTime(2026, 9, 26)), isTrue);
     expect(dashboardEventOverlapsDay(event, DateTime(2026, 9, 27)), isTrue);
     expect(dashboardEventOverlapsDay(event, DateTime(2026, 9, 28)), isFalse);
+  });
+
+  test('overnight events ending before 06:00 stay on the start day', () {
+    final club = timedEvent(
+      'Club night',
+      DateTime(2026, 9, 23, 23),
+      DateTime(2026, 9, 24, 4),
+    );
+
+    expect(dashboardEventOverlapsDay(club, DateTime(2026, 9, 23)), isTrue);
+    expect(dashboardEventOverlapsDay(club, DateTime(2026, 9, 24)), isFalse);
+    expect(
+      dashboardEventsOnDay([
+        club,
+      ], DateTime(2026, 9, 23)).map((event) => event['summary']),
+      ['Club night'],
+    );
+    expect(dashboardEventsOnDay([club], DateTime(2026, 9, 24)), isEmpty);
+
+    final endsAtCutoff = timedEvent(
+      'Until six',
+      DateTime(2026, 9, 23, 23),
+      DateTime(2026, 9, 24, dashboardOverviewOvernightCutoffHour),
+    );
+    expect(
+      dashboardEventOverlapsDay(endsAtCutoff, DateTime(2026, 9, 24)),
+      isTrue,
+    );
+
+    final endsJustBefore = timedEvent(
+      'Just before six',
+      DateTime(2026, 9, 23, 22),
+      DateTime(2026, 9, 24, 5, 59),
+    );
+    expect(
+      dashboardEventOverlapsDay(endsJustBefore, DateTime(2026, 9, 24)),
+      isFalse,
+    );
+
+    final earlySameDay = timedEvent(
+      'Early set-up',
+      DateTime(2026, 9, 24, 1),
+      DateTime(2026, 9, 24, 3),
+    );
+    expect(
+      dashboardEventOverlapsDay(earlySameDay, DateTime(2026, 9, 24)),
+      isTrue,
+    );
+
+    final trip = timedEvent(
+      'Long weekend',
+      DateTime(2026, 9, 25, 18),
+      DateTime(2026, 9, 27, 3),
+    );
+    expect(dashboardEventOverlapsDay(trip, DateTime(2026, 9, 25)), isTrue);
+    expect(dashboardEventOverlapsDay(trip, DateTime(2026, 9, 26)), isTrue);
+    expect(dashboardEventOverlapsDay(trip, DateTime(2026, 9, 27)), isFalse);
   });
 
   test('events on a day sort by start time', () {
@@ -811,5 +883,178 @@ void main() {
     expect(find.byKey(CalendarSplitPill.tentativeMarkKey), findsWidgets);
     expect(find.text("Confirm I'm working this"), findsOneWidget);
     expect(find.textContaining('still tentative'), findsOneWidget);
+  });
+
+  List<Map<String, dynamic>> eventsOn(
+    DateTime day,
+    List<String> titles, {
+    int startHour = 9,
+  }) {
+    return [
+      for (var i = 0; i < titles.length; i++)
+        timedEvent(
+          titles[i],
+          DateTime(day.year, day.month, day.day, startHour + i),
+          DateTime(day.year, day.month, day.day, startHour + i, 30),
+        ),
+    ];
+  }
+
+  void expectChipsInsideDay(WidgetTester tester, Finder day, int count) {
+    final cell = tester.getRect(day);
+    final chips = find.descendant(
+      of: day,
+      matching: find.byType(CalendarSplitPill),
+    );
+    expect(chips, findsNWidgets(count));
+    expect(
+      find.descendant(of: day, matching: find.textContaining('events')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: day, matching: find.textContaining('plans')),
+      findsNothing,
+    );
+    for (final element in chips.evaluate()) {
+      final rect = tester.getRect(find.byWidget(element.widget));
+      expect(rect.top, greaterThanOrEqualTo(cell.top));
+      expect(rect.bottom, lessThanOrEqualTo(cell.bottom + 0.5));
+      expect(rect.left, greaterThanOrEqualTo(cell.left));
+      expect(rect.right, lessThanOrEqualTo(cell.right + 0.5));
+    }
+  }
+
+  testWidgets('three events render as chips and four collapse to a count', (
+    tester,
+  ) async {
+    final threeDay = DateTime(2026, 9, 15);
+    final fourDay = DateTime(2026, 9, 16);
+    final events = [
+      ...eventsOn(threeDay, ['Alpha', 'Bravo', 'Charlie']),
+      ...eventsOn(fourDay, ['Delta', 'Echo', 'Foxtrot', 'Golf']),
+    ];
+
+    await pumpLookAhead(tester, events: events);
+
+    final three = find.byKey(ValueKey(dashboardLookAheadDayKey(threeDay)));
+    final four = find.byKey(ValueKey(dashboardLookAheadDayKey(fourDay)));
+    expectChipsInsideDay(tester, three, 3);
+    expect(
+      find.descendant(of: three, matching: find.textContaining('Alpha')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: three, matching: find.textContaining('Bravo')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: three, matching: find.textContaining('Charlie')),
+      findsOneWidget,
+    );
+    expect(find.text('3 events'), findsNothing);
+    expect(find.text('3 plans'), findsNothing);
+
+    expect(
+      find.descendant(of: four, matching: find.byType(CalendarSplitPill)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: four, matching: find.text('4 events')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Delta'), findsNothing);
+    expect(find.textContaining('Golf'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('phone look-ahead still fits three chips in the day cell', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final day = DateTime(2026, 9, 15);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DashboardCalendarOverviewSlide(
+            metrics: DashboardMetrics(const Size(390, 844)),
+            events: eventsOn(day, ['Alpha', 'Bravo', 'Charlie']),
+            now: now,
+            members: members,
+          ),
+        ),
+      ),
+    );
+
+    expectChipsInsideDay(
+      tester,
+      find.byKey(ValueKey(dashboardLookAheadDayKey(day))),
+      3,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('overnight club night is only on the start day in look-ahead', (
+    tester,
+  ) async {
+    final startDay = DateTime(2026, 9, 19);
+    final nextMorning = DateTime(2026, 9, 20);
+    await pumpLookAhead(
+      tester,
+      events: [
+        timedEvent(
+          'Club night',
+          DateTime(2026, 9, 19, 23),
+          DateTime(2026, 9, 20, 4),
+        ),
+      ],
+    );
+
+    final start = find.byKey(ValueKey(dashboardLookAheadDayKey(startDay)));
+    final morning = find.byKey(ValueKey(dashboardLookAheadDayKey(nextMorning)));
+    expect(
+      find.descendant(of: start, matching: find.textContaining('Club night')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: morning, matching: find.textContaining('Club night')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: morning, matching: find.text('Free')),
+      findsOneWidget,
+    );
+
+    await tester.tap(start);
+    await tester.pumpAndSettle();
+    final detail = find.byKey(const ValueKey('look-ahead-day-detail'));
+    expect(
+      find.descendant(of: detail, matching: find.textContaining('Club night')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text('23:00')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-detail-close')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(morning);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-day-detail')),
+        matching: find.textContaining('Club night'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('look-ahead-day-detail-empty')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 }

@@ -189,16 +189,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   bool _eventOverlapsDay(Map<String, dynamic> data, DateTime day) {
-    if (data['start'] == null) return false;
-    final checkDay = DateUtils.dateOnly(day);
-    final DateTime start = (data['start'] as Timestamp).toDate();
-    final DateTime end = data['end'] != null
-        ? (data['end'] as Timestamp).toDate()
-        : start;
-    final dayStart = DateUtils.dateOnly(start);
-    final dayEnd = DateUtils.dateOnly(end);
-    return (checkDay.isAtSameMomentAs(dayStart) || checkDay.isAfter(dayStart)) &&
-        (checkDay.isAtSameMomentAs(dayEnd) || checkDay.isBefore(dayEnd));
+    return dashboardEventOverlapsDay(data, day);
   }
 
   Future<void> _initData() async {

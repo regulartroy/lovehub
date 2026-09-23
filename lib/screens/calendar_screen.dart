@@ -1211,13 +1211,12 @@ class _CalendarScreenState extends State<CalendarScreen>
     final checkDay = DateTime(day.year, day.month, day.day);
 
     final eventsOnDay = _allEvents.where((event) {
-      DateTime start = event.start;
-      DateTime end = event.end;
-      DateTime dayStart = DateTime(start.year, start.month, start.day);
-      DateTime dayEnd = DateTime(end.year, end.month, end.day);
-      return (checkDay.isAtSameMomentAs(dayStart) ||
-              checkDay.isAfter(dayStart)) &&
-          (checkDay.isAtSameMomentAs(dayEnd) || checkDay.isBefore(dayEnd));
+      return dashboardEventBelongsOnOverviewDay(
+        start: event.start,
+        end: event.end,
+        day: checkDay,
+        allDay: event.allDay,
+      );
     }).toList();
 
     final memberFiltered = eventsOnDay.where((event) {
@@ -1651,12 +1650,12 @@ class _CalendarScreenState extends State<CalendarScreen>
         final currentDay = DateTime(today.year, today.month, today.day + index);
 
         final dayEvents = events.where((e) {
-          final dayStart = DateTime(e.start.year, e.start.month, e.start.day);
-          final dayEnd = DateTime(e.end.year, e.end.month, e.end.day);
-          return (currentDay.isAtSameMomentAs(dayStart) ||
-                  currentDay.isAfter(dayStart)) &&
-              (currentDay.isAtSameMomentAs(dayEnd) ||
-                  currentDay.isBefore(dayEnd));
+          return dashboardEventBelongsOnOverviewDay(
+            start: e.start,
+            end: e.end,
+            day: currentDay,
+            allDay: e.allDay,
+          );
         }).toList();
 
         return Column(
