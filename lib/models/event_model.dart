@@ -46,6 +46,16 @@ class EventModel {
   /// Same document, with `status` set to confirmed. Other fields stay put.
   EventModel asConfirmed() {
     if (!isTentative) return this;
+    return _withStatus(_eventStatusConfirmed);
+  }
+
+  /// Same document, with `status` set to tentative. Other fields stay put.
+  EventModel asTentative() {
+    if (isTentative) return this;
+    return _withStatus(_eventStatusTentative);
+  }
+
+  EventModel _withStatus(String status) {
     return EventModel(
       id: id,
       summary: summary,
@@ -60,7 +70,7 @@ class EventModel {
       source: source,
       externalId: externalId,
       notes: notes,
-      status: _eventStatusConfirmed,
+      status: status,
     );
   }
 
@@ -139,3 +149,19 @@ String? readStoredEventStatus(Object? raw) {
 
 bool isTentativeEventStatus(Object? raw) =>
     readStoredEventStatus(raw) == _eventStatusTentative;
+
+/// Status the create/edit sheet writes. Off is explicit `confirmed` so a new
+/// save does not rely on a missing field to look booked.
+String eventFormStatus(bool tentative) =>
+    tentative ? _eventStatusTentative : _eventStatusConfirmed;
+
+/// A real hub event that is not already tentative can be marked from a chip.
+/// Virtual birthdays (`bday_…`) are not event documents.
+bool canMarkEventTentativeFromChip({
+  required String eventId,
+  required Object? status,
+}) {
+  final id = eventId.trim();
+  if (id.isEmpty || id.startsWith('bday_')) return false;
+  return !isTentativeEventStatus(status);
+}

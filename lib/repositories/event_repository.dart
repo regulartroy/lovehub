@@ -179,14 +179,37 @@ class EventRepository {
 
   /// In-app confirm. Sets `status` to confirmed on an existing document and
   /// leaves every other field alone — the same write as CLI `--confirm`.
-  Future<void> confirmEvent(String hubId, String eventId) async {
+  Future<void> confirmEvent(String hubId, String eventId) {
+    return _setEventStatus(
+      hubId,
+      eventId,
+      eventStatusConfirmed,
+      emptyIdMessage: 'Event id is required to confirm.',
+    );
+  }
+
+  /// In-app mark tentative. Sets `status` to tentative on an existing document
+  /// and leaves every other field alone — the reverse of [confirmEvent].
+  Future<void> markEventTentative(String hubId, String eventId) {
+    return _setEventStatus(
+      hubId,
+      eventId,
+      eventStatusTentative,
+      emptyIdMessage: 'Event id is required to mark tentative.',
+    );
+  }
+
+  Future<void> _setEventStatus(
+    String hubId,
+    String eventId,
+    String status, {
+    required String emptyIdMessage,
+  }) async {
     validateHubId(hubId);
     final id = eventId.trim();
     if (id.isEmpty || id.contains('/')) {
-      throw EventImportException('Event id is required to confirm.');
+      throw EventImportException(emptyIdMessage);
     }
-    await _batchWriter.updateFields(hubId.trim(), id, {
-      'status': eventStatusConfirmed,
-    });
+    await _batchWriter.updateFields(hubId.trim(), id, {'status': status});
   }
 }

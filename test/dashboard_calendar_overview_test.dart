@@ -758,6 +758,7 @@ void main() {
     WidgetTester tester, {
     required List<Map<String, dynamic>> events,
     Future<void> Function(Map<String, dynamic> event)? onConfirmTentative,
+    Future<void> Function(Map<String, dynamic> event)? onMarkTentative,
   }) async {
     tester.view.physicalSize = const Size(1024, 768);
     tester.view.devicePixelRatio = 1;
@@ -772,6 +773,7 @@ void main() {
             now: now,
             members: members,
             onConfirmTentative: onConfirmTentative,
+            onMarkTentative: onMarkTentative,
           ),
         ),
       ),
@@ -883,6 +885,173 @@ void main() {
     expect(find.byKey(CalendarSplitPill.tentativeMarkKey), findsWidgets);
     expect(find.text("Confirm I'm working this"), findsOneWidget);
     expect(find.textContaining('still tentative'), findsOneWidget);
+  });
+
+  Finder dinnerKind(WidgetTester tester) {
+    return find.descendant(
+      of: find.ancestor(
+        of: find.text('Dinner'),
+        matching: find.byType(CalendarSplitPill),
+      ),
+      matching: find.byKey(CalendarSplitPill.kindKey),
+    );
+  }
+
+  testWidgets('look-ahead day detail can mark a confirmed shift tentative', (
+    tester,
+  ) async {
+    String? markedId;
+    await pumpLookAhead(
+      tester,
+      events: tentativeSunday(),
+      onConfirmTentative: (_) async {},
+      onMarkTentative: (event) async {
+        markedId = event['id'] as String;
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-20')));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Confirm I'm working this"), findsOneWidget);
+    expect(find.text('Mark tentative'), findsNothing);
+
+    final solid = tester.widget<ColoredBox>(dinnerKind(tester));
+    expect(solid.color, CalendarColors.personal);
+
+    await tester.tap(find.text('Dinner'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Confirmed'), findsOneWidget);
+    expect(find.text('Mark tentative'), findsOneWidget);
+    expect(find.text('Keep confirmed'), findsOneWidget);
+
+    await tester.tap(find.text('Mark tentative'));
+    await tester.pumpAndSettle();
+
+    expect(markedId, 'dinner');
+    expect(find.text('Mark tentative'), findsNothing);
+    expect(find.text("Confirm I'm working this"), findsOneWidget);
+
+    final muted = tester.widget<ColoredBox>(dinnerKind(tester));
+    expect(muted.color, isNot(CalendarColors.personal));
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('Dinner'),
+          matching: find.byType(CalendarSplitPill),
+        ),
+        matching: find.byKey(CalendarSplitPill.tentativeMarkKey),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('keep confirmed dismisses the sheet and leaves the chip', (
+    tester,
+  ) async {
+    var marked = 0;
+    await pumpLookAhead(
+      tester,
+      events: tentativeSunday(),
+      onMarkTentative: (_) async {
+        marked += 1;
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-20')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dinner'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Keep confirmed'));
+    await tester.pumpAndSettle();
+
+    expect(marked, 0);
+    expect(find.text('Mark tentative'), findsNothing);
+    expect(
+      tester.widget<ColoredBox>(dinnerKind(tester)).color,
+      CalendarColors.personal,
+    );
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('Dinner'),
+          matching: find.byType(CalendarSplitPill),
+        ),
+        matching: find.byKey(CalendarSplitPill.tentativeMarkKey),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a failed mark tentative restores the confirmed chip', (
+    tester,
+  ) async {
+    await pumpLookAhead(
+      tester,
+      events: tentativeSunday(),
+      onMarkTentative: (_) async {
+        throw StateError('offline');
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-20')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dinner'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mark tentative'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('still confirmed'), findsOneWidget);
+    expect(find.text('Keep confirmed'), findsOneWidget);
+    expect(
+      tester.widget<ColoredBox>(dinnerKind(tester)).color,
+      CalendarColors.personal,
+    );
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('Dinner'),
+          matching: find.byType(CalendarSplitPill),
+        ),
+        matching: find.byKey(CalendarSplitPill.tentativeMarkKey),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a virtual birthday chip does not offer mark tentative', (
+    tester,
+  ) async {
+    await pumpLookAhead(
+      tester,
+      events: [
+        ...tentativeSunday(),
+        {
+          'id': 'bday_maria_2026',
+          'summary': 'Maria',
+          'start': DateTime(2026, 9, 20),
+          'end': DateTime(2026, 9, 20),
+          'allDay': true,
+          'category': 'birthday',
+          'assignedTo': 'shared',
+        },
+      ],
+      onMarkTentative: (_) async {},
+    );
+
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-20')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-day-detail')),
+        matching: find.text('Maria'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mark tentative'), findsNothing);
+    expect(find.text('Maria'), findsWidgets);
   });
 
   List<Map<String, dynamic>> eventsOn(

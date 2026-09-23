@@ -679,6 +679,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onDayTap: _onLookAheadDayTap,
         onCloseDayDetail: _onLookAheadDayDetailClosed,
         onConfirmTentative: _confirmTentativeEvent,
+        onMarkTentative: _markEventTentative,
       ),
     );
 
@@ -2091,7 +2092,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final previous = [
       for (final row in _rawEvents) Map<String, dynamic>.from(row),
     ];
-    _applyConfirmedStatus(id);
+    _applyEventStatus(id, 'confirmed');
     try {
       await EventRepository().confirmEvent(widget.visibleHubs.first.key, id);
     } catch (_) {
@@ -2103,11 +2104,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _applyConfirmedStatus(String id) {
+  Future<void> _markEventTentative(Map<String, dynamic> event) async {
+    final id = event['id']?.toString().trim() ?? '';
+    if (id.isEmpty || id.startsWith('bday_') || widget.visibleHubs.isEmpty) {
+      throw StateError('This shift cannot be marked tentative.');
+    }
+    final previous = [
+      for (final row in _rawEvents) Map<String, dynamic>.from(row),
+    ];
+    _applyEventStatus(id, 'tentative');
+    try {
+      await EventRepository().markEventTentative(
+        widget.visibleHubs.first.key,
+        id,
+      );
+    } catch (_) {
+      if (!mounted) rethrow;
+      _rawEvents = previous;
+      _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
+      _rebuildSlides(_widthOrDefault);
+      rethrow;
+    }
+  }
+
+  void _applyEventStatus(String id, String status) {
     if (!mounted) return;
     _rawEvents = [
       for (final row in _rawEvents)
-        if (row['id'] == id) {...row, 'status': 'confirmed'} else row,
+        if (row['id'] == id) {...row, 'status': status} else row,
     ];
     _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
     _rebuildSlides(_widthOrDefault);

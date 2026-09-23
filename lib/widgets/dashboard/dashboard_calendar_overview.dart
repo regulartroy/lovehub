@@ -272,7 +272,8 @@ List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
 ///
 /// Each row is a real calendar week (Mon→Sun). Tapping a day opens a detail
 /// card listing that day's events. Tentative shifts in that card offer
-/// confirm. [onDayTap] is fired as well so the host screen can keep showing
+/// confirm. Confirmed shifts can be marked tentative from the chip.
+/// [onDayTap] is fired as well so the host screen can keep showing
 /// play–pause controls on the same touch.
 class DashboardCalendarOverviewSlide extends StatefulWidget {
   const DashboardCalendarOverviewSlide({
@@ -286,6 +287,7 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
     this.onDayTap,
     this.onCloseDayDetail,
     this.onConfirmTentative,
+    this.onMarkTentative,
   });
 
   final DashboardMetrics metrics;
@@ -305,6 +307,10 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
   /// immediately; a failed future restores the question mark.
   final Future<void> Function(Map<String, dynamic> event)? onConfirmTentative;
 
+  /// Writes `status: tentative` for a confirmed shift. The chip mutes and
+  /// shows ? immediately; a failed future restores the solid chip.
+  final Future<void> Function(Map<String, dynamic> event)? onMarkTentative;
+
   HubMemberPalette get resolvedPalette =>
       palette ?? HubMemberPalette.fromMembers(members);
 
@@ -317,6 +323,7 @@ class _DashboardCalendarOverviewSlideState
     extends State<DashboardCalendarOverviewSlide> {
   DateTime? _selectedDay;
   final Set<String> _locallyConfirmed = {};
+  final Set<String> _locallyTentative = {};
   final Set<String> _dismissedConfirm = {};
   String? _confirmingId;
 
@@ -351,9 +358,19 @@ class _DashboardCalendarOverviewSlideState
       }
       return false;
     });
+    _locallyTentative.removeWhere((id) {
+      for (final event in widget.events) {
+        if (_eventId(event) == id && isTentativeEventStatus(event['status'])) {
+          return true;
+        }
+      }
+      return false;
+    });
     return [
       for (final event in widget.events)
-        if (_locallyConfirmed.contains(_eventId(event)))
+        if (_locallyTentative.contains(_eventId(event)))
+          {...event, 'status': eventStatusTentative}
+        else if (_locallyConfirmed.contains(_eventId(event)))
           {...event, 'status': eventStatusConfirmed}
         else
           event,
@@ -367,6 +384,7 @@ class _DashboardCalendarOverviewSlideState
     setState(() {
       _confirmingId = id;
       _locallyConfirmed.add(id);
+      _locallyTentative.remove(id);
     });
     try {
       await confirm(event);
@@ -381,6 +399,43 @@ class _DashboardCalendarOverviewSlideState
     } finally {
       if (mounted) setState(() => _confirmingId = null);
     }
+  }
+
+  Future<void> _markTentative(Map<String, dynamic> event) async {
+    final id = _eventId(event);
+    final mark = widget.onMarkTentative;
+    if (id == null || mark == null) {
+      throw StateError('This shift cannot be marked tentative.');
+    }
+    setState(() {
+      _locallyTentative.add(id);
+      _locallyConfirmed.remove(id);
+      _dismissedConfirm.add(id);
+    });
+    try {
+      await mark(event);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locallyTentative.remove(id);
+        _dismissedConfirm.remove(id);
+      });
+      rethrow;
+    }
+  }
+
+  void _offerMarkTentative(Map<String, dynamic> event) {
+    final id = _eventId(event);
+    if (id == null) return;
+    final notes = event['notes'];
+    showMarkEventTentativeSheet(
+      context: context,
+      eventId: id,
+      title: dashboardGlanceTitle(event),
+      subtitle: dashboardGlanceTimeLabel(event),
+      notes: notes is String ? notes : null,
+      onMarkTentative: () => _markTentative(event),
+    );
   }
 
   @override
@@ -456,6 +511,9 @@ class _DashboardCalendarOverviewSlideState
               onConfirmTentative: widget.onConfirmTentative == null
                   ? null
                   : _confirmTentative,
+              onRequestMarkTentative: widget.onMarkTentative == null
+                  ? null
+                  : _offerMarkTentative,
               dismissedConfirmIds: _dismissedConfirm,
               confirmingId: _confirmingId,
               onKeepTentative: (id) =>
@@ -950,6 +1008,7 @@ class _LookAheadDayDetailLayer extends StatelessWidget {
     required this.isToday,
     required this.onClose,
     this.onConfirmTentative,
+    this.onRequestMarkTentative,
     this.dismissedConfirmIds = const {},
     this.confirmingId,
     this.onKeepTentative,
@@ -963,6 +1022,7 @@ class _LookAheadDayDetailLayer extends StatelessWidget {
   final bool isToday;
   final VoidCallback onClose;
   final Future<void> Function(Map<String, dynamic> event)? onConfirmTentative;
+  final void Function(Map<String, dynamic> event)? onRequestMarkTentative;
   final Set<String> dismissedConfirmIds;
   final String? confirmingId;
   final ValueChanged<String>? onKeepTentative;
@@ -998,6 +1058,7 @@ class _LookAheadDayDetailLayer extends StatelessWidget {
                   isToday: isToday,
                   onClose: onClose,
                   onConfirmTentative: onConfirmTentative,
+                  onRequestMarkTentative: onRequestMarkTentative,
                   dismissedConfirmIds: dismissedConfirmIds,
                   confirmingId: confirmingId,
                   onKeepTentative: onKeepTentative,
@@ -1021,6 +1082,7 @@ class _LookAheadDayDetailCard extends StatelessWidget {
     required this.isToday,
     required this.onClose,
     this.onConfirmTentative,
+    this.onRequestMarkTentative,
     this.dismissedConfirmIds = const {},
     this.confirmingId,
     this.onKeepTentative,
@@ -1034,6 +1096,7 @@ class _LookAheadDayDetailCard extends StatelessWidget {
   final bool isToday;
   final VoidCallback onClose;
   final Future<void> Function(Map<String, dynamic> event)? onConfirmTentative;
+  final void Function(Map<String, dynamic> event)? onRequestMarkTentative;
   final Set<String> dismissedConfirmIds;
   final String? confirmingId;
   final ValueChanged<String>? onKeepTentative;
@@ -1044,6 +1107,26 @@ class _LookAheadDayDetailCard extends StatelessWidget {
     if (raw is! String) return null;
     final id = raw.trim();
     return id.isEmpty ? null : id;
+  }
+
+  VoidCallback? _chipTap(
+    Map<String, dynamic> event,
+    String? id,
+    CalendarEventStyle style,
+  ) {
+    if (id == null) return null;
+    if (style.tentative) {
+      if (dismissedConfirmIds.contains(id)) {
+        return () => onReopenTentativeConfirm?.call(id);
+      }
+      return null;
+    }
+    final request = onRequestMarkTentative;
+    if (request == null) return null;
+    if (!canMarkEventTentativeFromChip(eventId: id, status: event['status'])) {
+      return null;
+    }
+    return () => request(event);
   }
 
   @override
@@ -1127,12 +1210,7 @@ class _LookAheadDayDetailCard extends StatelessWidget {
                     density: metrics.isCompact
                         ? CalendarSplitPillDensity.regular
                         : CalendarSplitPillDensity.comfortable,
-                    onTap:
-                        id != null &&
-                            style.tentative &&
-                            dismissedConfirmIds.contains(id)
-                        ? () => onReopenTentativeConfirm?.call(id)
-                        : null,
+                    onTap: _chipTap(event, id, style),
                     trailing: Icon(
                       isBirthday
                           ? Icons.cake_rounded
