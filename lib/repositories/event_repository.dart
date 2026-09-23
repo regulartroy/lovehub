@@ -167,14 +167,25 @@ class EventRepository {
   }
 
   /// Flip one imported event to confirmed without rewriting the rest of it.
+  /// CLI `--confirm source:externalId` uses this.
   Future<void> confirmImportedEvent(
     String hubId,
     String source,
     String externalId,
   ) async {
-    validateHubId(hubId);
     final target = parseConfirmTarget('$source:$externalId');
-    await _batchWriter.updateFields(hubId.trim(), target.docId, {
+    await confirmEvent(hubId, target.docId);
+  }
+
+  /// In-app confirm. Sets `status` to confirmed on an existing document and
+  /// leaves every other field alone — the same write as CLI `--confirm`.
+  Future<void> confirmEvent(String hubId, String eventId) async {
+    validateHubId(hubId);
+    final id = eventId.trim();
+    if (id.isEmpty || id.contains('/')) {
+      throw EventImportException('Event id is required to confirm.');
+    }
+    await _batchWriter.updateFields(hubId.trim(), id, {
       'status': eventStatusConfirmed,
     });
   }

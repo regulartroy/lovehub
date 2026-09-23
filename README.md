@@ -27,3 +27,5 @@ export FIREBASE_REFRESH_TOKEN='hub member refresh token'
 dart run tool/import_hub_events.dart --tentative --file rota.json
 dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-20
 ```
+
+Tom can also confirm a tentative shift in the app: tap the muted **?** chip on Calendar, or open that day in LOOK AHEAD and tap **Confirm I'm working this**. That sets the same `status: confirmed` field.
