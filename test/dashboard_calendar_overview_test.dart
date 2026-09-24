@@ -94,15 +94,21 @@ void main() {
   Map<String, dynamic> timedEvent(
     String summary,
     DateTime start,
-    DateTime end,
-  ) {
+    DateTime end, {
+    String category = 'general',
+    String assignedTo = 'shared',
+    String? status,
+    String? id,
+  }) {
     return {
+      if (id != null) 'id': id,
       'summary': summary,
       'start': start,
       'end': end,
       'allDay': false,
-      'category': 'general',
-      'assignedTo': 'shared',
+      'category': category,
+      'assignedTo': assignedTo,
+      if (status != null) 'status': status,
     };
   }
 
@@ -270,55 +276,146 @@ void main() {
     );
   });
 
-  test('month sections header a spanning week when any day is a new month', () {
-    final weeks = dashboardLookAheadWeeks(now);
-    final sections = dashboardLookAheadMonthSections(weeks, now: now);
+  test(
+    'month rows stop at the boundary instead of borrowing the next month',
+    () {
+      final weeks = dashboardLookAheadWeeks(now);
+      final sections = dashboardLookAheadMonthSections(weeks, now: now);
 
-    expect(sections.first.month, DateTime(2026, 9));
-    expect(sections.first.label, 'SEPTEMBER');
-    expect(sections.first.weeks, hasLength(2));
-    expect(sections.first.weeks.first.first, DateTime(2026, 9, 14));
-    expect(sections.first.weeks.last.last, DateTime(2026, 9, 27));
+      expect(sections.first.month, DateTime(2026, 9));
+      expect(sections.first.label, 'SEPTEMBER');
+      expect(sections.first.weeks, hasLength(3));
+      expect(sections.first.weeks.first.first, DateTime(2026, 9, 14));
+      expect(
+        dashboardLookAheadRowLast(sections.first.weeks[1]),
+        DateTime(2026, 9, 27),
+      );
+      // September 2026 ends on Wednesday. Thu–Sun stay empty.
+      expect(sections.first.weeks.last, [
+        DateTime(2026, 9, 28),
+        DateTime(2026, 9, 29),
+        DateTime(2026, 9, 30),
+        null,
+        null,
+        null,
+        null,
+      ]);
 
-    expect(sections[1].month, DateTime(2026, 10));
-    expect(sections[1].label, 'OCTOBER');
-    // Mon 28 Sep–Sun 4 Oct belongs to October because 1 Oct lands in the row.
-    expect(sections[1].weeks.first.first, DateTime(2026, 9, 28));
-    expect(sections[1].weeks.first.last, DateTime(2026, 10, 4));
+      expect(sections[1].month, DateTime(2026, 10));
+      expect(sections[1].label, 'OCTOBER');
+      // October 2026 starts on Thursday, so Mon–Wed are empty slots.
+      expect(sections[1].weeks.first, [
+        null,
+        null,
+        null,
+        DateTime(2026, 10, 1),
+        DateTime(2026, 10, 2),
+        DateTime(2026, 10, 3),
+        DateTime(2026, 10, 4),
+      ]);
 
-    final january = sections.firstWhere(
-      (section) => section.month.year == 2027,
-    );
-    expect(january.month, DateTime(2027, 1));
-    expect(january.label, 'JANUARY 2027');
-    expect(january.weeks.first.first, DateTime(2026, 12, 28));
-    expect(january.weeks.first.last, DateTime(2027, 1, 3));
-  });
+      final january = sections.firstWhere(
+        (section) => section.month.year == 2027 && section.month.month == 1,
+      );
+      expect(january.month, DateTime(2027, 1));
+      expect(january.label, 'JANUARY 2027');
+      expect(
+        dashboardLookAheadRowFirst(january.weeks.first),
+        DateTime(2027, 1, 1),
+      );
+      expect(
+        january.weeks.first.any((day) => day != null && day.month == 12),
+        isFalse,
+      );
+    },
+  );
 
-  test('first week is headed with today even when the row spans months', () {
-    final lateDecember = DateTime(2026, 12, 30);
+  test('a mid-week month break does not share days across the two rows', () {
+    final weeks = [
+      [
+        DateTime(2026, 9, 28),
+        DateTime(2026, 9, 29),
+        DateTime(2026, 9, 30),
+        DateTime(2026, 10, 1),
+        DateTime(2026, 10, 2),
+        DateTime(2026, 10, 3),
+        DateTime(2026, 10, 4),
+      ],
+    ];
     final sections = dashboardLookAheadMonthSections(
-      dashboardLookAheadWeeks(lateDecember),
-      now: lateDecember,
+      weeks,
+      now: DateTime(2026, 9, 28),
     );
 
-    expect(sections.first.month, DateTime(2026, 12));
-    expect(sections.first.label, 'DECEMBER');
-    expect(sections.first.weeks.first.first, DateTime(2026, 12, 28));
-    expect(sections.first.weeks.first.last, DateTime(2027, 1, 3));
-    expect(sections[1].month, DateTime(2027, 1));
-    expect(sections[1].label, 'JANUARY 2027');
-    expect(sections[1].weeks.first.first, DateTime(2027, 1, 4));
-
-    final earlyJanuary = DateTime(2027, 1, 2);
-    final januarySections = dashboardLookAheadMonthSections(
-      dashboardLookAheadWeeks(earlyJanuary),
-      now: earlyJanuary,
-    );
-    expect(januarySections.first.month, DateTime(2027, 1));
-    expect(januarySections.first.label, 'JANUARY');
-    expect(januarySections.first.weeks.first.first, DateTime(2026, 12, 28));
+    expect(sections, hasLength(2));
+    expect(sections[0].weeks.single, [
+      DateTime(2026, 9, 28),
+      DateTime(2026, 9, 29),
+      DateTime(2026, 9, 30),
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(sections[1].weeks.single, [
+      null,
+      null,
+      null,
+      DateTime(2026, 10, 1),
+      DateTime(2026, 10, 2),
+      DateTime(2026, 10, 3),
+      DateTime(2026, 10, 4),
+    ]);
   });
+
+  test(
+    'today in the new month does not pull the previous month into the row',
+    () {
+      final lateDecember = DateTime(2026, 12, 30);
+      final sections = dashboardLookAheadMonthSections(
+        dashboardLookAheadWeeks(lateDecember),
+        now: lateDecember,
+      );
+
+      expect(sections.first.month, DateTime(2026, 12));
+      expect(sections.first.label, 'DECEMBER');
+      expect(sections.first.weeks.first, [
+        DateTime(2026, 12, 28),
+        DateTime(2026, 12, 29),
+        DateTime(2026, 12, 30),
+        DateTime(2026, 12, 31),
+        null,
+        null,
+        null,
+      ]);
+      expect(sections[1].month, DateTime(2027, 1));
+      expect(sections[1].label, 'JANUARY 2027');
+      expect(sections[1].weeks.first[0], isNull);
+      expect(sections[1].weeks.first[3], isNull);
+      expect(sections[1].weeks.first[4], DateTime(2027, 1, 1));
+      expect(
+        dashboardLookAheadRowLast(sections[1].weeks.first),
+        DateTime(2027, 1, 3),
+      );
+
+      final earlyJanuary = DateTime(2027, 1, 2);
+      final januarySections = dashboardLookAheadMonthSections(
+        dashboardLookAheadWeeks(earlyJanuary),
+        now: earlyJanuary,
+      );
+      expect(januarySections.first.month, DateTime(2027, 1));
+      expect(januarySections.first.label, 'JANUARY');
+      expect(januarySections.first.weeks.first[0], isNull);
+      expect(januarySections.first.weeks.first[4], DateTime(2027, 1, 1));
+      expect(
+        januarySections.first.weeks
+            .expand((week) => week)
+            .whereType<DateTime>()
+            .any((day) => day.month == 12),
+        isFalse,
+      );
+    },
+  );
 
   testWidgets('look-ahead slide shows Mon–Sun week-strips and no month grid', (
     tester,
@@ -345,7 +442,6 @@ void main() {
     expect(find.text('NEXT 4 WEEKS'), findsNothing);
     expect(find.text('NEXT 7 DAYS'), findsNothing);
     expect(find.text('SEPTEMBER'), findsOneWidget);
-    expect(find.text('OCTOBER'), findsOneWidget);
     expect(find.text('SEP – OCT'), findsNothing);
     expect(find.text('Mo'), findsNothing);
     expect(find.text('Tu'), findsNothing);
@@ -367,9 +463,23 @@ void main() {
     expect(find.textContaining('Farmers market walk'), findsWidgets);
     expect(find.text("Maria's birthday"), findsWidgets);
     expect(find.text('Weekend away'), findsWidgets);
-    expect(find.textContaining('Date night'), findsWidgets);
-    expect(find.textContaining('Parents evening'), findsWidgets);
     expect(find.text('Free'), findsWidgets);
+    final scrollable = find.descendant(
+      of: find.byKey(const ValueKey('look-ahead-week-list')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.textContaining('Date night'),
+      200,
+      scrollable: scrollable,
+    );
+    expect(find.textContaining('Date night'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.textContaining('Parents evening'),
+      200,
+      scrollable: scrollable,
+    );
+    expect(find.textContaining('Parents evening'), findsWidgets);
     expect(find.text('Tom'), findsWidgets);
     expect(find.text('Maria'), findsWidgets);
     expect(find.text('Shared'), findsWidgets);
@@ -654,32 +764,67 @@ void main() {
       find.byKey(const ValueKey('look-ahead-month-2026-09')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('look-ahead-month-2026-10')),
-      findsOneWidget,
-    );
     expect(find.text('SEPTEMBER'), findsOneWidget);
-    expect(find.text('OCTOBER'), findsOneWidget);
-
-    final monthGap = tester.getSize(
-      find.byKey(const ValueKey('look-ahead-month-gap-2026-10')),
-    );
-    expect(monthGap.height, 22);
 
     final septemberWeek = tester.getRect(
       find.byKey(const ValueKey('look-ahead-week-1')),
-    );
-    final octoberWeek = tester.getRect(
-      find.byKey(const ValueKey('look-ahead-week-2')),
     );
     final sameMonthWeek = tester.getRect(
       find.byKey(const ValueKey('look-ahead-week-0')),
     );
     final inMonthGap = septemberWeek.top - sameMonthWeek.bottom;
-    final acrossMonthGap = octoberWeek.top - septemberWeek.bottom;
     expect(inMonthGap, 10);
-    expect(acrossMonthGap, greaterThan(inMonthGap));
-    expect(acrossMonthGap, greaterThanOrEqualTo(22));
+
+    final octoberHeader = find.text('OCTOBER');
+    await tester.scrollUntilVisible(
+      octoberHeader,
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-week-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(octoberHeader, findsOneWidget);
+    final monthGap = tester.getSize(
+      find.byKey(const ValueKey('look-ahead-month-gap-2026-10')),
+    );
+    expect(monthGap.height, 22);
+
+    final october = find.byKey(const ValueKey('look-ahead-month-2026-10'));
+    expect(
+      find.descendant(
+        of: october,
+        matching: find.byKey(const ValueKey('look-ahead-day-2026-09-30')),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: october,
+        matching: find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
+      ),
+      findsOneWidget,
+    );
+
+    final octoberDay = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
+    );
+    final octoberWeek = tester.getRect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
+        matching: find.byWidgetPredicate((widget) {
+          final key = widget.key;
+          return key is ValueKey<String> &&
+              RegExp(r'^look-ahead-week-\d+$').hasMatch(key.value);
+        }),
+      ),
+    );
+    final slot = octoberWeek.width / 7;
+    // Thursday is the fourth column, after three leading empty slots.
+    expect(octoberDay.left, greaterThan(octoberWeek.left + slot * 2.5));
+    expect(octoberDay.left, lessThan(octoberWeek.left + slot * 3.5));
   });
 
   testWidgets('scrolling into a later month keeps the header for orientation', (
@@ -1093,50 +1238,164 @@ void main() {
     }
   }
 
-  testWidgets('three events render as chips and four collapse to a count', (
+  testWidgets('four events render as chips and five become coloured dots', (
     tester,
   ) async {
-    final threeDay = DateTime(2026, 9, 15);
-    final fourDay = DateTime(2026, 9, 16);
+    final fourDay = DateTime(2026, 9, 15);
+    final fiveDay = DateTime(2026, 9, 16);
     final events = [
-      ...eventsOn(threeDay, ['Alpha', 'Bravo', 'Charlie']),
-      ...eventsOn(fourDay, ['Delta', 'Echo', 'Foxtrot', 'Golf']),
+      ...eventsOn(fourDay, ['Alpha', 'Bravo', 'Charlie', 'Delta']),
+      ...eventsOn(fiveDay, ['Echo', 'Foxtrot', 'Golf', 'Hotel', 'India']),
     ];
 
     await pumpLookAhead(tester, events: events);
 
-    final three = find.byKey(ValueKey(dashboardLookAheadDayKey(threeDay)));
     final four = find.byKey(ValueKey(dashboardLookAheadDayKey(fourDay)));
-    expectChipsInsideDay(tester, three, 3);
+    final five = find.byKey(ValueKey(dashboardLookAheadDayKey(fiveDay)));
+    expectChipsInsideDay(tester, four, 4);
     expect(
-      find.descendant(of: three, matching: find.textContaining('Alpha')),
+      find.descendant(of: four, matching: find.textContaining('Alpha')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: three, matching: find.textContaining('Bravo')),
+      find.descendant(of: four, matching: find.textContaining('Delta')),
       findsOneWidget,
     );
-    expect(
-      find.descendant(of: three, matching: find.textContaining('Charlie')),
-      findsOneWidget,
-    );
-    expect(find.text('3 events'), findsNothing);
-    expect(find.text('3 plans'), findsNothing);
+    expect(find.text('4 events'), findsNothing);
+    expect(find.text('4 plans'), findsNothing);
 
     expect(
-      find.descendant(of: four, matching: find.byType(CalendarSplitPill)),
+      find.descendant(of: five, matching: find.byType(CalendarSplitPill)),
       findsNothing,
     );
     expect(
-      find.descendant(of: four, matching: find.text('4 events')),
+      find.descendant(of: five, matching: find.byType(CalendarGlanceDot)),
+      findsNWidgets(5),
+    );
+    expect(
+      find.descendant(
+        of: five,
+        matching: find.byKey(LookAheadEventDots.rowKey),
+      ),
       findsOneWidget,
     );
-    expect(find.textContaining('Delta'), findsNothing);
-    expect(find.textContaining('Golf'), findsNothing);
+    expect(
+      find.descendant(
+        of: five,
+        matching: find.byKey(LookAheadEventDots.overflowKey),
+      ),
+      findsNothing,
+    );
+    expect(find.text('5 events'), findsNothing);
+    expect(find.textContaining('Echo'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('phone look-ahead still fits three chips in the day cell', (
+  testWidgets('busy-day dots keep who and kind colours, including tentative', (
+    tester,
+  ) async {
+    final day = DateTime(2026, 9, 16);
+    await pumpLookAhead(
+      tester,
+      events: [
+        timedEvent(
+          'Shift',
+          DateTime(2026, 9, 16, 9),
+          DateTime(2026, 9, 16, 10),
+          category: 'work',
+          assignedTo: 'tom',
+        ),
+        timedEvent(
+          'Walk',
+          DateTime(2026, 9, 16, 11),
+          DateTime(2026, 9, 16, 12),
+          category: 'general',
+          assignedTo: 'maria',
+        ),
+        timedEvent(
+          'Date',
+          DateTime(2026, 9, 16, 13),
+          DateTime(2026, 9, 16, 14),
+          category: 'general',
+          assignedTo: 'shared',
+        ),
+        {
+          'summary': 'Cake',
+          'start': DateTime(2026, 9, 16, 15),
+          'end': DateTime(2026, 9, 16, 16),
+          'category': 'birthday',
+          'assignedTo': 'shared',
+        },
+        {
+          'id': 'maybe',
+          'summary': 'Maybe shift',
+          'start': DateTime(2026, 9, 16, 17),
+          'end': DateTime(2026, 9, 16, 18),
+          'category': 'work',
+          'assignedTo': 'tom',
+          'status': 'tentative',
+        },
+      ],
+    );
+
+    final cell = find.byKey(ValueKey(dashboardLookAheadDayKey(day)));
+    final dots = tester.widgetList<CalendarGlanceDot>(
+      find.descendant(of: cell, matching: find.byType(CalendarGlanceDot)),
+    );
+    expect(dots, hasLength(5));
+    expect(dots.elementAt(0).style.glanceDot, CalendarColors.work);
+    expect(dots.elementAt(0).style.who, CalendarColors.tom);
+    expect(dots.elementAt(1).style.glanceDot, CalendarColors.personal);
+    expect(dots.elementAt(1).style.who, CalendarColors.maria);
+    expect(dots.elementAt(2).style.who, CalendarColors.shared);
+    expect(dots.elementAt(3).style.glanceDot, CalendarColors.birthday);
+    expect(dots.elementAt(4).style.tentative, isTrue);
+    expect(
+      dots.elementAt(4).style.kind,
+      CalendarColors.mute(CalendarColors.work),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('too many dots keep an overflow cue', (tester) async {
+    final day = DateTime(2026, 9, 16);
+    await pumpLookAhead(
+      tester,
+      events: [
+        for (var i = 0; i < 24; i++)
+          timedEvent(
+            'Plan $i',
+            DateTime(2026, 9, 16, 8, i),
+            DateTime(2026, 9, 16, 8, i, 20),
+          ),
+      ],
+    );
+
+    final cell = find.byKey(ValueKey(dashboardLookAheadDayKey(day)));
+    expect(
+      find.descendant(of: cell, matching: find.byType(CalendarSplitPill)),
+      findsNothing,
+    );
+    final shown = tester
+        .widgetList<CalendarGlanceDot>(
+          find.descendant(of: cell, matching: find.byType(CalendarGlanceDot)),
+        )
+        .length;
+    expect(shown, greaterThan(0));
+    expect(shown, lessThan(24));
+    expect(
+      find.descendant(
+        of: cell,
+        matching: find.byKey(LookAheadEventDots.overflowKey),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('+${24 - shown}'), findsOneWidget);
+    expect(find.text('24 events'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('phone look-ahead still fits four chips in the day cell', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -1149,7 +1408,7 @@ void main() {
         home: Scaffold(
           body: DashboardCalendarOverviewSlide(
             metrics: DashboardMetrics(const Size(390, 844)),
-            events: eventsOn(day, ['Alpha', 'Bravo', 'Charlie']),
+            events: eventsOn(day, ['Alpha', 'Bravo', 'Charlie', 'Delta']),
             now: now,
             members: members,
           ),
@@ -1160,7 +1419,7 @@ void main() {
     expectChipsInsideDay(
       tester,
       find.byKey(ValueKey(dashboardLookAheadDayKey(day))),
-      3,
+      4,
     );
     expect(tester.takeException(), isNull);
   });

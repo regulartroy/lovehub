@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lovehub/models/event_model.dart';
 import 'voice_spike_gallery.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/calendar_month_scroller.dart';
@@ -739,7 +738,7 @@ class DashboardGalleryPage extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Same month headers and gaps as LOOK AHEAD, with lazy future scroll.',
+            'Same LOOK AHEAD day cells, with scroll that keeps going forward.',
             style: TextStyle(color: Color(0xFF5A564E), fontSize: 14),
           ),
           const SizedBox(height: 12),
@@ -747,25 +746,7 @@ class DashboardGalleryPage extends StatelessWidget {
             child: CalendarMonthScroller(
               now: _previewNow,
               palette: palette,
-              eventsForDay: (day) {
-                return _lookAheadEvents()
-                    .where((event) {
-                      return dashboardEventOverlapsDay(event, day);
-                    })
-                    .map(
-                      (event) => EventModel(
-                        id: event['summary'].toString(),
-                        summary: event['summary'].toString(),
-                        start: event['start'] as DateTime,
-                        end: (event['end'] ?? event['start']) as DateTime,
-                        allDay: event['allDay'] == true,
-                        category: (event['category'] ?? 'general').toString(),
-                        assignedTo: (event['assignedTo'] ?? 'shared')
-                            .toString(),
-                      ),
-                    )
-                    .toList();
-              },
+              events: _lookAheadEvents(),
             ),
           ),
         ],

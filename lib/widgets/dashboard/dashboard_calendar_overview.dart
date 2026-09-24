@@ -29,22 +29,22 @@ DateTime? dashboardEventDateTime(dynamic value) {
 /// An end at exactly 06:00 still counts on that morning.
 const int dashboardOverviewOvernightCutoffHour = 6;
 
-/// Coloured chips drawn in a LOOK AHEAD day cell. A fourth event replaces
-/// the chips with [dashboardLookAheadEventCountLabel].
-const int dashboardLookAheadMaxVisibleEvents = 3;
+/// Coloured chips drawn in a LOOK AHEAD day cell. A fifth event replaces
+/// the chips with a row of coloured dots, one per event.
+const int dashboardLookAheadMaxVisibleEvents = 4;
 
-/// "4 events" — used only when a day has more than
-/// [dashboardLookAheadMaxVisibleEvents] events.
+/// "4 events" — a plain count. Busy LOOK AHEAD days draw coloured dots
+/// instead of this label.
 String dashboardLookAheadEventCountLabel(int count) {
   if (count == 1) return '1 event';
   return '$count events';
 }
 
-/// Kitchen-tablet day box: weekday, date, and three compact chips.
-const double dashboardLookAheadRowHeight = 156;
+/// Kitchen-tablet day box: weekday, date, and four compact chips.
+const double dashboardLookAheadRowHeight = 184;
 
-/// Phone day box. The header is smaller, and three chips still fit.
-const double dashboardLookAheadCompactRowHeight = 144;
+/// Phone day box. The header is smaller, and four chips still fit.
+const double dashboardLookAheadCompactRowHeight = 168;
 
 /// Whether [start]/[end] should place a chip on [day] in calendar overviews.
 ///
@@ -197,26 +197,66 @@ String dashboardLookAheadMonthLabel(DateTime month, DateTime now) {
 
 /// One labeled month in the LOOK AHEAD week list.
 ///
-/// Boundary rule: the first week is always headed with the month of [now], so
-/// TODAY sits under the current month. Each later week opens a new section as
-/// soon as any day in that row belongs to a calendar month that has not yet
-/// been labeled. A week that spans two months (Mon 28 Sep–Sun 4 Oct) is
-/// therefore headed "October" because 1 Oct lands in the row.
+/// Each [weeks] row is a Monday–Sunday line that belongs to this month only.
+/// Slots outside the month are null: a month that ends on Wednesday leaves
+/// Thu–Sun empty, and a month that starts on Thursday begins with Mon–Wed
+/// empty. Rows never borrow days from the neighbouring month.
 ///
-/// If today is still in the old month on a spanning first week (e.g. 30 Dec
-/// with 1 Jan in the same row), the first header stays on today's month and
-/// the new month is labeled on the following week.
+/// Days before the calendar month of [now] are dropped, so a week that
+/// opens in the previous month does not pull those days into the first row.
 class DashboardLookAheadMonthSection {
   DashboardLookAheadMonthSection({
     required this.month,
     required this.label,
-    required List<List<DateTime>> weeks,
-  }) : weeks = List<List<DateTime>>.from(weeks);
+    required List<List<DateTime?>> weeks,
+  }) : weeks = weeks.map((week) => List<DateTime?>.from(week)).toList();
 
   /// First day of the labeled calendar month.
   final DateTime month;
   final String label;
-  final List<List<DateTime>> weeks;
+
+  /// Monday–Sunday rows. Null is an empty slot outside this month.
+  final List<List<DateTime?>> weeks;
+}
+
+/// First real day in a month-break row, or null when the row is empty.
+DateTime? dashboardLookAheadRowFirst(List<DateTime?> row) {
+  for (final day in row) {
+    if (day != null) return day;
+  }
+  return null;
+}
+
+/// Last real day in a month-break row, or null when the row is empty.
+DateTime? dashboardLookAheadRowLast(List<DateTime?> row) {
+  for (final day in row.reversed) {
+    if (day != null) return day;
+  }
+  return null;
+}
+
+DateTime? dashboardLookAheadFirstDisplayedDay(
+  List<DashboardLookAheadMonthSection> sections,
+) {
+  for (final section in sections) {
+    for (final week in section.weeks) {
+      final day = dashboardLookAheadRowFirst(week);
+      if (day != null) return day;
+    }
+  }
+  return null;
+}
+
+DateTime? dashboardLookAheadLastDisplayedDay(
+  List<DashboardLookAheadMonthSection> sections,
+) {
+  for (final section in sections.reversed) {
+    for (final week in section.weeks.reversed) {
+      final day = dashboardLookAheadRowLast(week);
+      if (day != null) return day;
+    }
+  }
+  return null;
 }
 
 int _lookAheadMonthId(DateTime day) {
@@ -224,8 +264,8 @@ int _lookAheadMonthId(DateTime day) {
   return month.year * 12 + month.month;
 }
 
-/// Groups Monday–Sunday [weeks] into month sections. See
-/// [DashboardLookAheadMonthSection] for the spanning-week rule.
+/// Groups Monday–Sunday [weeks] into month sections whose rows do not cross
+/// a month boundary. See [DashboardLookAheadMonthSection].
 List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
   List<List<DateTime>> weeks, {
   required DateTime now,
@@ -233,38 +273,47 @@ List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
   if (weeks.isEmpty) return const [];
 
   final today = DateUtils.dateOnly(now);
-  final labeled = <int>{};
+  final todayMonthId = _lookAheadMonthId(today);
+  final days = <DateTime>[
+    for (final week in weeks)
+      for (final day in week)
+        if (_lookAheadMonthId(day) >= todayMonthId) DateUtils.dateOnly(day),
+  ]..sort();
+  if (days.isEmpty) return const [];
+
   final sections = <DashboardLookAheadMonthSection>[];
 
-  for (var i = 0; i < weeks.length; i++) {
-    final week = weeks[i];
-    DateTime? headerMonth;
-    if (i == 0) {
-      headerMonth = dashboardLookAheadMonthOf(today);
-    } else {
-      for (final day in week) {
-        final id = _lookAheadMonthId(day);
-        if (!labeled.contains(id)) {
-          headerMonth = dashboardLookAheadMonthOf(day);
-          break;
-        }
-      }
-    }
-
-    if (headerMonth != null) {
-      labeled.add(_lookAheadMonthId(headerMonth));
+  void push(List<DateTime?> week) {
+    final monthDay = dashboardLookAheadRowFirst(week);
+    if (monthDay == null) return;
+    final month = dashboardLookAheadMonthOf(monthDay);
+    if (sections.isEmpty ||
+        _lookAheadMonthId(sections.last.month) != _lookAheadMonthId(month)) {
       sections.add(
         DashboardLookAheadMonthSection(
-          month: headerMonth,
-          label: dashboardLookAheadMonthLabel(headerMonth, today),
+          month: month,
+          label: dashboardLookAheadMonthLabel(month, today),
           weeks: [week],
         ),
       );
     } else {
-      sections.last.weeks.add(week);
+      sections.last.weeks.add(List<DateTime?>.from(week));
     }
   }
 
+  List<DateTime?>? row;
+  var rowMonth = -1;
+  for (final day in days) {
+    final monthId = _lookAheadMonthId(day);
+    final index = day.weekday - DateTime.monday;
+    if (row == null || monthId != rowMonth || index == 0) {
+      if (row != null) push(row);
+      row = List<DateTime?>.filled(7, null);
+      rowMonth = monthId;
+    }
+    row[index] = day;
+  }
+  if (row != null) push(row);
   return sections;
 }
 
@@ -288,7 +337,16 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
     this.onCloseDayDetail,
     this.onConfirmTentative,
     this.onMarkTentative,
+    this.infiniteForward = false,
+    this.initialForwardWeeks = 30,
+    this.boardLabel,
   });
+
+  /// How many extra Monday-rows to append when an infinite board nears its end.
+  static const int infiniteChunkWeeks = 26;
+
+  /// About twenty years. Far enough that the Calendar tab does not feel capped.
+  static const int infiniteMaxWeeks = 52 * 20;
 
   final DashboardMetrics metrics;
   final List<Map<String, dynamic>> events;
@@ -296,6 +354,16 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
   final List<Map<String, dynamic>> members;
   final HubMemberPalette? palette;
   final EdgeInsets? padding;
+
+  /// Calendar tab: keep the same board, and grow it as the reader scrolls.
+  /// Dashboard LOOK AHEAD stays on the ~6 month horizon when this is false.
+  final bool infiniteForward;
+
+  /// First window when [infiniteForward] is set. Ignored on the dashboard.
+  final int initialForwardWeeks;
+
+  /// Inner glass-card label. Defaults to "NEXT 6 MONTHS" or "ONWARD".
+  final String? boardLabel;
 
   /// Invoked when a day cell is tapped, in addition to opening day detail.
   final ValueChanged<DateTime>? onDayTap;
@@ -326,6 +394,54 @@ class _DashboardCalendarOverviewSlideState
   final Set<String> _locallyTentative = {};
   final Set<String> _dismissedConfirm = {};
   String? _confirmingId;
+  late int _forwardWeeks;
+  bool _expandScheduled = false;
+
+  int _resolvedForwardWeeks(DashboardCalendarOverviewSlide source) {
+    if (!source.infiniteForward) {
+      return dashboardLookAheadWeekCount(source.now);
+    }
+    return source.initialForwardWeeks.clamp(
+      8,
+      DashboardCalendarOverviewSlide.infiniteMaxWeeks,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _forwardWeeks = _resolvedForwardWeeks(widget);
+  }
+
+  @override
+  void didUpdateWidget(covariant DashboardCalendarOverviewSlide oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final mondayChanged =
+        dashboardMondayOf(oldWidget.now) != dashboardMondayOf(widget.now);
+    if (!widget.infiniteForward ||
+        mondayChanged ||
+        oldWidget.infiniteForward != widget.infiniteForward) {
+      _forwardWeeks = _resolvedForwardWeeks(widget);
+    }
+  }
+
+  void _maybeExpandForward() {
+    if (!widget.infiniteForward || _expandScheduled) return;
+    if (_forwardWeeks >= DashboardCalendarOverviewSlide.infiniteMaxWeeks) {
+      return;
+    }
+    _expandScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _expandScheduled = false;
+      if (!mounted) return;
+      if (!widget.infiniteForward) return;
+      setState(() {
+        _forwardWeeks =
+            (_forwardWeeks + DashboardCalendarOverviewSlide.infiniteChunkWeeks)
+                .clamp(8, DashboardCalendarOverviewSlide.infiniteMaxWeeks);
+      });
+    });
+  }
 
   void _handleDayTap(DateTime day) {
     final date = DateUtils.dateOnly(day);
@@ -442,9 +558,13 @@ class _DashboardCalendarOverviewSlideState
   Widget build(BuildContext context) {
     final events = _presentedEvents();
     final today = DateUtils.dateOnly(widget.now);
-    final weeks = dashboardLookAheadWeeks(today);
-    final horizonEnd = weeks.last.last;
-    final rangeStart = weeks.first.first;
+    final weeks = dashboardLookAheadWeeks(today, weekCount: _forwardWeeks);
+    final sections = dashboardLookAheadMonthSections(weeks, now: today);
+    final horizonEnd = dashboardLookAheadLastDisplayedDay(sections) ?? today;
+    final rangeStart = dashboardLookAheadFirstDisplayedDay(sections) ?? today;
+    final boardLabel =
+        widget.boardLabel ??
+        (widget.infiniteForward ? 'ONWARD' : 'NEXT 6 MONTHS');
     final hasUpcoming = events.any((event) {
       final startRaw = dashboardEventDateTime(event['start']);
       if (startRaw == null) return false;
@@ -473,9 +593,11 @@ class _DashboardCalendarOverviewSlideState
                 icon: Icons.calendar_view_week_rounded,
                 tint: DashboardTheme.schedule,
                 title: 'LOOK AHEAD',
-                trailing: _RangeChip(
-                  label: dashboardCompactDayRange(today, horizonEnd),
-                ),
+                trailing: widget.infiniteForward
+                    ? null
+                    : _RangeChip(
+                        label: dashboardCompactDayRange(today, horizonEnd),
+                      ),
               ),
               SizedBox(height: widget.metrics.isCompact ? 12 : 16),
               Expanded(
@@ -485,12 +607,18 @@ class _DashboardCalendarOverviewSlideState
                   events: events,
                   today: today,
                   selectedDay: _selectedDay,
-                  rangeLabel: dashboardCompactDayRange(today, horizonEnd),
+                  rangeLabel: widget.infiniteForward
+                      ? null
+                      : dashboardCompactDayRange(today, horizonEnd),
+                  boardLabel: boardLabel,
                   emptyHint: hasUpcoming
                       ? null
                       : 'Quiet stretch — add plans from Calendar',
                   palette: whoPalette,
                   onDayTap: _handleDayTap,
+                  onNearEnd: widget.infiniteForward
+                      ? _maybeExpandForward
+                      : null,
                 ),
               ),
               SizedBox(height: widget.metrics.isCompact ? 8 : 10),
@@ -646,11 +774,13 @@ class _LookAheadWeekBoard extends StatelessWidget {
     required this.weeks,
     required this.events,
     required this.today,
-    required this.rangeLabel,
+    required this.boardLabel,
     required this.palette,
     required this.onDayTap,
+    this.rangeLabel,
     this.selectedDay,
     this.emptyHint,
+    this.onNearEnd,
   });
 
   final DashboardMetrics metrics;
@@ -658,10 +788,12 @@ class _LookAheadWeekBoard extends StatelessWidget {
   final List<Map<String, dynamic>> events;
   final DateTime today;
   final DateTime? selectedDay;
-  final String rangeLabel;
+  final String? rangeLabel;
+  final String boardLabel;
   final HubMemberPalette palette;
   final String? emptyHint;
   final ValueChanged<DateTime> onDayTap;
+  final VoidCallback? onNearEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -669,7 +801,7 @@ class _LookAheadWeekBoard extends StatelessWidget {
     // Modest extra air between months so the board reads as sections, not one
     // continuous grid. Tight enough for a wall tablet.
     final monthGap = metrics.isCompact ? 16.0 : 22.0;
-    // Tall enough for the weekday, the date, and three coloured chips.
+    // Tall enough for the weekday, the date, and four coloured chips.
     // A shorter box was collapsing busy days to a count.
     final minRow = metrics.isCompact
         ? dashboardLookAheadCompactRowHeight
@@ -683,7 +815,7 @@ class _LookAheadWeekBoard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _CardLabel(
-            text: 'NEXT 6 MONTHS',
+            text: boardLabel,
             trailing: metrics.isCompact ? null : rangeLabel,
           ),
           if (emptyHint != null) ...[
@@ -704,6 +836,9 @@ class _LookAheadWeekBoard extends StatelessWidget {
               physics: const BouncingScrollPhysics(),
               itemCount: sections.length,
               itemBuilder: (context, sectionIndex) {
+                if (sectionIndex >= sections.length - 1) {
+                  onNearEnd?.call();
+                }
                 final section = sections[sectionIndex];
                 var weekIndex = 0;
                 for (var i = 0; i < sectionIndex; i++) {
@@ -765,7 +900,7 @@ class _WeekDayRow extends StatelessWidget {
   });
 
   final DashboardMetrics metrics;
-  final List<DateTime> days;
+  final List<DateTime?> days;
   final List<Map<String, dynamic>> events;
   final DateTime today;
   final DateTime? selectedDay;
@@ -780,19 +915,21 @@ class _WeekDayRow extends StatelessWidget {
         for (var i = 0; i < days.length; i++) ...[
           if (i > 0) SizedBox(width: metrics.isCompact ? 6 : 8),
           Expanded(
-            child: _WeekDayColumn(
-              key: ValueKey(dashboardLookAheadDayKey(days[i])),
-              metrics: metrics,
-              day: days[i],
-              events: dashboardEventsOnDay(events, days[i]),
-              isToday: DateUtils.isSameDay(days[i], today),
-              isPast: days[i].isBefore(today),
-              isSelected:
-                  selectedDay != null &&
-                  DateUtils.isSameDay(days[i], selectedDay),
-              palette: palette,
-              onTap: () => onDayTap(days[i]),
-            ),
+            child: days[i] == null
+                ? const SizedBox.expand()
+                : _WeekDayColumn(
+                    key: ValueKey(dashboardLookAheadDayKey(days[i]!)),
+                    metrics: metrics,
+                    day: days[i]!,
+                    events: dashboardEventsOnDay(events, days[i]!),
+                    isToday: DateUtils.isSameDay(days[i], today),
+                    isPast: days[i]!.isBefore(today),
+                    isSelected:
+                        selectedDay != null &&
+                        DateUtils.isSameDay(days[i], selectedDay),
+                    palette: palette,
+                    onTap: () => onDayTap(days[i]!),
+                  ),
           ),
         ],
       ],
@@ -836,9 +973,9 @@ class _WeekDayColumn extends StatelessWidget {
         : isPast
         ? DashboardTheme.inkFaint
         : DashboardTheme.ink;
-    // 1–3 events stay as chips. Four or more collapse to a count so the
-    // day box does not try to jam a fourth chip.
-    final showSummary = events.length > dashboardLookAheadMaxVisibleEvents;
+    // 1–4 events stay as chips. Five or more become coloured dots so a
+    // busy day still reads as full, without a plain "N events" count.
+    final showDots = events.length > dashboardLookAheadMaxVisibleEvents;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -920,19 +1057,13 @@ class _WeekDayColumn extends StatelessWidget {
                               ),
                             ),
                           )
-                        : showSummary
+                        : showDots
                         ? Align(
                             alignment: Alignment.topCenter,
-                            child: Text(
-                              dashboardLookAheadEventCountLabel(events.length),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: isPast
-                                    ? DashboardTheme.inkFaint
-                                    : DashboardTheme.inkMuted,
-                                fontSize: metrics.isCompact ? 10 : 11,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            child: LookAheadEventDots(
+                              events: events,
+                              palette: palette,
+                              muted: isPast,
                             ),
                           )
                         : Column(
@@ -995,6 +1126,84 @@ class _EventChip extends StatelessWidget {
                   : Icons.circle,
               size: isBirthday || isMeal || isWork ? 11 : 6,
             ),
+    );
+  }
+}
+
+/// Compact coloured dots for a LOOK AHEAD day with more than
+/// [dashboardLookAheadMaxVisibleEvents] events.
+///
+/// One dot per event, in the same who/kind colours as the chips. When the
+/// row cannot hold every dot, the rest collapse to a small "+N" cue.
+class LookAheadEventDots extends StatelessWidget {
+  const LookAheadEventDots({
+    super.key,
+    required this.events,
+    required this.palette,
+    this.muted = false,
+  });
+
+  final List<Map<String, dynamic>> events;
+  final HubMemberPalette palette;
+
+  /// Past days fade the dots the same way the date label fades.
+  final bool muted;
+
+  static const Key rowKey = Key('look-ahead-event-dots');
+  static const Key overflowKey = Key('look-ahead-event-dots-overflow');
+
+  static const double dotSize = 8;
+
+  /// [CalendarGlanceDot] adds 1px of horizontal margin on each side.
+  static const double dotSlot = dotSize + 2;
+
+  /// Room for a "+NN" cue, its padding, and a little slack inside the cell.
+  static double _overflowCueWidth(int hidden) => hidden >= 10 ? 36 : 28;
+
+  @override
+  Widget build(BuildContext context) {
+    final styles = [
+      for (final event in events)
+        CalendarColors.fromMap(event, palette: palette),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        var visible = styles.length;
+        if (maxWidth.isFinite && styles.isNotEmpty) {
+          while (visible > 0) {
+            final hidden = styles.length - visible;
+            final cue = hidden == 0 ? 0.0 : _overflowCueWidth(hidden);
+            if (visible * dotSlot + cue <= maxWidth + 0.5) break;
+            visible--;
+          }
+        }
+        final hidden = styles.length - visible;
+        return Row(
+          key: rowKey,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < visible; i++)
+              CalendarGlanceDot(style: styles[i], size: dotSize, faded: muted),
+            if (hidden > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 2),
+                child: Text(
+                  '+$hidden',
+                  key: overflowKey,
+                  style: TextStyle(
+                    color: muted
+                        ? DashboardTheme.inkFaint
+                        : DashboardTheme.inkMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

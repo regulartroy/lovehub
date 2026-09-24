@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lovehub/models/event_model.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/calendar_month_scroller.dart';
+import 'package:lovehub/widgets/calendar_split_pill.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 
 void main() {
@@ -12,20 +12,16 @@ void main() {
     {'uid': 'maria', 'name': 'Maria'},
   ]);
 
-  List<EventModel> eventsForDay(DateTime day) {
-    if (DateUtils.isSameDay(day, now)) {
-      return [
-        EventModel(
-          id: 'walk',
-          summary: 'Farmers market walk',
-          start: DateTime(2026, 9, 19, 9, 30),
-          end: DateTime(2026, 9, 19, 11),
-          assignedTo: 'shared',
-        ),
-      ];
-    }
-    return const [];
-  }
+  final events = [
+    {
+      'id': 'walk',
+      'summary': 'Farmers market walk',
+      'start': DateTime(2026, 9, 19, 9, 30),
+      'end': DateTime(2026, 9, 19, 11),
+      'assignedTo': 'shared',
+      'category': 'general',
+    },
+  ];
 
   Future<void> pumpBoard(WidgetTester tester, {int? initialWeekCount}) async {
     tester.view.physicalSize = const Size(1024, 768);
@@ -39,7 +35,7 @@ void main() {
           body: CalendarMonthScroller(
             now: now,
             palette: palette,
-            eventsForDay: eventsForDay,
+            events: events,
             initialWeekCount: initialWeekCount ?? 30,
           ),
         ),
@@ -47,65 +43,78 @@ void main() {
     );
   }
 
-  test('calendar board starts at the Monday of the current month 1st', () {
-    expect(calendarScrollerStartMonday(now), DateTime(2026, 8, 31));
-    expect(
-      calendarScrollerStartMonday(DateTime(2026, 9, 1)),
-      DateTime(2026, 8, 31),
-    );
-    expect(
-      calendarScrollerStartMonday(DateTime(2026, 10, 1)),
-      DateTime(2026, 9, 28),
-    );
-  });
-
-  test('calendar months use the same spanning-week header rule', () {
-    final start = calendarScrollerStartMonday(now);
-    final weeks = List<List<DateTime>>.generate(
-      20,
-      (index) => calendarScrollerWeekAt(start, index),
-    );
+  test('calendar months break on the same month boundary as look ahead', () {
+    final weeks = dashboardLookAheadWeeks(now, weekCount: 20);
     final sections = dashboardLookAheadMonthSections(weeks, now: now);
     expect(sections.first.month, DateTime(2026, 9));
     expect(sections.first.label, 'SEPTEMBER');
+    expect(
+      dashboardLookAheadRowLast(sections.first.weeks.last),
+      DateTime(2026, 9, 30),
+    );
     expect(sections[1].month, DateTime(2026, 10));
-    expect(sections[1].weeks.first.first, DateTime(2026, 9, 28));
+    expect(sections[1].weeks.first[0], isNull);
+    expect(sections[1].weeks.first[3], DateTime(2026, 10, 1));
   });
 
-  testWidgets('calendar board shows month headers, gaps, and weekday strip', (
+  testWidgets('calendar tab clones look-ahead day cells and month headers', (
     tester,
   ) async {
     await pumpBoard(tester);
 
+    expect(find.text('LOOK AHEAD'), findsOneWidget);
+    expect(find.text('ONWARD'), findsOneWidget);
+    expect(find.text('NEXT 6 MONTHS'), findsNothing);
+    expect(find.text('SEPTEMBER'), findsOneWidget);
     expect(find.text('MON'), findsWidgets);
     expect(find.text('SUN'), findsWidgets);
-    expect(find.text('SEPTEMBER'), findsOneWidget);
-    expect(find.text('OCTOBER'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('calendar-month-2026-09')),
+      find.byKey(const ValueKey('look-ahead-month-2026-09')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('calendar-month-2026-10')),
+      find.byKey(const ValueKey('look-ahead-day-2026-09-19')),
       findsOneWidget,
     );
+    expect(find.textContaining('Farmers market walk'), findsWidgets);
+    expect(find.byType(CalendarSplitPill), findsWidgets);
 
+    final october = find.text('OCTOBER');
+    await tester.scrollUntilVisible(
+      october,
+      250,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-week-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(october, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('look-ahead-month-2026-10')),
+      findsOneWidget,
+    );
     final gap = tester.getSize(
-      find.byKey(const ValueKey('calendar-month-gap-2026-10')),
+      find.byKey(const ValueKey('look-ahead-month-gap-2026-10')),
     );
-    expect(gap.height, 20);
-
+    expect(gap.height, 22);
     expect(
-      find.byKey(const ValueKey('calendar-day-2026-09-01')),
-      findsOneWidget,
+      find.descendant(
+        of: find.byKey(const ValueKey('look-ahead-month-2026-10')),
+        matching: find.byKey(const ValueKey('look-ahead-day-2026-09-30')),
+      ),
+      findsNothing,
     );
     expect(
-      find.byKey(const ValueKey('calendar-day-2026-09-19')),
+      find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
       findsOneWidget,
     );
   });
 
-  testWidgets('tapping a calendar day notifies the host', (tester) async {
+  testWidgets('tapping a calendar day notifies the host and opens detail', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1024, 768);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -117,16 +126,18 @@ void main() {
           body: CalendarMonthScroller(
             now: now,
             palette: palette,
-            eventsForDay: eventsForDay,
+            events: events,
             onDayTap: (day) => tapped = day,
           ),
         ),
       ),
     );
 
-    await tester.tap(find.byKey(const ValueKey('calendar-day-2026-09-19')));
+    await tester.tap(find.byKey(const ValueKey('look-ahead-day-2026-09-19')));
     await tester.pumpAndSettle();
     expect(tapped, DateTime(2026, 9, 19));
+    expect(find.byKey(const ValueKey('look-ahead-day-detail')), findsOneWidget);
+    expect(find.textContaining('Farmers market walk'), findsWidgets);
   });
 
   testWidgets('calendar board grows far into the future while scrolling', (
@@ -134,16 +145,16 @@ void main() {
   ) async {
     await pumpBoard(tester, initialWeekCount: 16);
 
-    final farHeader = find.byKey(const ValueKey('calendar-month-2028-01'));
+    final farHeader = find.byKey(const ValueKey('look-ahead-month-2028-01'));
     expect(farHeader, findsNothing);
 
     final scrollable = find.descendant(
-      of: find.byKey(const ValueKey('calendar-month-list')),
+      of: find.byKey(const ValueKey('look-ahead-week-list')),
       matching: find.byType(Scrollable),
     );
     var found = false;
-    for (var i = 0; i < 60; i++) {
-      await tester.drag(scrollable, const Offset(0, -500));
+    for (var i = 0; i < 80; i++) {
+      await tester.drag(scrollable, const Offset(0, -700));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 20));
       if (farHeader.evaluate().isNotEmpty) {
@@ -157,7 +168,7 @@ void main() {
     expect(farHeader, findsOneWidget);
     expect(find.text('JANUARY 2028'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('calendar-month-gap-2028-01')),
+      find.byKey(const ValueKey('look-ahead-month-gap-2028-01')),
       findsOneWidget,
     );
   });
