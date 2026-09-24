@@ -276,61 +276,45 @@ void main() {
     );
   });
 
-  test(
-    'month rows stop at the boundary instead of borrowing the next month',
-    () {
-      final weeks = dashboardLookAheadWeeks(now);
-      final sections = dashboardLookAheadMonthSections(weeks, now: now);
+  test('month sections header a spanning week when any day is a new month', () {
+    final weeks = dashboardLookAheadWeeks(now);
+    final sections = dashboardLookAheadMonthSections(weeks, now: now);
 
-      expect(sections.first.month, DateTime(2026, 9));
-      expect(sections.first.label, 'SEPTEMBER');
-      expect(sections.first.weeks, hasLength(3));
-      expect(sections.first.weeks.first.first, DateTime(2026, 9, 14));
-      expect(
-        dashboardLookAheadRowLast(sections.first.weeks[1]),
-        DateTime(2026, 9, 27),
-      );
-      // September 2026 ends on Wednesday. Thu–Sun stay empty.
-      expect(sections.first.weeks.last, [
-        DateTime(2026, 9, 28),
-        DateTime(2026, 9, 29),
-        DateTime(2026, 9, 30),
-        null,
-        null,
-        null,
-        null,
-      ]);
+    expect(sections.first.month, DateTime(2026, 9));
+    expect(sections.first.label, 'SEPTEMBER');
+    expect(sections.first.weeks, hasLength(2));
+    expect(sections.first.weeks.first.first, DateTime(2026, 9, 14));
+    expect(sections.first.weeks.last.last, DateTime(2026, 9, 27));
 
-      expect(sections[1].month, DateTime(2026, 10));
-      expect(sections[1].label, 'OCTOBER');
-      // October 2026 starts on Thursday, so Mon–Wed are empty slots.
-      expect(sections[1].weeks.first, [
-        null,
-        null,
-        null,
-        DateTime(2026, 10, 1),
-        DateTime(2026, 10, 2),
-        DateTime(2026, 10, 3),
-        DateTime(2026, 10, 4),
-      ]);
+    expect(sections[1].month, DateTime(2026, 10));
+    expect(sections[1].label, 'OCTOBER');
+    // Mon 28 Sep–Sun 4 Oct stays one continuous row under October.
+    expect(sections[1].weeks.first, [
+      DateTime(2026, 9, 28),
+      DateTime(2026, 9, 29),
+      DateTime(2026, 9, 30),
+      DateTime(2026, 10, 1),
+      DateTime(2026, 10, 2),
+      DateTime(2026, 10, 3),
+      DateTime(2026, 10, 4),
+    ]);
+    expect(
+      sections.every(
+        (section) => section.weeks.every((week) => week.length == 7),
+      ),
+      isTrue,
+    );
 
-      final january = sections.firstWhere(
-        (section) => section.month.year == 2027 && section.month.month == 1,
-      );
-      expect(january.month, DateTime(2027, 1));
-      expect(january.label, 'JANUARY 2027');
-      expect(
-        dashboardLookAheadRowFirst(january.weeks.first),
-        DateTime(2027, 1, 1),
-      );
-      expect(
-        january.weeks.first.any((day) => day != null && day.month == 12),
-        isFalse,
-      );
-    },
-  );
+    final january = sections.firstWhere(
+      (section) => section.month.year == 2027 && section.month.month == 1,
+    );
+    expect(january.month, DateTime(2027, 1));
+    expect(january.label, 'JANUARY 2027');
+    expect(january.weeks.first.first, DateTime(2026, 12, 28));
+    expect(january.weeks.first.last, DateTime(2027, 1, 3));
+  });
 
-  test('a mid-week month break does not share days across the two rows', () {
+  test('a week that crosses a month stays one continuous Mon–Sun row', () {
     final weeks = [
       [
         DateTime(2026, 9, 28),
@@ -347,75 +331,36 @@ void main() {
       now: DateTime(2026, 9, 28),
     );
 
-    expect(sections, hasLength(2));
-    expect(sections[0].weeks.single, [
-      DateTime(2026, 9, 28),
-      DateTime(2026, 9, 29),
-      DateTime(2026, 9, 30),
-      null,
-      null,
-      null,
-      null,
-    ]);
-    expect(sections[1].weeks.single, [
-      null,
-      null,
-      null,
-      DateTime(2026, 10, 1),
-      DateTime(2026, 10, 2),
-      DateTime(2026, 10, 3),
-      DateTime(2026, 10, 4),
-    ]);
+    expect(sections, hasLength(1));
+    expect(sections.single.weeks.single, weeks.single);
   });
 
-  test(
-    'today in the new month does not pull the previous month into the row',
-    () {
-      final lateDecember = DateTime(2026, 12, 30);
-      final sections = dashboardLookAheadMonthSections(
-        dashboardLookAheadWeeks(lateDecember),
-        now: lateDecember,
-      );
+  test('first week is headed with today even when the row spans months', () {
+    final lateDecember = DateTime(2026, 12, 30);
+    final sections = dashboardLookAheadMonthSections(
+      dashboardLookAheadWeeks(lateDecember),
+      now: lateDecember,
+    );
 
-      expect(sections.first.month, DateTime(2026, 12));
-      expect(sections.first.label, 'DECEMBER');
-      expect(sections.first.weeks.first, [
-        DateTime(2026, 12, 28),
-        DateTime(2026, 12, 29),
-        DateTime(2026, 12, 30),
-        DateTime(2026, 12, 31),
-        null,
-        null,
-        null,
-      ]);
-      expect(sections[1].month, DateTime(2027, 1));
-      expect(sections[1].label, 'JANUARY 2027');
-      expect(sections[1].weeks.first[0], isNull);
-      expect(sections[1].weeks.first[3], isNull);
-      expect(sections[1].weeks.first[4], DateTime(2027, 1, 1));
-      expect(
-        dashboardLookAheadRowLast(sections[1].weeks.first),
-        DateTime(2027, 1, 3),
-      );
+    expect(sections.first.month, DateTime(2026, 12));
+    expect(sections.first.label, 'DECEMBER');
+    expect(sections.first.weeks.first.first, DateTime(2026, 12, 28));
+    expect(sections.first.weeks.first.last, DateTime(2027, 1, 3));
+    expect(sections[1].month, DateTime(2027, 1));
+    expect(sections[1].label, 'JANUARY 2027');
+    expect(sections[1].weeks.first.first, DateTime(2027, 1, 4));
 
-      final earlyJanuary = DateTime(2027, 1, 2);
-      final januarySections = dashboardLookAheadMonthSections(
-        dashboardLookAheadWeeks(earlyJanuary),
-        now: earlyJanuary,
-      );
-      expect(januarySections.first.month, DateTime(2027, 1));
-      expect(januarySections.first.label, 'JANUARY');
-      expect(januarySections.first.weeks.first[0], isNull);
-      expect(januarySections.first.weeks.first[4], DateTime(2027, 1, 1));
-      expect(
-        januarySections.first.weeks
-            .expand((week) => week)
-            .whereType<DateTime>()
-            .any((day) => day.month == 12),
-        isFalse,
-      );
-    },
-  );
+    final earlyJanuary = DateTime(2027, 1, 2);
+    final januarySections = dashboardLookAheadMonthSections(
+      dashboardLookAheadWeeks(earlyJanuary),
+      now: earlyJanuary,
+    );
+    expect(januarySections.first.month, DateTime(2027, 1));
+    expect(januarySections.first.label, 'JANUARY');
+    // 28–31 December stay in the same row as 1–3 January.
+    expect(januarySections.first.weeks.first.first, DateTime(2026, 12, 28));
+    expect(januarySections.first.weeks.first.last, DateTime(2027, 1, 3));
+  });
 
   testWidgets('look-ahead slide shows Mon–Sun week-strips and no month grid', (
     tester,
@@ -764,67 +709,70 @@ void main() {
       find.byKey(const ValueKey('look-ahead-month-2026-09')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('look-ahead-month-2026-10')),
+      findsOneWidget,
+    );
     expect(find.text('SEPTEMBER'), findsOneWidget);
+    expect(find.text('OCTOBER'), findsOneWidget);
 
-    final septemberWeek = tester.getRect(
-      find.byKey(const ValueKey('look-ahead-week-1')),
-    );
-    final sameMonthWeek = tester.getRect(
-      find.byKey(const ValueKey('look-ahead-week-0')),
-    );
-    final inMonthGap = septemberWeek.top - sameMonthWeek.bottom;
-    expect(inMonthGap, 10);
-
-    final octoberHeader = find.text('OCTOBER');
-    await tester.scrollUntilVisible(
-      octoberHeader,
-      200,
-      scrollable: find.descendant(
-        of: find.byKey(const ValueKey('look-ahead-week-list')),
-        matching: find.byType(Scrollable),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(octoberHeader, findsOneWidget);
     final monthGap = tester.getSize(
       find.byKey(const ValueKey('look-ahead-month-gap-2026-10')),
     );
     expect(monthGap.height, 22);
 
-    final october = find.byKey(const ValueKey('look-ahead-month-2026-10'));
+    final septemberWeek = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-week-1')),
+    );
+    final octoberWeek = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-week-2')),
+    );
+    final sameMonthWeek = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-week-0')),
+    );
+    final inMonthGap = septemberWeek.top - sameMonthWeek.bottom;
+    final acrossMonthGap = octoberWeek.top - septemberWeek.bottom;
+    expect(inMonthGap, 10);
+    expect(acrossMonthGap, greaterThan(inMonthGap));
+    expect(acrossMonthGap, greaterThanOrEqualTo(22));
+
+    final spanningWeek = find.byKey(const ValueKey('look-ahead-week-2'));
     expect(
       find.descendant(
-        of: october,
-        matching: find.byKey(const ValueKey('look-ahead-day-2026-09-30')),
+        of: spanningWeek,
+        matching: find.byKey(const ValueKey('look-ahead-day-2026-09-28')),
       ),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.descendant(
-        of: october,
+        of: spanningWeek,
+        matching: find.byKey(const ValueKey('look-ahead-day-2026-09-30')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: spanningWeek,
         matching: find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
       ),
       findsOneWidget,
     );
 
+    final monday = tester.getRect(
+      find.byKey(const ValueKey('look-ahead-day-2026-09-28')),
+    );
     final octoberDay = tester.getRect(
       find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
     );
-    final octoberWeek = tester.getRect(
-      find.ancestor(
-        of: find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
-        matching: find.byWidgetPredicate((widget) {
-          final key = widget.key;
-          return key is ValueKey<String> &&
-              RegExp(r'^look-ahead-week-\d+$').hasMatch(key.value);
-        }),
-      ),
-    );
-    final slot = octoberWeek.width / 7;
-    // Thursday is the fourth column, after three leading empty slots.
-    expect(octoberDay.left, greaterThan(octoberWeek.left + slot * 2.5));
-    expect(octoberDay.left, lessThan(octoberWeek.left + slot * 3.5));
+    final weekRect = tester.getRect(spanningWeek);
+    final slot = weekRect.width / 7;
+    // Monday is the first column, filled by 28 September, not a blank slot.
+    expect(monday.left, lessThan(weekRect.left + slot * 0.5));
+    // Thursday is the fourth column, beside the previous month's days.
+    expect(octoberDay.left, greaterThan(weekRect.left + slot * 2.5));
+    expect(octoberDay.left, lessThan(weekRect.left + slot * 3.5));
+    expect(monday.top, closeTo(octoberDay.top, 1));
   });
 
   testWidgets('scrolling into a later month keeps the header for orientation', (
