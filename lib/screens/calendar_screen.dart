@@ -534,189 +534,161 @@ class _CalendarScreenState extends State<CalendarScreen>
                 primary: false,
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
                 children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      existingEvent != null ? "Edit Event" : "New Event",
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (existingEvent != null)
-                      IconButton(
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        existingEvent != null ? "Edit Event" : "New Event",
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
-                        onPressed: () {
-                          if (existingEvent.id.startsWith('bday_')) {
-                            String realId = existingEvent.id.split('_')[1];
-                            FirebaseFirestore.instance
-                                .collection('hubs')
-                                .doc(_activeHubId)
-                                .collection('birthdays')
-                                .doc(realId)
-                                .delete();
-                          } else {
-                            _eventRepo.deleteEvent(
-                              _activeHubId!,
-                              existingEvent.id,
-                            );
-                          }
-                          Navigator.pop(context);
-                        },
                       ),
-                  ],
-                ),
-                const SizedBox(height: 15),
-                TextField(
-                  controller: titleCtrl,
-                  decoration: InputDecoration(
-                    labelText: "Title",
-                    prefixIcon: Icon(
-                      category == 'work'
-                          ? Icons.work
-                          : category == 'birthday'
-                          ? Icons.cake
-                          : Icons.event,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey.shade50,
-                  ),
-                ),
-                const SizedBox(height: 15),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: ['general', 'work', 'birthday'].map((cat) {
-                      final catColor = CalendarColors.categoryTint(cat);
-
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(
-                            cat == 'general' ? 'Personal' : cat.capitalize(),
+                      if (existingEvent != null)
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
                           ),
-                          selected: category == cat,
-                          selectedColor: catColor.withValues(alpha: 0.28),
-                          onSelected: (v) => setSheetState(() {
-                            category = cat;
-                            if (cat == 'birthday') {
-                              repeatOption = 'Yearly';
-                              isAllDay = true;
+                          onPressed: () {
+                            if (existingEvent.id.startsWith('bday_')) {
+                              String realId = existingEvent.id.split('_')[1];
+                              FirebaseFirestore.instance
+                                  .collection('hubs')
+                                  .doc(_activeHubId)
+                                  .collection('birthdays')
+                                  .doc(realId)
+                                  .delete();
                             } else {
-                              repeatOption = 'Never';
-                              isAllDay = false;
-                            }
-                          }),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SwitchListTile(
-                  title: const Text("All Day"),
-                  value: isAllDay,
-                  activeColor: Colors.pink,
-                  contentPadding: EdgeInsets.zero,
-                  onChanged: (val) => setSheetState(() => isAllDay = val),
-                ),
-                if (eventFormWritesStatus(
-                  existingEventId: existingEvent?.id,
-                  category: category,
-                ))
-                  EventTentativeField(
-                    value: isTentative,
-                    onChanged: (val) => setSheetState(() => isTentative = val),
-                  ),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildDateInput(
-                        context,
-                        label: "From",
-                        date: startDt,
-                        isAllDay:
-                            isAllDay, // <-- FIXED: Removed 'time' parameter
-                        onTap: () async {
-                          final safeStart =
-                              startDt ??
-                              DateTime.now(); // Fallback to today if null
-                          final d = await showDatePicker(
-                            context: context,
-                            initialDate: safeStart,
-                            firstDate: DateTime(1900),
-                            lastDate: DateTime(2100),
-                          );
-                          if (d != null) {
-                            setSheetState(() {
-                              final n = DateTime(
-                                d.year,
-                                d.month,
-                                d.day,
-                                safeStart.hour,
-                                safeStart.minute,
+                              _eventRepo.deleteEvent(
+                                _activeHubId!,
+                                existingEvent.id,
                               );
-                              final safeEnd =
-                                  endDt ?? n.add(const Duration(hours: 1));
-                              if (n.isAfter(safeEnd) ||
-                                  DateUtils.isSameDay(n, safeEnd)) {
-                                endDt = DateTime(
+                            }
+                            Navigator.pop(context);
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: InputDecoration(
+                      labelText: "Title",
+                      prefixIcon: Icon(
+                        category == 'work'
+                            ? Icons.work
+                            : category == 'birthday'
+                            ? Icons.cake
+                            : Icons.event,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: ['general', 'work', 'birthday'].map((cat) {
+                        final catColor = CalendarColors.categoryTint(cat);
+
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(
+                              cat == 'general' ? 'Personal' : cat.capitalize(),
+                            ),
+                            selected: category == cat,
+                            selectedColor: catColor.withValues(alpha: 0.28),
+                            onSelected: (v) => setSheetState(() {
+                              category = cat;
+                              if (cat == 'birthday') {
+                                repeatOption = 'Yearly';
+                                isAllDay = true;
+                              } else {
+                                repeatOption = 'Never';
+                                isAllDay = false;
+                              }
+                            }),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    title: const Text("All Day"),
+                    value: isAllDay,
+                    activeColor: Colors.pink,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) => setSheetState(() => isAllDay = val),
+                  ),
+                  if (eventFormWritesStatus(
+                    existingEventId: existingEvent?.id,
+                    category: category,
+                  ))
+                    EventTentativeField(
+                      value: isTentative,
+                      onChanged: (val) =>
+                          setSheetState(() => isTentative = val),
+                    ),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildDateInput(
+                          context,
+                          label: "From",
+                          date: startDt,
+                          isAllDay:
+                              isAllDay, // <-- FIXED: Removed 'time' parameter
+                          onTap: () async {
+                            final safeStart =
+                                startDt ??
+                                DateTime.now(); // Fallback to today if null
+                            final d = await showDatePicker(
+                              context: context,
+                              initialDate: safeStart,
+                              firstDate: DateTime(1900),
+                              lastDate: DateTime(2100),
+                            );
+                            if (d != null) {
+                              setSheetState(() {
+                                final n = DateTime(
                                   d.year,
                                   d.month,
                                   d.day,
-                                  safeEnd.hour,
-                                  safeEnd.minute,
+                                  safeStart.hour,
+                                  safeStart.minute,
                                 );
-                              }
-                              startDt = n;
-                            });
-                          }
-                        },
-                        onTimeTap: isAllDay || startDt == null
-                            ? null
-                            : () async {
-                                final t = await showTimePicker(
-                                  context: context,
-                                  initialTime: TimeOfDay.fromDateTime(
-                                    startDt!,
-                                  ), // Safe with !
-                                  builder: (context, child) => MediaQuery(
-                                    data: MediaQuery.of(
-                                      context,
-                                    ).copyWith(alwaysUse24HourFormat: true),
-                                    child: child!,
-                                  ),
-                                );
-                                if (t != null) {
-                                  final newStartDt = DateTime(
-                                    startDt!.year,
-                                    startDt!.month,
-                                    startDt!.day,
-                                    t.hour,
-                                    t.minute,
+                                final safeEnd =
+                                    endDt ?? n.add(const Duration(hours: 1));
+                                if (n.isAfter(safeEnd) ||
+                                    DateUtils.isSameDay(n, safeEnd)) {
+                                  endDt = DateTime(
+                                    d.year,
+                                    d.month,
+                                    d.day,
+                                    safeEnd.hour,
+                                    safeEnd.minute,
                                   );
-                                  final newEndDt = newStartDt.add(
-                                    const Duration(hours: 1),
-                                  );
-
-                                  setSheetState(() {
-                                    startDt = newStartDt;
-                                    endDt = newEndDt;
-                                  });
-
-                                  final endT = await showTimePicker(
+                                }
+                                startDt = n;
+                              });
+                            }
+                          },
+                          onTimeTap: isAllDay || startDt == null
+                              ? null
+                              : () async {
+                                  final t = await showTimePicker(
                                     context: context,
                                     initialTime: TimeOfDay.fromDateTime(
-                                      newEndDt,
-                                    ),
+                                      startDt!,
+                                    ), // Safe with !
                                     builder: (context, child) => MediaQuery(
                                       data: MediaQuery.of(
                                         context,
@@ -724,330 +696,364 @@ class _CalendarScreenState extends State<CalendarScreen>
                                       child: child!,
                                     ),
                                   );
-
-                                  if (endT != null) {
-                                    setSheetState(() {
-                                      DateTime finalEndDt = DateTime(
-                                        newEndDt.year,
-                                        newEndDt.month,
-                                        newEndDt.day,
-                                        endT.hour,
-                                        endT.minute,
-                                      );
-                                      if (finalEndDt.isBefore(newStartDt))
-                                        finalEndDt = finalEndDt.add(
-                                          const Duration(days: 1),
-                                        );
-                                      endDt = finalEndDt;
-                                    });
-                                  }
-                                }
-                              },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildDateInput(
-                        context,
-                        label: "To",
-                        date: endDt,
-                        isAllDay:
-                            isAllDay, // <-- FIXED: Removed 'time' parameter
-                        onTap: () async {
-                          final safeEnd =
-                              endDt ??
-                              startDt?.add(const Duration(hours: 1)) ??
-                              DateTime.now();
-                          final d = await showDatePicker(
-                            context: context,
-                            initialDate: safeEnd,
-                            firstDate: DateTime(1900),
-                            lastDate: DateTime(2100),
-                          );
-                          if (d != null) {
-                            setSheetState(
-                              () => endDt = DateTime(
-                                d.year,
-                                d.month,
-                                d.day,
-                                safeEnd.hour,
-                                safeEnd.minute,
-                              ),
-                            );
-                          }
-                        },
-                        onTimeTap: isAllDay || endDt == null
-                            ? null
-                            : () async {
-                                final t = await showTimePicker(
-                                  context: context,
-                                  initialTime: TimeOfDay.fromDateTime(
-                                    endDt!,
-                                  ), // Safe with !
-                                  builder: (context, child) => MediaQuery(
-                                    data: MediaQuery.of(
-                                      context,
-                                    ).copyWith(alwaysUse24HourFormat: true),
-                                    child: child!,
-                                  ),
-                                );
-                                if (t != null) {
-                                  setSheetState(() {
-                                    DateTime tempEnd = DateTime(
-                                      endDt!.year,
-                                      endDt!.month,
-                                      endDt!.day,
+                                  if (t != null) {
+                                    final newStartDt = DateTime(
+                                      startDt!.year,
+                                      startDt!.month,
+                                      startDt!.day,
                                       t.hour,
                                       t.minute,
                                     );
-                                    if (startDt != null &&
-                                        tempEnd.isBefore(startDt!)) {
-                                      tempEnd = tempEnd.add(
-                                        const Duration(days: 1),
-                                      );
+                                    final newEndDt = newStartDt.add(
+                                      const Duration(hours: 1),
+                                    );
+
+                                    setSheetState(() {
+                                      startDt = newStartDt;
+                                      endDt = newEndDt;
+                                    });
+
+                                    final endT = await showTimePicker(
+                                      context: context,
+                                      initialTime: TimeOfDay.fromDateTime(
+                                        newEndDt,
+                                      ),
+                                      builder: (context, child) => MediaQuery(
+                                        data: MediaQuery.of(
+                                          context,
+                                        ).copyWith(alwaysUse24HourFormat: true),
+                                        child: child!,
+                                      ),
+                                    );
+
+                                    if (endT != null) {
+                                      setSheetState(() {
+                                        DateTime finalEndDt = DateTime(
+                                          newEndDt.year,
+                                          newEndDt.month,
+                                          newEndDt.day,
+                                          endT.hour,
+                                          endT.minute,
+                                        );
+                                        if (finalEndDt.isBefore(newStartDt))
+                                          finalEndDt = finalEndDt.add(
+                                            const Duration(days: 1),
+                                          );
+                                        endDt = finalEndDt;
+                                      });
                                     }
-                                    endDt = tempEnd;
-                                  });
-                                }
-                              },
+                                  }
+                                },
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 15),
-                Row(
-                  children: [
-                    const Icon(Icons.repeat, color: Colors.grey, size: 20),
-                    const SizedBox(width: 10),
-                    const Text(
-                      "Repeat:",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    DropdownButton<String>(
-                      value: repeatOption,
-                      items: repeatOptions
-                          .map(
-                            (String value) => DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (val) =>
-                          setSheetState(() => repeatOption = val!),
-                      underline: Container(),
-                    ),
-                  ],
-                ),
-                const Divider(),
-
-                const Text(
-                  "Assigned To",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey,
-                  ),
-                ),
-                Wrap(
-                  spacing: 8.0,
-                  children: [
-                    ChoiceChip(
-                      label: const Text("Shared"),
-                      selected: assignedTo == 'shared',
-                      selectedColor: CalendarColors.shared.withValues(
-                        alpha: 0.28,
-                      ),
-                      onSelected: (v) =>
-                          setSheetState(() => assignedTo = 'shared'),
-                    ),
-                    ..._hubMembers.map(
-                      (m) => ChoiceChip(
-                        label: Text(m['name']),
-                        selected: assignedTo == m['uid'],
-                        selectedColor: _palette
-                            .whoColor(m['uid'])
-                            .withValues(alpha: 0.28),
-                        onSelected: (v) =>
-                            setSheetState(() => assignedTo = m['uid']),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                  onPressed: isSaving
-                      ? null
-                      : () async {
-                          // 1. Block saving if dates are blank
-                          if (titleCtrl.text.isEmpty ||
-                              _activeHubId == null ||
-                              startDt == null ||
-                              endDt == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Please add a title and select a date.",
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildDateInput(
+                          context,
+                          label: "To",
+                          date: endDt,
+                          isAllDay:
+                              isAllDay, // <-- FIXED: Removed 'time' parameter
+                          onTap: () async {
+                            final safeEnd =
+                                endDt ??
+                                startDt?.add(const Duration(hours: 1)) ??
+                                DateTime.now();
+                            final d = await showDatePicker(
+                              context: context,
+                              initialDate: safeEnd,
+                              firstDate: DateTime(1900),
+                              lastDate: DateTime(2100),
+                            );
+                            if (d != null) {
+                              setSheetState(
+                                () => endDt = DateTime(
+                                  d.year,
+                                  d.month,
+                                  d.day,
+                                  safeEnd.hour,
+                                  safeEnd.minute,
                                 ),
-                              ),
-                            );
-                            return;
-                          }
-                          setSheetState(() => isSaving = true);
-
-                          // 2. CREATE STRICT NON-NULL VARIABLES FOR THE DATABASE
-                          final DateTime finalStart = startDt!;
-                          final DateTime finalEnd = endDt!;
-
-                          // Intercept Birthday Saves
-                          if (category == 'birthday' && existingEvent == null) {
-                            await FirebaseFirestore.instance
-                                .collection('hubs')
-                                .doc(_activeHubId!)
-                                .collection('birthdays')
-                                .add({
-                                  'name': titleCtrl.text,
-                                  'month': finalStart.month,
-                                  'day': finalStart.day,
-                                  'year': finalStart.year == DateTime.now().year
-                                      ? null
-                                      : finalStart.year,
-                                });
-                            if (mounted) Navigator.pop(context);
-                            return;
-                          }
-
-                          int iterations = 1;
-                          if (repeatOption == 'Daily') iterations = 30;
-                          if (repeatOption == 'Weekly') iterations = 52;
-                          if (repeatOption == 'Monthly') iterations = 12;
-                          if (repeatOption == 'Yearly') iterations = 5;
-
-                          if (existingEvent != null) {
-                            if (existingEvent.id.startsWith('bday_')) {
-                              String realId = existingEvent.id.split('_')[1];
-                              await FirebaseFirestore.instance
-                                  .collection('hubs')
-                                  .doc(_activeHubId!)
-                                  .collection('birthdays')
-                                  .doc(realId)
-                                  .update({
-                                    'name': titleCtrl.text,
-                                    'month': finalStart.month,
-                                    'day': finalStart.day,
-                                    'year':
-                                        finalStart.year == DateTime.now().year
-                                        ? null
-                                        : finalStart.year,
-                                  });
-                              if (mounted) Navigator.pop(context);
-                              return;
-                            }
-
-                            final updatedEvent = EventModel(
-                              id: existingEvent.id,
-                              summary: titleCtrl.text,
-                              start: finalStart, // Use finalStart
-                              end: finalEnd, // Use finalEnd
-                              allDay: isAllDay,
-                              category: category,
-                              assignedTo: assignedTo,
-                              gcalId: gcalId,
-                              ownerId: widget.user.uid,
-                              status: eventFormStatus(isTentative),
-                            );
-                            await _eventRepo.updateEvent(
-                              _activeHubId!,
-                              existingEvent.id,
-                              updatedEvent.toMap(),
-                            );
-
-                            if (iterations > 1) {
-                              List<EventModel> futureEvents = [];
-                              for (int i = 1; i < iterations; i++) {
-                                futureEvents.add(
-                                  EventModel(
-                                    id: '',
-                                    summary: titleCtrl.text,
-                                    start: _getShiftedDate(
-                                      finalStart,
-                                      repeatOption,
-                                      i,
-                                    ),
-                                    end: _getShiftedDate(
-                                      finalEnd,
-                                      repeatOption,
-                                      i,
-                                    ),
-                                    allDay: isAllDay,
-                                    category: category,
-                                    assignedTo: assignedTo,
-                                    gcalId: gcalId,
-                                    ownerId: widget.user.uid,
-                                    status: eventFormStatus(isTentative),
-                                  ),
-                                );
-                              }
-                              await _eventRepo.batchAddEvents(
-                                _activeHubId!,
-                                futureEvents,
                               );
                             }
-                          } else {
-                            List<EventModel> eventsToCreate = [];
-                            for (int i = 0; i < iterations; i++) {
-                              eventsToCreate.add(
-                                EventModel(
-                                  id: '',
+                          },
+                          onTimeTap: isAllDay || endDt == null
+                              ? null
+                              : () async {
+                                  final t = await showTimePicker(
+                                    context: context,
+                                    initialTime: TimeOfDay.fromDateTime(
+                                      endDt!,
+                                    ), // Safe with !
+                                    builder: (context, child) => MediaQuery(
+                                      data: MediaQuery.of(
+                                        context,
+                                      ).copyWith(alwaysUse24HourFormat: true),
+                                      child: child!,
+                                    ),
+                                  );
+                                  if (t != null) {
+                                    setSheetState(() {
+                                      DateTime tempEnd = DateTime(
+                                        endDt!.year,
+                                        endDt!.month,
+                                        endDt!.day,
+                                        t.hour,
+                                        t.minute,
+                                      );
+                                      if (startDt != null &&
+                                          tempEnd.isBefore(startDt!)) {
+                                        tempEnd = tempEnd.add(
+                                          const Duration(days: 1),
+                                        );
+                                      }
+                                      endDt = tempEnd;
+                                    });
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 15),
+                  Row(
+                    children: [
+                      const Icon(Icons.repeat, color: Colors.grey, size: 20),
+                      const SizedBox(width: 10),
+                      const Text(
+                        "Repeat:",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      DropdownButton<String>(
+                        value: repeatOption,
+                        items: repeatOptions
+                            .map(
+                              (String value) => DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (val) =>
+                            setSheetState(() => repeatOption = val!),
+                        underline: Container(),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+
+                  const Text(
+                    "Assigned To",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  Wrap(
+                    spacing: 8.0,
+                    children: [
+                      ChoiceChip(
+                        label: const Text("Shared"),
+                        selected: assignedTo == 'shared',
+                        selectedColor: CalendarColors.shared.withValues(
+                          alpha: 0.28,
+                        ),
+                        onSelected: (v) =>
+                            setSheetState(() => assignedTo = 'shared'),
+                      ),
+                      ..._hubMembers.map(
+                        (m) => ChoiceChip(
+                          label: Text(m['name']),
+                          selected: assignedTo == m['uid'],
+                          selectedColor: _palette
+                              .whoColor(m['uid'])
+                              .withValues(alpha: 0.28),
+                          onSelected: (v) =>
+                              setSheetState(() => assignedTo = m['uid']),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              // 1. Block saving if dates are blank
+                              if (titleCtrl.text.isEmpty ||
+                                  _activeHubId == null ||
+                                  startDt == null ||
+                                  endDt == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "Please add a title and select a date.",
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              setSheetState(() => isSaving = true);
+
+                              // 2. CREATE STRICT NON-NULL VARIABLES FOR THE DATABASE
+                              final DateTime finalStart = startDt!;
+                              final DateTime finalEnd = endDt!;
+
+                              // Intercept Birthday Saves
+                              if (category == 'birthday' &&
+                                  existingEvent == null) {
+                                await FirebaseFirestore.instance
+                                    .collection('hubs')
+                                    .doc(_activeHubId!)
+                                    .collection('birthdays')
+                                    .add({
+                                      'name': titleCtrl.text,
+                                      'month': finalStart.month,
+                                      'day': finalStart.day,
+                                      'year':
+                                          finalStart.year == DateTime.now().year
+                                          ? null
+                                          : finalStart.year,
+                                    });
+                                if (mounted) Navigator.pop(context);
+                                return;
+                              }
+
+                              int iterations = 1;
+                              if (repeatOption == 'Daily') iterations = 30;
+                              if (repeatOption == 'Weekly') iterations = 52;
+                              if (repeatOption == 'Monthly') iterations = 12;
+                              if (repeatOption == 'Yearly') iterations = 5;
+
+                              if (existingEvent != null) {
+                                if (existingEvent.id.startsWith('bday_')) {
+                                  String realId = existingEvent.id.split(
+                                    '_',
+                                  )[1];
+                                  await FirebaseFirestore.instance
+                                      .collection('hubs')
+                                      .doc(_activeHubId!)
+                                      .collection('birthdays')
+                                      .doc(realId)
+                                      .update({
+                                        'name': titleCtrl.text,
+                                        'month': finalStart.month,
+                                        'day': finalStart.day,
+                                        'year':
+                                            finalStart.year ==
+                                                DateTime.now().year
+                                            ? null
+                                            : finalStart.year,
+                                      });
+                                  if (mounted) Navigator.pop(context);
+                                  return;
+                                }
+
+                                final updatedEvent = EventModel(
+                                  id: existingEvent.id,
                                   summary: titleCtrl.text,
-                                  start: _getShiftedDate(
-                                    finalStart,
-                                    repeatOption,
-                                    i,
-                                  ),
-                                  end: _getShiftedDate(
-                                    finalEnd,
-                                    repeatOption,
-                                    i,
-                                  ),
+                                  start: finalStart, // Use finalStart
+                                  end: finalEnd, // Use finalEnd
                                   allDay: isAllDay,
                                   category: category,
                                   assignedTo: assignedTo,
                                   gcalId: gcalId,
                                   ownerId: widget.user.uid,
                                   status: eventFormStatus(isTentative),
-                                ),
-                              );
-                            }
-                            await _eventRepo.batchAddEvents(
-                              _activeHubId!,
-                              eventsToCreate,
-                            );
-                          }
+                                );
+                                await _eventRepo.updateEvent(
+                                  _activeHubId!,
+                                  existingEvent.id,
+                                  updatedEvent.toMap(),
+                                );
 
-                          if (mounted) Navigator.pop(context);
-                          if (gcalEvent != null) _importFromGoogle();
-                        },
-                  child: isSaving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text("Save to Lovehub"),
+                                if (iterations > 1) {
+                                  List<EventModel> futureEvents = [];
+                                  for (int i = 1; i < iterations; i++) {
+                                    futureEvents.add(
+                                      EventModel(
+                                        id: '',
+                                        summary: titleCtrl.text,
+                                        start: _getShiftedDate(
+                                          finalStart,
+                                          repeatOption,
+                                          i,
+                                        ),
+                                        end: _getShiftedDate(
+                                          finalEnd,
+                                          repeatOption,
+                                          i,
+                                        ),
+                                        allDay: isAllDay,
+                                        category: category,
+                                        assignedTo: assignedTo,
+                                        gcalId: gcalId,
+                                        ownerId: widget.user.uid,
+                                        status: eventFormStatus(isTentative),
+                                      ),
+                                    );
+                                  }
+                                  await _eventRepo.batchAddEvents(
+                                    _activeHubId!,
+                                    futureEvents,
+                                  );
+                                }
+                              } else {
+                                List<EventModel> eventsToCreate = [];
+                                for (int i = 0; i < iterations; i++) {
+                                  eventsToCreate.add(
+                                    EventModel(
+                                      id: '',
+                                      summary: titleCtrl.text,
+                                      start: _getShiftedDate(
+                                        finalStart,
+                                        repeatOption,
+                                        i,
+                                      ),
+                                      end: _getShiftedDate(
+                                        finalEnd,
+                                        repeatOption,
+                                        i,
+                                      ),
+                                      allDay: isAllDay,
+                                      category: category,
+                                      assignedTo: assignedTo,
+                                      gcalId: gcalId,
+                                      ownerId: widget.user.uid,
+                                      status: eventFormStatus(isTentative),
+                                    ),
+                                  );
+                                }
+                                await _eventRepo.batchAddEvents(
+                                  _activeHubId!,
+                                  eventsToCreate,
+                                );
+                              }
+
+                              if (mounted) Navigator.pop(context);
+                              if (gcalEvent != null) _importFromGoogle();
+                            },
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text("Save to Lovehub"),
+                    ),
                   ),
-                ),
-              ],
+                ],
               ),
             ),
           );
@@ -1228,28 +1234,47 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   // --- CLEAN HELPERS ---
-  List<EventModel> _getEventsForDay(DateTime day) {
-    final checkDay = DateTime(day.year, day.month, day.day);
+  bool _eventPassesFilters(EventModel event) {
+    if (event.category == 'meal') return false;
+    if (!_palette.visibleForFilter(event.assignedTo, _selectedMemberFilter)) {
+      return false;
+    }
+    if (event.assignedTo == 'shared' && (_filters['shared'] == false)) {
+      return false;
+    }
+    return _filters[event.category] ?? true;
+  }
 
-    final eventsOnDay = _allEvents.where((event) {
-      return dashboardEventBelongsOnOverviewDay(
-        start: event.start,
-        end: event.end,
-        day: checkDay,
-        allDay: event.allDay,
-      );
-    }).toList();
+  List<Map<String, dynamic>> _lookAheadEvents() {
+    return [
+      for (final event in _allEvents)
+        if (_eventPassesFilters(event)) calendarLookAheadEventMap(event),
+    ];
+  }
 
-    final memberFiltered = eventsOnDay.where((event) {
-      if (event.category == 'meal') return false;
-      return _palette.visibleForFilter(event.assignedTo, _selectedMemberFilter);
-    }).toList();
+  EventModel? _eventForLookAhead(Map<String, dynamic> data) {
+    final id = data['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    for (final event in _allEvents) {
+      if (event.id == id) return event;
+    }
+    return null;
+  }
 
-    return memberFiltered.where((event) {
-      if (event.assignedTo == 'shared' && (_filters['shared'] == false))
-        return false;
-      return _filters[event.category] ?? true;
-    }).toList();
+  Future<void> _confirmLookAheadEvent(Map<String, dynamic> data) {
+    final event = _eventForLookAhead(data);
+    if (event == null) {
+      throw StateError('This shift cannot be confirmed.');
+    }
+    return _confirmTentativeEvent(event);
+  }
+
+  Future<void> _markLookAheadEvent(Map<String, dynamic> data) {
+    final event = _eventForLookAhead(data);
+    if (event == null) {
+      throw StateError('This shift cannot be marked tentative.');
+    }
+    return _markEventTentative(event);
   }
 
   Map<String, dynamic>? _memberForAssignee(String assignedTo) {
@@ -1459,29 +1484,17 @@ class _CalendarScreenState extends State<CalendarScreen>
                       Column(
                         children: [
                           Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-                              child: CalendarMonthScroller(
-                                now: DateTime.now(),
-                                palette: _palette,
-                                selectedDay: _selectedDay,
-                                eventsForDay: _getEventsForDay,
-                                onDayTap: (day) => setState(() {
-                                  _selectedDay = DateUtils.dateOnly(day);
-                                }),
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                            child: CalendarGlanceLegend(
+                            child: CalendarMonthScroller(
+                              now: DateTime.now(),
                               palette: _palette,
-                              compact: true,
-                              dark: false,
+                              events: _lookAheadEvents(),
+                              onDayTap: (day) => setState(() {
+                                _selectedDay = DateUtils.dateOnly(day);
+                              }),
+                              onConfirmTentative: _confirmLookAheadEvent,
+                              onMarkTentative: _markLookAheadEvent,
                             ),
                           ),
-                          const Divider(height: 1),
-                          _buildSelectedDayPanel(),
                         ],
                       ),
 
@@ -1525,52 +1538,6 @@ class _CalendarScreenState extends State<CalendarScreen>
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  Widget _buildSelectedDayPanel() {
-    final day = DateUtils.dateOnly(_selectedDay ?? DateTime.now());
-    final events = _getEventsForDay(day)
-      ..sort((a, b) => a.start.compareTo(b.start));
-    final label = DateFormat('EEE d MMM').format(day);
-    final title = DateUtils.isSameDay(day, DateTime.now())
-        ? 'Today • $label'
-        : label;
-
-    return SizedBox(
-      height: 220,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF5A564E),
-                letterSpacing: 0.2,
-              ),
-            ),
-          ),
-          Expanded(
-            child: events.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text(
-                      'No events',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    itemCount: events.length,
-                    itemBuilder: (context, index) =>
-                        _buildEventTile(events[index], showAvatar: true),
-                  ),
-          ),
-        ],
       ),
     );
   }

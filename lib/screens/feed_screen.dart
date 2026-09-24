@@ -9,6 +9,8 @@ import 'manage_hub_screen.dart';
 import 'food_screen.dart';
 import '../repositories/rota_repository.dart';
 import '../services/member_profile.dart';
+import '../theme/calendar_colors.dart';
+import '../widgets/calendar_split_pill.dart';
 import '../widgets/member_avatar.dart';
 
 class FeedScreen extends StatefulWidget {
@@ -163,6 +165,9 @@ class _FeedScreenState extends State<FeedScreen> {
       if (mounted) setState(() => _birthdays = []);
     }
   }
+
+  HubMemberPalette get _feedPalette =>
+      HubMemberPalette.fromMembers(_hubMembers.values);
 
   void _listenToHubMembers() {
     if (widget.visibleHubs.isEmpty) {
@@ -834,13 +839,13 @@ class _FeedScreenState extends State<FeedScreen> {
                                                 Icon(
                                                   Icons.restaurant_menu,
                                                   size: 16,
-                                                  color: Colors.green,
+                                                  color: CalendarColors.meal,
                                                 ),
                                                 SizedBox(width: 8),
                                                 Text(
                                                   "TODAY'S MENU",
                                                   style: TextStyle(
-                                                    color: Colors.green,
+                                                    color: CalendarColors.meal,
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 12,
                                                     letterSpacing: 1.2,
@@ -861,45 +866,57 @@ class _FeedScreenState extends State<FeedScreen> {
                                                     ) &&
                                                     (d['ingredients'] as List)
                                                         .isNotEmpty;
+                                                final mealStyle =
+                                                    CalendarColors.fromMap(
+                                                      d,
+                                                      palette: _feedPalette,
+                                                    );
+                                                final mealAccent =
+                                                    mealStyle.special ??
+                                                    mealStyle.kind;
 
                                                 return Container(
                                                   margin: const EdgeInsets.only(
                                                     bottom: 8,
                                                   ),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.green.shade50,
+                                                    color: mealStyle.washLight(
+                                                      0.16,
+                                                    ),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                           12,
                                                         ),
                                                     border: Border.all(
-                                                      color:
-                                                          Colors.green.shade200,
+                                                      color: mealAccent
+                                                          .withValues(
+                                                            alpha: 0.45,
+                                                          ),
                                                     ),
                                                   ),
                                                   child: ListTile(
                                                     leading: Icon(
                                                       Icons.restaurant,
-                                                      color:
-                                                          Colors.green.shade600,
+                                                      color: mealAccent,
                                                     ),
                                                     title: Text(
                                                       d['summary'] ?? '',
-                                                      style: TextStyle(
+                                                      style: const TextStyle(
                                                         fontWeight:
                                                             FontWeight.bold,
-                                                        color: Colors
-                                                            .green
-                                                            .shade900,
+                                                        color: CalendarColors
+                                                            .darkInk,
                                                       ),
                                                     ),
                                                     trailing: hasIngredients
                                                         ? FilledButton(
                                                             style: FilledButton.styleFrom(
                                                               backgroundColor:
-                                                                  Colors
-                                                                      .green
-                                                                      .shade600,
+                                                                  mealAccent,
+                                                              foregroundColor:
+                                                                  CalendarColors.inkOn(
+                                                                    mealAccent,
+                                                                  ),
                                                               visualDensity:
                                                                   VisualDensity
                                                                       .compact,
@@ -1061,6 +1078,17 @@ class _FeedScreenState extends State<FeedScreen> {
                                                 widget.user.uid;
                                             final bool isShared =
                                                 chore['assignedTo'] == 'shared';
+                                            final assigneeId =
+                                                chore['assignedTo']
+                                                    ?.toString() ??
+                                                '';
+                                            final whoColor = isShared
+                                                ? CalendarColors.shared
+                                                : _feedPalette.whoColor(
+                                                    assigneeId.isEmpty
+                                                        ? widget.user.uid
+                                                        : assigneeId,
+                                                  );
 
                                             // Uses local state for instant UI updates!
                                             final bool isDone =
@@ -1080,8 +1108,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                               controlAffinity:
                                                   ListTileControlAffinity
                                                       .leading,
-                                              activeColor:
-                                                  Colors.deepPurple.shade400,
+                                              activeColor: whoColor,
                                               value: isDone,
                                               // Undo Grace Period Logic!
                                               onChanged: (val) {
@@ -1220,17 +1247,19 @@ class _FeedScreenState extends State<FeedScreen> {
                                                   ? Chip(
                                                       label: const Text("YOU"),
                                                       backgroundColor: isDone
-                                                          ? Colors
-                                                                .deepPurple
-                                                                .shade200
-                                                          : Colors.deepPurple,
-                                                      labelStyle:
-                                                          const TextStyle(
-                                                            color: Colors.white,
-                                                            fontSize: 10,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                          ),
+                                                          ? whoColor.withValues(
+                                                              alpha: 0.45,
+                                                            )
+                                                          : whoColor,
+                                                      labelStyle: TextStyle(
+                                                        color:
+                                                            CalendarColors.inkOn(
+                                                              whoColor,
+                                                            ),
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
                                                       visualDensity:
                                                           VisualDensity.compact,
                                                     )
@@ -1238,7 +1267,8 @@ class _FeedScreenState extends State<FeedScreen> {
                                                       assigneeText,
                                                       style: TextStyle(
                                                         color: isShared
-                                                            ? Colors.pinkAccent
+                                                            ? CalendarColors
+                                                                  .shared
                                                             : (isDone
                                                                   ? Colors
                                                                         .grey
@@ -1385,69 +1415,15 @@ class _FeedScreenState extends State<FeedScreen> {
     final String timeStr = isAllDay ? 'All Day' : DateFormat('HH:mm').format(s);
     final String badgeText = isHappeningNow ? 'HAPPENING NOW' : 'ON TODAY';
 
-    final String category = d['category'] ?? 'general';
-    final String assignedTo = d['assignedTo'] ?? 'shared';
+    final style = CalendarColors.fromMap(d, palette: _feedPalette);
+    final subtitle = isAllDay ? badgeText : '$badgeText · $timeStr';
 
-    Color cardColor;
-    if (category == 'work') {
-      cardColor = Colors.blue.shade500;
-    } else if (category == 'birthday') {
-      cardColor = Colors.purple.shade400;
-    } else if (assignedTo == 'shared') {
-      cardColor = Colors.pink.shade500;
-    } else {
-      cardColor = Colors.grey.shade600;
-    }
-
-    return Container(
-      width: double.infinity,
+    return CalendarSplitPill(
+      style: style,
+      title: (d['summary'] ?? '').toString(),
+      subtitle: subtitle,
+      density: CalendarSplitPillDensity.comfortable,
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: cardColor.withOpacity(0.3),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            badgeText,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.bold,
-              fontSize: 10,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            d['summary'] ?? '',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (!isAllDay) ...[
-            const SizedBox(height: 2),
-            Text(
-              timeStr,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 
@@ -1458,92 +1434,22 @@ class _FeedScreenState extends State<FeedScreen> {
 
     final bool isMeal = d['category'] == 'meal';
     final String category = d['category'] ?? 'general';
-    final String assignedTo = d['assignedTo'] ?? 'shared';
+    final style = CalendarColors.fromMap(d, palette: _feedPalette);
+    final Widget? leading = isMeal
+        ? Icon(Icons.restaurant, color: style.inkOnWho, size: 16)
+        : category == 'birthday'
+        ? Icon(Icons.cake, color: style.inkOnWho, size: 16)
+        : category == 'work'
+        ? Icon(Icons.work, color: style.inkOnWho, size: 16)
+        : null;
 
-    Color cardColor;
-    Color borderColor;
-    Color iconColor;
-    Color textColor;
-
-    if (isMeal) {
-      cardColor = Colors.green.shade500;
-      borderColor = Colors.green.shade600;
-      iconColor = Colors.white;
-      textColor = Colors.white;
-    } else if (category == 'work') {
-      cardColor = Colors.blue.shade500;
-      borderColor = Colors.blue.shade600;
-      iconColor = Colors.white;
-      textColor = Colors.white;
-    } else if (category == 'birthday') {
-      cardColor = Colors.purple.shade400;
-      borderColor = Colors.purple.shade500;
-      iconColor = Colors.white;
-      textColor = Colors.white;
-    } else if (assignedTo == 'shared') {
-      cardColor = Colors.pink.shade500;
-      borderColor = Colors.pink.shade600;
-      iconColor = Colors.white;
-      textColor = Colors.white;
-    } else {
-      cardColor = Colors.grey.shade600;
-      borderColor = Colors.grey.shade700;
-      iconColor = Colors.white;
-      textColor = Colors.white;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 50,
-            child: Text(
-              isMeal ? '' : timeStr,
-              style: const TextStyle(
-                color: Colors.grey,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: borderColor),
-              ),
-              child: Row(
-                children: [
-                  if (isMeal) ...[
-                    Icon(Icons.restaurant, color: iconColor, size: 16),
-                    const SizedBox(width: 8),
-                  ],
-                  if (!isMeal && category == 'birthday') ...[
-                    Icon(Icons.cake, color: iconColor, size: 16),
-                    const SizedBox(width: 8),
-                  ],
-                  if (!isMeal && category == 'work') ...[
-                    Icon(Icons.work, color: iconColor, size: 16),
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(
-                    child: Text(
-                      d['summary'] ?? '',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: textColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+    return CalendarSplitPill(
+      style: style,
+      title: (d['summary'] ?? '').toString(),
+      subtitle: isMeal ? null : timeStr,
+      leading: leading,
+      density: CalendarSplitPillDensity.regular,
+      margin: const EdgeInsets.only(bottom: 8),
     );
   }
 
