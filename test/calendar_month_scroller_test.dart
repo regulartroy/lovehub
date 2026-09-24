@@ -43,18 +43,22 @@ void main() {
     );
   }
 
-  test('calendar months break on the same month boundary as look ahead', () {
+  test('calendar weeks stay continuous across the month, like look ahead', () {
     final weeks = dashboardLookAheadWeeks(now, weekCount: 20);
     final sections = dashboardLookAheadMonthSections(weeks, now: now);
     expect(sections.first.month, DateTime(2026, 9));
     expect(sections.first.label, 'SEPTEMBER');
-    expect(
-      dashboardLookAheadRowLast(sections.first.weeks.last),
-      DateTime(2026, 9, 30),
-    );
+    expect(sections.first.weeks.last.last, DateTime(2026, 9, 27));
     expect(sections[1].month, DateTime(2026, 10));
-    expect(sections[1].weeks.first[0], isNull);
-    expect(sections[1].weeks.first[3], DateTime(2026, 10, 1));
+    expect(sections[1].weeks.first, [
+      DateTime(2026, 9, 28),
+      DateTime(2026, 9, 29),
+      DateTime(2026, 9, 30),
+      DateTime(2026, 10, 1),
+      DateTime(2026, 10, 2),
+      DateTime(2026, 10, 3),
+      DateTime(2026, 10, 4),
+    ]);
   });
 
   testWidgets('calendar tab clones look-ahead day cells and month headers', (
@@ -99,15 +103,19 @@ void main() {
       find.byKey(const ValueKey('look-ahead-month-gap-2026-10')),
     );
     expect(gap.height, 22);
+    final spanningWeek = find.byKey(const ValueKey('look-ahead-week-2'));
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('look-ahead-month-2026-10')),
+        of: spanningWeek,
         matching: find.byKey(const ValueKey('look-ahead-day-2026-09-30')),
       ),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
+      find.descendant(
+        of: spanningWeek,
+        matching: find.byKey(const ValueKey('look-ahead-day-2026-10-01')),
+      ),
       findsOneWidget,
     );
   });

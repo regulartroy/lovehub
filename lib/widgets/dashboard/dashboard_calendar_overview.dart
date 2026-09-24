@@ -197,66 +197,32 @@ String dashboardLookAheadMonthLabel(DateTime month, DateTime now) {
 
 /// One labeled month in the LOOK AHEAD week list.
 ///
-/// Each [weeks] row is a Monday–Sunday line that belongs to this month only.
-/// Slots outside the month are null: a month that ends on Wednesday leaves
-/// Thu–Sun empty, and a month that starts on Thursday begins with Mon–Wed
-/// empty. Rows never borrow days from the neighbouring month.
+/// Boundary rule: the first week is always headed with the month of [now], so
+/// TODAY sits under the current month. Each later week opens a new section as
+/// soon as any day in that row belongs to a calendar month that has not yet
+/// been labeled. A week that spans two months (Mon 28 Sep–Sun 4 Oct) is
+/// therefore headed "October" because 1 Oct lands in the row.
 ///
-/// Days before the calendar month of [now] are dropped, so a week that
-/// opens in the previous month does not pull those days into the first row.
+/// If today is still in the old month on a spanning first week (e.g. 30 Dec
+/// with 1 Jan in the same row), the first header stays on today's month and
+/// the new month is labeled on the following week.
+///
+/// Every row is a full Monday–Sunday strip. Days from the neighbouring month
+/// stay in that row, the way a printed calendar pads the week.
 class DashboardLookAheadMonthSection {
   DashboardLookAheadMonthSection({
     required this.month,
     required this.label,
-    required List<List<DateTime?>> weeks,
-  }) : weeks = weeks.map((week) => List<DateTime?>.from(week)).toList();
+    required List<List<DateTime>> weeks,
+  }) : weeks = List<List<DateTime>>.from(weeks);
 
   /// First day of the labeled calendar month.
   final DateTime month;
   final String label;
 
-  /// Monday–Sunday rows. Null is an empty slot outside this month.
-  final List<List<DateTime?>> weeks;
-}
-
-/// First real day in a month-break row, or null when the row is empty.
-DateTime? dashboardLookAheadRowFirst(List<DateTime?> row) {
-  for (final day in row) {
-    if (day != null) return day;
-  }
-  return null;
-}
-
-/// Last real day in a month-break row, or null when the row is empty.
-DateTime? dashboardLookAheadRowLast(List<DateTime?> row) {
-  for (final day in row.reversed) {
-    if (day != null) return day;
-  }
-  return null;
-}
-
-DateTime? dashboardLookAheadFirstDisplayedDay(
-  List<DashboardLookAheadMonthSection> sections,
-) {
-  for (final section in sections) {
-    for (final week in section.weeks) {
-      final day = dashboardLookAheadRowFirst(week);
-      if (day != null) return day;
-    }
-  }
-  return null;
-}
-
-DateTime? dashboardLookAheadLastDisplayedDay(
-  List<DashboardLookAheadMonthSection> sections,
-) {
-  for (final section in sections.reversed) {
-    for (final week in section.weeks.reversed) {
-      final day = dashboardLookAheadRowLast(week);
-      if (day != null) return day;
-    }
-  }
-  return null;
+  /// Continuous Monday–Sunday rows. A row may include days from the month
+  /// before or after [month].
+  final List<List<DateTime>> weeks;
 }
 
 int _lookAheadMonthId(DateTime day) {
@@ -264,8 +230,8 @@ int _lookAheadMonthId(DateTime day) {
   return month.year * 12 + month.month;
 }
 
-/// Groups Monday–Sunday [weeks] into month sections whose rows do not cross
-/// a month boundary. See [DashboardLookAheadMonthSection].
+/// Groups Monday–Sunday [weeks] into month sections. See
+/// [DashboardLookAheadMonthSection] for the spanning-week rule.
 List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
   List<List<DateTime>> weeks, {
   required DateTime now,
@@ -273,47 +239,38 @@ List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
   if (weeks.isEmpty) return const [];
 
   final today = DateUtils.dateOnly(now);
-  final todayMonthId = _lookAheadMonthId(today);
-  final days = <DateTime>[
-    for (final week in weeks)
-      for (final day in week)
-        if (_lookAheadMonthId(day) >= todayMonthId) DateUtils.dateOnly(day),
-  ]..sort();
-  if (days.isEmpty) return const [];
-
+  final labeled = <int>{};
   final sections = <DashboardLookAheadMonthSection>[];
 
-  void push(List<DateTime?> week) {
-    final monthDay = dashboardLookAheadRowFirst(week);
-    if (monthDay == null) return;
-    final month = dashboardLookAheadMonthOf(monthDay);
-    if (sections.isEmpty ||
-        _lookAheadMonthId(sections.last.month) != _lookAheadMonthId(month)) {
+  for (var i = 0; i < weeks.length; i++) {
+    final week = weeks[i];
+    DateTime? headerMonth;
+    if (i == 0) {
+      headerMonth = dashboardLookAheadMonthOf(today);
+    } else {
+      for (final day in week) {
+        final id = _lookAheadMonthId(day);
+        if (!labeled.contains(id)) {
+          headerMonth = dashboardLookAheadMonthOf(day);
+          break;
+        }
+      }
+    }
+
+    if (headerMonth != null) {
+      labeled.add(_lookAheadMonthId(headerMonth));
       sections.add(
         DashboardLookAheadMonthSection(
-          month: month,
-          label: dashboardLookAheadMonthLabel(month, today),
+          month: headerMonth,
+          label: dashboardLookAheadMonthLabel(headerMonth, today),
           weeks: [week],
         ),
       );
     } else {
-      sections.last.weeks.add(List<DateTime?>.from(week));
+      sections.last.weeks.add(week);
     }
   }
 
-  List<DateTime?>? row;
-  var rowMonth = -1;
-  for (final day in days) {
-    final monthId = _lookAheadMonthId(day);
-    final index = day.weekday - DateTime.monday;
-    if (row == null || monthId != rowMonth || index == 0) {
-      if (row != null) push(row);
-      row = List<DateTime?>.filled(7, null);
-      rowMonth = monthId;
-    }
-    row[index] = day;
-  }
-  if (row != null) push(row);
   return sections;
 }
 
@@ -559,9 +516,8 @@ class _DashboardCalendarOverviewSlideState
     final events = _presentedEvents();
     final today = DateUtils.dateOnly(widget.now);
     final weeks = dashboardLookAheadWeeks(today, weekCount: _forwardWeeks);
-    final sections = dashboardLookAheadMonthSections(weeks, now: today);
-    final horizonEnd = dashboardLookAheadLastDisplayedDay(sections) ?? today;
-    final rangeStart = dashboardLookAheadFirstDisplayedDay(sections) ?? today;
+    final horizonEnd = weeks.last.last;
+    final rangeStart = weeks.first.first;
     final boardLabel =
         widget.boardLabel ??
         (widget.infiniteForward ? 'ONWARD' : 'NEXT 6 MONTHS');
@@ -900,7 +856,7 @@ class _WeekDayRow extends StatelessWidget {
   });
 
   final DashboardMetrics metrics;
-  final List<DateTime?> days;
+  final List<DateTime> days;
   final List<Map<String, dynamic>> events;
   final DateTime today;
   final DateTime? selectedDay;
@@ -915,21 +871,19 @@ class _WeekDayRow extends StatelessWidget {
         for (var i = 0; i < days.length; i++) ...[
           if (i > 0) SizedBox(width: metrics.isCompact ? 6 : 8),
           Expanded(
-            child: days[i] == null
-                ? const SizedBox.expand()
-                : _WeekDayColumn(
-                    key: ValueKey(dashboardLookAheadDayKey(days[i]!)),
-                    metrics: metrics,
-                    day: days[i]!,
-                    events: dashboardEventsOnDay(events, days[i]!),
-                    isToday: DateUtils.isSameDay(days[i], today),
-                    isPast: days[i]!.isBefore(today),
-                    isSelected:
-                        selectedDay != null &&
-                        DateUtils.isSameDay(days[i], selectedDay),
-                    palette: palette,
-                    onTap: () => onDayTap(days[i]!),
-                  ),
+            child: _WeekDayColumn(
+              key: ValueKey(dashboardLookAheadDayKey(days[i])),
+              metrics: metrics,
+              day: days[i],
+              events: dashboardEventsOnDay(events, days[i]),
+              isToday: DateUtils.isSameDay(days[i], today),
+              isPast: days[i].isBefore(today),
+              isSelected:
+                  selectedDay != null &&
+                  DateUtils.isSameDay(days[i], selectedDay),
+              palette: palette,
+              onTap: () => onDayTap(days[i]),
+            ),
           ),
         ],
       ],
