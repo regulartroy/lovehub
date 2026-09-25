@@ -24,7 +24,7 @@ That script:
 
 1. Sets `BUILD_ID` to `<git short sha>-<UTC timestamp>` when you did not export one.
 2. Runs `flutter build web --release --dart-define=BUILD_ID="$BUILD_ID"`.
-3. Runs `firebase deploy --only hosting:love-hub --project lovehub-26107`.
+3. Runs `firebase deploy --only hosting:love-hub,firestore:rules --project lovehub-26107`.
 4. Writes `{ buildId, updatedAt }` to `appMeta/web` with the same id.
 
 Stamp **after** Hosting is deployed. An earlier stamp would reload the tablet
@@ -35,7 +35,7 @@ To run the steps yourself:
 ```bash
 export BUILD_ID="$(git rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)"
 flutter build web --release --dart-define=BUILD_ID="$BUILD_ID"
-firebase deploy --only hosting:love-hub --project lovehub-26107
+firebase deploy --only hosting:love-hub,firestore:rules --project lovehub-26107
 dart run tool/stamp_web_build.dart --build-id "$BUILD_ID"
 ```
 
@@ -45,13 +45,17 @@ dart run tool/stamp_web_build.dart --build-id "$BUILD_ID"
 ## Stamp auth
 
 `appMeta/web` is readable by any signed-in member. Client writes are denied
-in `firestore.rules`. The stamp script uses Google credentials, which bypass
-security rules:
+in `firestore.rules`. The stamp script uses a Google credential, which
+bypasses security rules:
 
 - `GOOGLE_ACCESS_TOKEN`, or
 - `FIREBASE_TOKEN` from `firebase login:ci`, or
 - the existing `firebase login` on this machine, or
 - `gcloud auth print-access-token` if none of those are set.
+
+Those rules ship with the Hosting deploy (`firestore:rules` in
+`tool/deploy_hosting.sh`). Until that deploy, the old catch-all still lets any
+signed-in client write the stamp.
 
 Do not commit tokens, service-account JSON, or `.env` files. A Firebase Auth
 ID token cannot write the stamp.

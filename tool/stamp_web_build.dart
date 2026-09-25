@@ -3,7 +3,7 @@
 // Use the same id that was baked into the Flutter build:
 //
 //   flutter build web --release --dart-define=BUILD_ID="$BUILD_ID"
-//   firebase deploy --only hosting:love-hub --project lovehub-26107
+//   firebase deploy --only hosting:love-hub,firestore:rules --project lovehub-26107
 //   dart run tool/stamp_web_build.dart --build-id "$BUILD_ID"
 //
 // `tool/deploy_hosting.sh` does those three steps in order. Stamp after

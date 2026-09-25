@@ -9,6 +9,8 @@
 # after Hosting deploy succeeds. Stamping first would reload tablets onto
 # the previous files, and the loop guard would then ignore the real build.
 #
+# Also deploys firestore.rules so clients can read the stamp but not write it.
+#
 # Requires flutter, firebase CLI (`firebase login`), and dart on PATH.
 # See docs/web-deploy.md.
 
@@ -24,8 +26,8 @@ fi
 echo "Building web with BUILD_ID=${BUILD_ID}"
 flutter build web --release --dart-define=BUILD_ID="${BUILD_ID}"
 
-echo "Deploying Hosting target love-hub"
-firebase deploy --only hosting:love-hub --project lovehub-26107
+echo "Deploying Hosting target love-hub and Firestore rules"
+firebase deploy --only hosting:love-hub,firestore:rules --project lovehub-26107
 
 echo "Stamping Firestore appMeta/web"
 dart run tool/stamp_web_build.dart --build-id "${BUILD_ID}"
