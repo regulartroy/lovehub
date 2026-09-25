@@ -53,14 +53,14 @@ class DashboardSectionHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          padding: EdgeInsets.all(metrics.isCompact ? 10 : 12),
+          padding: EdgeInsets.all(metrics.isCompact ? 6 : 8),
           decoration: BoxDecoration(
             color: DashboardTheme.fade(tint, 0.14),
-            borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
+            borderRadius: BorderRadius.circular(DashboardTheme.radiusSm),
           ),
           child: Icon(icon, color: tint, size: metrics.iconSize),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(
             title,
@@ -68,7 +68,8 @@ class DashboardSectionHeader extends StatelessWidget {
               color: DashboardTheme.ink,
               fontSize: metrics.titleSize,
               fontWeight: FontWeight.w700,
-              letterSpacing: 1.6,
+              letterSpacing: 1.1,
+              height: 1.1,
             ),
           ),
         ),
