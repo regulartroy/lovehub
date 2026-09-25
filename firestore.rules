@@ -8,8 +8,21 @@ service cloud.firestore {
     // Writes are also auth-gated (not owner-only): approving a join,
     // changing a role, and removing a member update the other user's
     // `joinedHubs` map.
+    // Latest web Hosting build. Signed-in members can read `appMeta/web`
+    // so an open phone or wall tablet notices a deploy. Client writes are
+    // denied; `tool/stamp_web_build.dart` uses Firebase CLI / IAM credentials,
+    // which bypass these rules.
+    //
+    // The catch-all below must also skip appMeta. Rules are allow-only: if
+    // any matching rule grants the write, it is allowed.
+    match /appMeta/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null
+          && request.path[3] != 'appMeta';
     }
   }
 }

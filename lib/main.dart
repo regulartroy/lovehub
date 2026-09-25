@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,6 +18,8 @@ import 'screens/invite_screen.dart'; // Make sure the path matches your structur
 import 'widgets/app_drawer.dart';
 import 'screens/cycle_screen.dart'; // <-- Add this!
 import 'services/member_profile.dart';
+import 'services/web_update_firestore.dart';
+import 'widgets/web_update_host.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,14 +27,40 @@ void main() async {
   runApp(const LovehubApp());
 }
 
-class LovehubApp extends StatelessWidget {
+class LovehubApp extends StatefulWidget {
   const LovehubApp({super.key});
+
+  @override
+  State<LovehubApp> createState() => _LovehubAppState();
+}
+
+class _LovehubAppState extends State<LovehubApp> {
+  final _sheetTracker = WebUpdateSheetTracker();
+  late final Stream<String?>? _webBuildUpdates = kIsWeb
+      ? watchWebBuildStamp()
+      : null;
+
+  @override
+  void dispose() {
+    _sheetTracker.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Lovehub',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [_sheetTracker],
+      builder: (context, child) {
+        return WebUpdateHost(
+          enabled: kIsWeb,
+          sheetOpen: _sheetTracker,
+          remoteUpdates: _webBuildUpdates,
+          fetchRemote: kIsWeb ? fetchWebBuildStamp : null,
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       theme: ThemeData(
         useMaterial3: true,
         primarySwatch: Colors.pink,
@@ -248,14 +277,16 @@ class _MainScreenState extends State<MainScreen>
 
   Future<void> _createPersonalHub() async {
     // 1. Create the hub
-    final docRef = await FirebaseFirestore.instance.collection('hubs').add(
-      newHubDocument(
-        name: 'My Lovehub',
-        creatorUid: _user!.uid,
-        photoURL: _user!.photoURL,
-        displayName: _user!.displayName,
-      ),
-    );
+    final docRef = await FirebaseFirestore.instance
+        .collection('hubs')
+        .add(
+          newHubDocument(
+            name: 'My Lovehub',
+            creatorUid: _user!.uid,
+            photoURL: _user!.photoURL,
+            displayName: _user!.displayName,
+          ),
+        );
     // 2. Add it to the user's joinedHubs so it shows up
     await FirebaseFirestore.instance.collection('users').doc(_user!.uid).set({
       'joinedHubs': {

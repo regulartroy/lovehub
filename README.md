@@ -15,6 +15,17 @@ For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
 
+## Web deploy
+
+Hosting deploys stamp Firestore `appMeta/web` so an open browser can pick up
+the new build. The wall tablet reloads once on its own; a phone shows an
+**Update ready** chip. The script, the `BUILD_ID` dart-define, and the loop
+guards are in [docs/web-deploy.md](docs/web-deploy.md).
+
+```bash
+tool/deploy_hosting.sh
+```
+
 ## Work calendar import
 
 Roger can upsert C2 rota, Sophie Ellis-Bextor, and ROT90s events without the
