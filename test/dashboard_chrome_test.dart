@@ -38,6 +38,10 @@ void main() {
 
     expect(find.text('TASKS'), findsOneWidget);
     expect(find.byIcon(Icons.task_alt_rounded), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text('TASKS')).style?.fontSize,
+      metrics.titleSize,
+    );
   });
 
   testWidgets('page dots highlight the current slide', (tester) async {
@@ -62,5 +66,9 @@ void main() {
     expect(tablet.isCompact, isFalse);
     expect(phone.slidePadH, lessThan(tablet.slidePadH));
     expect(phone.clockSize, lessThan(tablet.clockSize));
+    expect(phone.titleSize, 14);
+    expect(tablet.titleSize, 16);
+    expect(phone.titleSize, lessThan(tablet.titleSize));
+    expect(phone.iconSize, lessThan(tablet.iconSize));
   });
 }

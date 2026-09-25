@@ -85,10 +85,15 @@ class DashboardMetrics {
   double get clockSize => isCompact ? 36 : 54;
   double get secondsSize => isCompact ? 16 : 24;
   double get dateSize => isCompact ? 11 : 14;
-  double get titleSize => isCompact ? 24 : 30;
+  /// Slide titles (SCHEDULE, LOOK AHEAD, TASKS, …). Kept small on purpose:
+  /// the slides are self-explanatory, and a short header leaves room for
+  /// the content. Still heavier than body copy via weight and tracking.
+  double get titleSize => isCompact ? 14 : 16;
   double get bodySize => isCompact ? 20 : 24;
   double get quoteSize => isCompact ? 26 : (isWide ? 42 : 34);
   double get headerPadH => isCompact ? 20 : 36;
   double get headerPadTop => isCompact ? 12 : 28;
-  double get iconSize => isCompact ? 26 : 30;
+  /// Matches [titleSize] so the header icon does not tower over the label
+  /// and eat the vertical space the smaller title is meant to free.
+  double get iconSize => isCompact ? 18 : 20;
 }
