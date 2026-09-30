@@ -13,7 +13,13 @@ import 'dashboard_theme.dart';
 /// Monday-based week start so the kitchen tablet matches a UK household week.
 DateTime dashboardMondayOf(DateTime day) {
   final date = DateUtils.dateOnly(day);
-  return date.subtract(Duration(days: date.weekday - DateTime.monday));
+  // Calendar-day arithmetic, not Duration: a Duration across a clock change
+  // (last Sunday of October in the UK) lands on 23:00 the day before.
+  return DateTime(
+    date.year,
+    date.month,
+    date.day - (date.weekday - DateTime.monday),
+  );
 }
 
 DateTime? dashboardEventDateTime(dynamic value) {
@@ -152,7 +158,9 @@ int dashboardLookAheadWeekCount(DateTime now) {
     today.day,
   );
   final lastMonday = dashboardMondayOf(coverUntil);
-  return lastMonday.difference(start).inDays ~/ 7 + 1;
+  // Round hours to days so a clock change inside the range cannot drop a week.
+  final days = (lastMonday.difference(start).inHours / 24).round();
+  return days ~/ 7 + 1;
 }
 
 /// Real Monday–Sunday weeks: current week (containing today) plus following
@@ -164,7 +172,7 @@ List<List<DateTime>> dashboardLookAheadWeeks(DateTime now, {int? weekCount}) {
   return List<List<DateTime>>.generate(count, (week) {
     return List<DateTime>.generate(
       7,
-      (day) => start.add(Duration(days: week * 7 + day)),
+      (day) => DateTime(start.year, start.month, start.day + week * 7 + day),
     );
   });
 }

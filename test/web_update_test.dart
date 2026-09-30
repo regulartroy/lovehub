@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/services/web_build.dart';
 import 'package:lovehub/services/web_build_stamp.dart';
+import 'package:lovehub/services/web_resume.dart';
 import 'package:lovehub/services/web_update_policy.dart';
 import 'package:lovehub/widgets/web_update_host.dart';
 
@@ -270,6 +271,8 @@ void main() {
           initialRemote: 'new',
         );
         expect(wide.reloads, ['reload']);
+        // Fresh host: the wide one is now mid-update (splash, no chip).
+        await tester.pumpWidget(const SizedBox());
 
         final narrow = await _pump(
           tester,
@@ -506,6 +509,9 @@ Future<_Harness> _pump(
   Duration? checkInterval,
   Stream<void>? focusEvents,
   Future<String?> Function()? fetchRemote,
+  Duration splashDelay = Duration.zero,
+  WebResumeController? resume,
+  MemoryWebUpdateHandoff? handoff,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -533,7 +539,10 @@ Future<_Harness> _pump(
         focusEvents: focusEvents ?? const Stream<void>.empty(),
         reload: () => reloads.add('reload'),
         attempts: attempts,
+        handoff: handoff ?? MemoryWebUpdateHandoff(),
+        resume: resume ?? WebResumeController(),
         checkInterval: checkInterval,
+        splashDelay: splashDelay,
         child: Scaffold(
           body: Align(
             alignment: Alignment.bottomCenter,

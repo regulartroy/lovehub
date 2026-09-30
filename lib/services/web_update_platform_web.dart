@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:js_interop';
 
+import 'web_resume.dart';
 import 'web_update_policy.dart';
 
 /// Survives `location.reload()` for this tab, and is cleared when the tab closes.
@@ -19,6 +20,7 @@ external _WebWindow get _window;
 extension type _WebStorage._(JSObject _) implements JSObject {
   external String? getItem(String key);
   external void setItem(String key, String value);
+  external void removeItem(String key);
 }
 
 extension type _WebLocation._(JSObject _) implements JSObject {
@@ -64,6 +66,44 @@ Set<String> _readIds() {
       .map((id) => id.trim())
       .where((id) => id.isNotEmpty)
       .toSet();
+}
+
+/// Writes the splash flag and saved location right before a reload.
+class SessionWebUpdateHandoff extends WebUpdateHandoff {
+  const SessionWebUpdateHandoff();
+
+  @override
+  void begin({required String installingFlag, required String resumeJson}) {
+    try {
+      _sessionStorage.setItem(kWebUpdateResumeKey, resumeJson);
+      _sessionStorage.setItem(kWebUpdateInstallingKey, installingFlag);
+    } catch (_) {
+      // Blocked storage: the reload still happens, just without the splash
+      // on the other side or the restored location.
+    }
+  }
+
+  @override
+  void clear() {
+    try {
+      _sessionStorage.removeItem(kWebUpdateInstallingKey);
+      _sessionStorage.removeItem(kWebUpdateResumeKey);
+    } catch (_) {}
+  }
+}
+
+/// Reads and removes the handoff from the previous page load, so it is
+/// only ever used once.
+({String? installingFlag, String? resumeJson}) takeWebUpdateHandoff() {
+  try {
+    final flag = _sessionStorage.getItem(kWebUpdateInstallingKey);
+    final resume = _sessionStorage.getItem(kWebUpdateResumeKey);
+    _sessionStorage.removeItem(kWebUpdateInstallingKey);
+    _sessionStorage.removeItem(kWebUpdateResumeKey);
+    return (installingFlag: flag, resumeJson: resume);
+  } catch (_) {
+    return (installingFlag: null, resumeJson: null);
+  }
 }
 
 void reloadWebPage() {

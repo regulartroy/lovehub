@@ -5,6 +5,7 @@ import '../screens/manage_hub_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/invite_screen.dart';
 import '../services/member_profile.dart';
+import 'build_version_footer.dart';
 import 'member_avatar.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -289,7 +290,7 @@ class AppDrawer extends StatelessWidget {
 
           // --- NEW: VERSION NUMBER ---
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24.0),
+            padding: EdgeInsets.only(top: 24.0, bottom: 8.0),
             child: Center(
               child: Text(
                 'v1.8.2',
@@ -301,6 +302,8 @@ class AppDrawer extends StatelessWidget {
               ),
             ),
           ),
+          // Running web build vs the latest deployed stamp (appMeta/web).
+          const BuildVersionFooter(),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24.0),
             child: Center(
