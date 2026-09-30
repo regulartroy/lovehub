@@ -32,7 +32,6 @@ class TasksScreen extends StatefulWidget {
 class _TasksScreenState extends State<TasksScreen> {
   late String _currentList;
   Map<String, String> _hubMembers = {};
-  bool _isLoadingMembers = true;
   final TaskRepository _taskRepo = TaskRepository();
   bool _isSortingAI = false; // <-- NEW: Loading state for the AI
   static const String _allTab = 'All';
@@ -168,7 +167,6 @@ class _TasksScreenState extends State<TasksScreen> {
       if (mounted) {
         setState(() {
           _hubMembers = names;
-          _isLoadingMembers = false;
         });
       }
     } catch (e) {

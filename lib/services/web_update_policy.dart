@@ -80,3 +80,33 @@ WebUpdateDecision decideWebUpdate({
     remoteBuildId: remote,
   );
 }
+
+/// Carries "installing" and the saved location across an update reload.
+///
+/// sessionStorage on web; tests use [MemoryWebUpdateHandoff].
+abstract class WebUpdateHandoff {
+  const WebUpdateHandoff();
+
+  /// Stores the splash flag (epoch ms) and resume JSON before reloading.
+  void begin({required String installingFlag, required String resumeJson});
+
+  /// Clears both keys, e.g. when a reload did not happen.
+  void clear();
+}
+
+class MemoryWebUpdateHandoff extends WebUpdateHandoff {
+  String? installingFlag;
+  String? resumeJson;
+
+  @override
+  void begin({required String installingFlag, required String resumeJson}) {
+    this.installingFlag = installingFlag;
+    this.resumeJson = resumeJson;
+  }
+
+  @override
+  void clear() {
+    installingFlag = null;
+    resumeJson = null;
+  }
+}

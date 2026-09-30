@@ -12,6 +12,44 @@ refresh. The build id baked into the app is compared with Firestore
 
 The 700px split is the same one the dashboard uses for compact layout.
 
+### Installing update splash and resume
+
+Every update reload, whether the tablet's quiet one or a tap on the phone
+chip, goes like this:
+
+1. A full-screen splash (LoveHub logo, **Installing update…**, small spinner)
+   covers the app.
+2. The app writes two `sessionStorage` keys for this tab:
+   `lovehub.webUpdate.installing` (the time in epoch ms) and
+   `lovehub.webUpdate.resume` (JSON: bottom tab, whether dashboard mode was
+   open, and the dashboard slide).
+3. About 0.9 s later it calls `location.reload()`.
+4. `web/index.html` sees a fresh `installing` flag and shows the same splash
+   instead of "Loading Lovehub...". Flutter's first frame shows it as well.
+5. `main()` reads both keys and deletes them straight away, so they are used
+   once. `MainScreen` opens on the saved tab. If dashboard mode was open, it
+   reopens dashboard mode on the saved slide. The splash fades once that
+   screen is ready. If nothing reports ready, it fades after 10 s anyway,
+   for example when sign-in is needed.
+
+A flag older than 5 minutes is ignored, so an ordinary cold start or a manual
+refresh never shows the splash. Restoring a location never triggers a reload,
+and the loop guard below still applies. If the browser does not reload
+within 20 s, the splash goes away, the keys are cleared, and the chip comes
+back.
+
+### Checking the version
+
+**Settings** (the cog, top right) → the bottom of the drawer, under `v1.8.2`:
+
+- **Build:** the `BUILD_ID` compiled into the running app, with the deploy
+  time in local time
+- **Latest:** the id in `appMeta/web`, then either *Up to date with the latest
+  release* or *Update available* with an **Install update** button. The
+  button runs the same splash and resume flow as the chip.
+
+A dev build shows `Build: dev (no BUILD_ID)`.
+
 ## Deploy
 
 From the repo root, with `flutter` and the Firebase CLI logged in:

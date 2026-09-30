@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 
 import '../repositories/event_repository.dart';
 import '../services/dashboard_speech.dart';
+import '../services/web_resume.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../theme/calendar_colors.dart';
 import '../widgets/calendar_split_pill.dart';
@@ -30,9 +31,14 @@ class DashboardScreen extends StatefulWidget {
     super.key,
     required this.visibleHubs,
     this.speechRecognizer,
+    this.initialSlide = 0,
   });
 
   final List<MapEntry<String, dynamic>> visibleHubs;
+
+  /// Carousel slide to open on. Used to come back to the same slide after
+  /// an update reload.
+  final int initialSlide;
 
   /// Override for tests. Production uses the browser speech recognizer.
   final DashboardSpeechRecognizer? speechRecognizer;
@@ -44,7 +50,9 @@ class DashboardScreen extends StatefulWidget {
 enum _DashboardBoot { loading, ready, empty, error }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final PageController _pageController = PageController();
+  late final PageController _pageController = PageController(
+    initialPage: widget.initialSlide < 0 ? 0 : widget.initialSlide,
+  );
   final List<StreamSubscription<dynamic>> _subs = [];
 
   late ConfettiController _confettiController;
@@ -113,6 +121,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _currentPageIndex = widget.initialSlide < 0 ? 0 : widget.initialSlide;
+    WebResumeController.instance.dashboardOpened(_currentPageIndex);
     _speech = widget.speechRecognizer ?? createDashboardSpeechRecognizer();
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 4),
@@ -130,6 +140,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (widget.visibleHubs.isEmpty) {
       _boot = _DashboardBoot.empty;
+      _signalResumeReady();
     } else {
       _initData();
     }
@@ -143,8 +154,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  /// Lets a post-update splash fade once there is something to look at.
+  void _signalResumeReady() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WebResumeController.instance.markReady();
+    });
+  }
+
   @override
   void dispose() {
+    WebResumeController.instance.dashboardClosed();
     for (final sub in _subs) {
       sub.cancel();
     }
@@ -211,6 +230,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _boot = _DashboardBoot.error;
           _bootError = 'This hub could not be found.';
         });
+        _signalResumeReady();
         return;
       }
 
@@ -224,6 +244,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _boot = _DashboardBoot.error;
         _bootError = 'Could not load your home dashboard.';
       });
+      _signalResumeReady();
       return;
     }
 
@@ -2393,6 +2414,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _slides = _generateSlides(screenWidth);
       _cachedScreenWidth = screenWidth;
     });
+    if (_slides.isNotEmpty) _signalResumeReady();
   }
 
   Future<void> _retryBoot() async {
@@ -2458,6 +2480,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             controller: _pageController,
             onPageChanged: (i) {
               setState(() => _currentPageIndex = i % displaySlides.length);
+              WebResumeController.instance.dashboardSlideChanged(
+                _currentPageIndex,
+              );
               if (_currentPageIndex == _birthdaySlideIndex && _hasBirthdayToday) {
                 _confettiController.play();
               }

@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'screens/gallery_screen.dart';
 // SCREEN IMPORTS
 import 'screens/feed_screen.dart';
@@ -14,16 +12,34 @@ import 'screens/tasks_screen.dart';
 import 'screens/cleaning_screen.dart';
 import 'screens/food_screen.dart'; // Ensure this file exists
 import 'firebase_options.dart';
-import 'screens/invite_screen.dart'; // Make sure the path matches your structure
 import 'widgets/app_drawer.dart';
 import 'screens/cycle_screen.dart'; // <-- Add this!
 import 'services/member_profile.dart';
+import 'screens/dashboard_screen.dart';
+import 'services/web_resume.dart';
 import 'services/web_update_firestore.dart';
+import 'services/web_update_platform.dart';
 import 'widgets/web_update_host.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (kIsWeb) {
+    // Read (and clear) what an update reload left in sessionStorage. Only a
+    // fresh flag shows the "Installing update" splash; cold starts never do.
+    final handoff = takeWebUpdateHandoff();
+    WebResumeController.instance.boot(
+      installingFlag: handoff.installingFlag,
+      resumeJson: handoff.resumeJson,
+      now: DateTime.now(),
+    );
+  }
+  await Future.wait([
+    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+    // The HTML splash stays up meanwhile, so the Flutter splash that takes
+    // over already has its logo.
+    if (WebResumeController.instance.resumingFromUpdate)
+      precacheWebUpdateSplashLogo(),
+  ]);
   runApp(const LovehubApp());
 }
 
@@ -90,6 +106,10 @@ class AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData) return const MainScreen();
+        // Nothing to restore behind a sign-in screen; let the splash go.
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => WebResumeController.instance.markReady(),
+        );
         return const LoginScreen();
       },
     );
@@ -165,13 +185,52 @@ class _MainScreenState extends State<MainScreen>
   Map<String, dynamic> _pendingHubs = {};
   List<MapEntry<String, dynamic>> _visibleHubs = [];
   bool _didSyncHubPhotos = false;
+  bool _didRestoreAfterUpdate = false;
 
   @override
   void initState() {
     super.initState();
     _user = FirebaseAuth.instance.currentUser;
-    _tabController = TabController(length: 8, vsync: this);
+    final resume = WebResumeController.instance;
+    // After an update reload, come back on the same tab.
+    _tabController = TabController(
+      length: kMainTabCount,
+      vsync: this,
+      initialIndex: resume.pending?.tabIndex ?? 0,
+    );
+    resume.setTab(_tabController.index);
+    _tabController.addListener(() => resume.setTab(_tabController.index));
     _initUserPipeline();
+  }
+
+  /// Runs once, after the first user snapshot. Reopens dashboard mode (and
+  /// its slide) if that is where the update reload started, then lets the
+  /// "Installing update" splash fade. A no-op on ordinary starts.
+  void _restoreAfterUpdateOnce() {
+    if (_didRestoreAfterUpdate) return;
+    _didRestoreAfterUpdate = true;
+    final resume = WebResumeController.instance;
+    final pending = resume.takePending();
+    final hubs = _visibleHubs;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        resume.markReady();
+        return;
+      }
+      if (pending != null && pending.dashboardOpen && hubs.isNotEmpty) {
+        // DashboardScreen calls markReady once its slides are built.
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DashboardScreen(
+              visibleHubs: hubs,
+              initialSlide: pending.dashboardSlide,
+            ),
+          ),
+        );
+        return;
+      }
+      resume.markReady();
+    });
   }
 
   // Listens to the USER document, not the hubs directly. This makes toggles work!
@@ -253,6 +312,7 @@ class _MainScreenState extends State<MainScreen>
           _isLoadingUser =
               false; // <-- NEW: Data has arrived, turn off the loader!
         });
+        _restoreAfterUpdateOnce();
 
         if (!_didSyncHubPhotos) {
           final hubIds = Map<String, dynamic>.from(
@@ -436,12 +496,6 @@ class _MainScreenState extends State<MainScreen>
         ],
       ),
     );
-  }
-
-  void _toggleHubVisibility(String hubId, bool isVisible) {
-    FirebaseFirestore.instance.collection('users').doc(_user!.uid).update({
-      'joinedHubs.$hubId.isVisible': isVisible,
-    });
   }
 
   @override

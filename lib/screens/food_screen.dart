@@ -465,7 +465,6 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
   late TextEditingController _titleCtrl;
   late TextEditingController _ingCtrl;
   late TextEditingController _methodCtrl;
-  final RecipeRepository _recipeRepo = RecipeRepository();
   bool _isSaving = false;
 
   @override

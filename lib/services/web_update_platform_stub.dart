@@ -20,6 +20,21 @@ class SessionWebUpdateAttemptStore extends WebUpdateAttemptStore {
   }
 }
 
+/// Off web there is no page reload to hand anything across.
+class SessionWebUpdateHandoff extends WebUpdateHandoff {
+  const SessionWebUpdateHandoff();
+
+  @override
+  void begin({required String installingFlag, required String resumeJson}) {}
+
+  @override
+  void clear() {}
+}
+
+/// Raw handoff values from the previous page load, removed from storage.
+({String? installingFlag, String? resumeJson}) takeWebUpdateHandoff() =>
+    (installingFlag: null, resumeJson: null);
+
 void reloadWebPage() {}
 
 Stream<void> webWindowFocusEvents() => const Stream<void>.empty();
