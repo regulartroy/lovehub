@@ -305,6 +305,7 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
     this.infiniteForward = false,
     this.initialForwardWeeks = 30,
     this.boardLabel,
+    this.showHeader = true,
   });
 
   /// How many extra Monday-rows to append when an infinite board nears its end.
@@ -329,6 +330,10 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
 
   /// Inner glass-card label. Defaults to "NEXT 6 MONTHS" or "ONWARD".
   final String? boardLabel;
+
+  /// The LOOK AHEAD title row. The wall dashboard hides it (the board is
+  /// self-explanatory) and gives the space to the weeks.
+  final bool showHeader;
 
   /// Invoked when a day cell is tapped, in addition to opening day detail.
   final ValueChanged<DateTime>? onDayTap;
@@ -552,18 +557,20 @@ class _DashboardCalendarOverviewSlideState
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DashboardSectionHeader(
-                metrics: widget.metrics,
-                icon: Icons.calendar_view_week_rounded,
-                tint: DashboardTheme.schedule,
-                title: 'LOOK AHEAD',
-                trailing: widget.infiniteForward
-                    ? null
-                    : _RangeChip(
-                        label: dashboardCompactDayRange(today, horizonEnd),
-                      ),
-              ),
-              SizedBox(height: widget.metrics.isCompact ? 12 : 16),
+              if (widget.showHeader) ...[
+                DashboardSectionHeader(
+                  metrics: widget.metrics,
+                  icon: Icons.calendar_view_week_rounded,
+                  tint: DashboardTheme.schedule,
+                  title: 'LOOK AHEAD',
+                  trailing: widget.infiniteForward
+                      ? null
+                      : _RangeChip(
+                          label: dashboardCompactDayRange(today, horizonEnd),
+                        ),
+                ),
+                SizedBox(height: widget.metrics.isCompact ? 12 : 16),
+              ],
               Expanded(
                 child: _LookAheadWeekBoard(
                   metrics: widget.metrics,

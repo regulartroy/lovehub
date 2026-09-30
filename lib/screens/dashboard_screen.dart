@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import '../repositories/event_repository.dart';
 import '../services/dashboard_speech.dart';
 import '../services/web_resume.dart';
+import '../widgets/dashboard/dashboard_birthday_timeline.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../theme/calendar_colors.dart';
 import '../widgets/calendar_split_pill.dart';
@@ -201,6 +202,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           'allDay': true,
           'category': 'birthday',
           'assignedTo': 'shared',
+          'birthdayName': '${b['name']}',
+          if (year != null) 'turning': y - year,
         });
       }
     }
@@ -701,6 +704,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onCloseDayDetail: _onLookAheadDayDetailClosed,
         onConfirmTentative: _confirmTentativeEvent,
         onMarkTentative: _markEventTentative,
+        showHeader: false,
       ),
     );
 
@@ -762,7 +766,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     if (showBirthdays) {
       _birthdaySlideIndex = slides.length;
-      slides.add(_buildBirthdaysSlide(topBirthdays, metrics));
+      slides.add(_buildBirthdaysSlide(metrics));
     } else {
       _birthdaySlideIndex = -1;
     }
@@ -785,13 +789,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DashboardSectionHeader(
-            metrics: metrics,
-            icon: Icons.calendar_month_rounded,
-            tint: DashboardTheme.schedule,
-            title: 'SCHEDULE',
-          ),
-          const SizedBox(height: 18),
           Expanded(
             child: metrics.isCompact
                 ? _buildScheduleBox(metrics, startDayOffset: 0, dayCount: 7, large: false)
@@ -1475,171 +1472,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildBirthdaysSlide(
-    List<Map<String, dynamic>> birthdays,
-    DashboardMetrics metrics,
-  ) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    return DashboardSlide(
+  Widget _buildBirthdaysSlide(DashboardMetrics metrics) {
+    final now = DateTime.now();
+    return DashboardBirthdaysSlide(
+      key: const ValueKey('birthdays-slide'),
       metrics: metrics,
-      tint: DashboardTheme.accent,
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF2D0A18), Color(0xFF0A0A2E)],
-      ),
-      child: Column(
-        children: [
-          DashboardSectionHeader(
-            metrics: metrics,
-            icon: Icons.cake_rounded,
-            tint: DashboardTheme.accent,
-            title: 'BIRTHDAYS',
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: Center(
-              child: SizedBox(
-                width: metrics.isCompact ? double.infinity : 720,
-                child: ListView.builder(
-                  itemCount: birthdays.length,
-                  itemBuilder: (context, i) {
-                    final data = birthdays[i];
-                    final start = (data['start'] as Timestamp).toDate();
-                    final daysUntil =
-                        DateUtils.dateOnly(start).difference(today).inDays;
-                    final isToday = daysUntil == 0;
-                    final isImminent = daysUntil > 0 && daysUntil <= 3;
-                    final isSoon = daysUntil > 0 && daysUntil <= 14;
-                    final fade = (isToday || isSoon)
-                        ? 0.0
-                        : (birthdays.length > 1
-                              ? (i / (birthdays.length - 1))
-                              : 0.0);
-                    final scale = isToday
-                        ? 1.12
-                        : (isImminent ? 1.06 : (1.0 - (fade * 0.22)));
-
-                    return Container(
-                      margin: EdgeInsets.only(bottom: 12 * scale),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: metrics.isCompact ? 16 : 22,
-                        vertical: (metrics.isCompact ? 12 : 14) * scale,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isToday
-                            ? DashboardTheme.fade(DashboardTheme.accent, 0.18)
-                            : DashboardTheme.fade(Colors.white, 0.05),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isToday
-                              ? DashboardTheme.accent
-                              : DashboardTheme.fade(
-                                  DashboardTheme.accent,
-                                  isImminent ? 0.7 : (isSoon ? 0.4 : 0.16),
-                                ),
-                          width: isToday ? 2 : 1,
-                        ),
-                        boxShadow: isToday
-                            ? [
-                                BoxShadow(
-                                  color: DashboardTheme.fade(
-                                    DashboardTheme.accent,
-                                    0.22,
-                                  ),
-                                  blurRadius: 16,
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _birthdayIcon(data['id'] ?? data['summary']),
-                            color: isToday
-                                ? Colors.white
-                                : DashboardTheme.accent,
-                            size: 20 * scale,
-                          ),
-                          SizedBox(width: 12 * scale),
-                          Expanded(
-                            child: Text(
-                              '${data['summary']}',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: (metrics.isCompact ? 18 : 22) * scale,
-                                fontWeight: isToday
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          if (isToday)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: DashboardTheme.accent,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Text(
-                                'TODAY',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            )
-                          else if (isSoon)
-                            Container(
-                              margin: const EdgeInsets.only(right: 10),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isImminent
-                                    ? DashboardTheme.accent
-                                    : DashboardTheme.fade(
-                                        DashboardTheme.accent,
-                                        0.16,
-                                      ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                daysUntil == 1
-                                    ? 'Tomorrow'
-                                    : 'In $daysUntil days',
-                                style: TextStyle(
-                                  color: isImminent
-                                      ? Colors.white
-                                      : DashboardTheme.accent,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          if (!isToday)
-                            Text(
-                              DateFormat('d MMM').format(start),
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: (metrics.isCompact ? 15 : 17) * scale,
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-        ],
+      today: now,
+      birthdays: dashboardUpcomingBirthdays(
+        _eventsAll,
+        now: now,
+        members: _hubMembers,
+        maxCount: metrics.isCompact ? 6 : 8,
       ),
     );
   }

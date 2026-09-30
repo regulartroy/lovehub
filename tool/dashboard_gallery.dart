@@ -3,6 +3,7 @@ import 'voice_spike_gallery.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/calendar_month_scroller.dart';
 import 'package:lovehub/widgets/calendar_split_pill.dart';
+import 'package:lovehub/widgets/dashboard/dashboard_birthday_timeline.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_chrome.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
@@ -38,6 +39,21 @@ class DashboardGalleryPage extends StatelessWidget {
 
     if (voiceSpike) {
       return const VoiceSpikeGallery();
+    }
+
+    const birthdaysOnly = bool.fromEnvironment('BIRTHDAYS_ONLY');
+    if (birthdaysOnly) {
+      // BIRTHDAYS_COUNT=0|1|n picks how many sample birthdays to show.
+      const count = int.fromEnvironment('BIRTHDAYS_COUNT', defaultValue: 8);
+      final today = DateTime(2026, 10, 1);
+      return Scaffold(
+        backgroundColor: BirthdayTimelineColors.canvas,
+        body: DashboardBirthdaysSlide(
+          metrics: metrics,
+          today: today,
+          birthdays: galleryBirthdays(today).take(count).toList(),
+        ),
+      );
     }
 
     if (lookAheadOnly) {
@@ -753,4 +769,29 @@ class DashboardGalleryPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Sample upcoming birthdays for the gallery and screenshots.
+List<DashboardBirthday> galleryBirthdays(DateTime today) {
+  DateTime inDays(int d) => DateTime(today.year, today.month, today.day + d);
+  return [
+    DashboardBirthday(id: 'maria', name: 'Maria', date: inDays(2), turning: 34),
+    DashboardBirthday(id: 'nan', name: 'Nan', date: inDays(9), turning: 81),
+    DashboardBirthday(id: 'jake', name: 'Jake', date: inDays(12)),
+    DashboardBirthday(
+      id: 'sophie',
+      name: 'Sophie Carter',
+      date: inDays(23),
+      turning: 30,
+    ),
+    DashboardBirthday(id: 'dad', name: 'Dad', date: inDays(37), turning: 66),
+    DashboardBirthday(id: 'ellie', name: 'Ellie', date: inDays(51), turning: 7),
+    DashboardBirthday(id: 'sam', name: 'Sam', date: inDays(64)),
+    DashboardBirthday(
+      id: 'priya',
+      name: 'Priya',
+      date: inDays(83),
+      turning: 41,
+    ),
+  ];
 }
