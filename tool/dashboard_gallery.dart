@@ -56,6 +56,14 @@ class DashboardGalleryPage extends StatelessWidget {
       );
     }
 
+    const scheduleOnly = bool.fromEnvironment('SCHEDULE_ONLY');
+    if (scheduleOnly) {
+      return Scaffold(
+        backgroundColor: DashboardTheme.canvas,
+        body: _scheduleWeekPreview(metrics),
+      );
+    }
+
     if (lookAheadOnly) {
       return Scaffold(
         backgroundColor: DashboardTheme.canvas,
@@ -267,6 +275,249 @@ class DashboardGalleryPage extends StatelessWidget {
         child: ColoredBox(color: DashboardTheme.canvas, child: child),
       ),
     );
+  }
+
+  /// Mirrors the live SCHEDULE slide (no section header, 60/40 split on
+  /// tablet, one 7-day column on phone) with time ranges.
+  Widget _scheduleWeekPreview(DashboardMetrics metrics) {
+    final today = DateTime(2026, 10, 2);
+    DateTime at(int day, int h, [int m = 0]) =>
+        DateTime(today.year, today.month, today.day + day, h, m);
+    Map<String, dynamic> ev(
+      String title,
+      Color who,
+      Color kind,
+      DateTime start, {
+      DateTime? end,
+      bool allDay = false,
+      Color? special,
+      IconData? icon,
+    }) => {
+      'title': title,
+      'style': CalendarEventStyle(who: who, kind: kind, special: special),
+      'start': start,
+      if (end != null) 'end': end,
+      'allDay': allDay,
+      if (icon != null) 'icon': icon,
+    };
+
+    final days = <List<Map<String, dynamic>>>[
+      [
+        ev(
+          'Dentist',
+          CalendarColors.maria,
+          CalendarColors.personal,
+          at(0, 16, 15),
+          end: at(0, 16, 45),
+        ),
+        ev(
+          'Dinner with Sam & Alex',
+          CalendarColors.shared,
+          CalendarColors.personal,
+          at(0, 19),
+          end: at(0, 23),
+          icon: Icons.restaurant,
+        ),
+        ev(
+          'Gig at Concorde 2 (Day 1/2)',
+          CalendarColors.tom,
+          CalendarColors.personal,
+          at(0, 22),
+          end: at(1, 3),
+        ),
+      ],
+      [
+        ev(
+          "Maria's birthday",
+          CalendarColors.shared,
+          CalendarColors.birthday,
+          at(1, 0),
+          allDay: true,
+          special: CalendarColors.birthday,
+          icon: Icons.cake_rounded,
+        ),
+        ev(
+          'Early shift',
+          CalendarColors.tom,
+          CalendarColors.work,
+          at(1, 7),
+          end: at(1, 15),
+        ),
+        ev(
+          'Farmers market walk',
+          CalendarColors.shared,
+          CalendarColors.personal,
+          at(1, 9, 30),
+        ),
+        ev(
+          "Parents' evening at St Mary's Primary School",
+          CalendarColors.maria,
+          CalendarColors.personal,
+          at(1, 18, 15),
+          end: at(1, 19, 30),
+        ),
+      ],
+      [
+        ev(
+          'Weekend in Cornwall (Day 1/3)',
+          CalendarColors.shared,
+          CalendarColors.personal,
+          at(2, 18),
+          end: at(4, 16),
+        ),
+      ],
+      [
+        ev(
+          'Team offsite planning session',
+          CalendarColors.tom,
+          CalendarColors.work,
+          at(3, 9),
+          end: at(3, 17, 30),
+        ),
+      ],
+      [],
+      [
+        ev(
+          'Late shift',
+          CalendarColors.maria,
+          CalendarColors.work,
+          at(5, 14),
+          end: at(5, 22),
+        ),
+      ],
+      [],
+    ];
+
+    Widget box(int from, int count, bool large) {
+      return DashboardGlassCard(
+        tint: DashboardTheme.schedule,
+        padding: EdgeInsets.all(large ? 28 : 20),
+        child: ListView(
+          children: [
+            for (var index = 0; index < count; index++)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.only(
+                      top: index == 0 ? 0 : (large ? 24 : 18),
+                      bottom: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          from + index == 0
+                              ? 'TODAY'
+                              : from + index == 1
+                              ? 'TOMORROW'
+                              : _galleryDayLabel(
+                                  today.add(Duration(days: from + index)),
+                                ),
+                          style: TextStyle(
+                            color: from + index == 0
+                                ? Colors.greenAccent
+                                : const Color(0xFF8FB0C8),
+                            fontSize: large ? 22 : 18,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.3,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Divider(
+                            color: DashboardTheme.fade(
+                              from + index == 0
+                                  ? Colors.greenAccent
+                                  : Colors.white,
+                              0.2,
+                            ),
+                            height: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (days[from + index].isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text(
+                        'Nothing planned',
+                        style: TextStyle(
+                          color: DashboardTheme.inkFaint,
+                          fontSize: large ? 20 : 17,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    )
+                  else
+                    for (final e in days[from + index])
+                      CalendarSplitPill(
+                        style: e['style'] as CalendarEventStyle,
+                        title: e['title'] as String,
+                        subtitle: dashboardEventTimeRangeLabel(e),
+                        fitSubtitle: true,
+                        density: large
+                            ? CalendarSplitPillDensity.comfortable
+                            : CalendarSplitPillDensity.regular,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        leading: CircleAvatar(
+                          radius: large ? 16 : 13,
+                          backgroundColor: Colors.white24,
+                        ),
+                        trailing: e['icon'] == null
+                            ? null
+                            : Icon(
+                                e['icon'] as IconData,
+                                size: large ? 20 : 16,
+                              ),
+                      ),
+                ],
+              ),
+          ],
+        ),
+      );
+    }
+
+    return DashboardSlide(
+      metrics: metrics,
+      tint: DashboardTheme.schedule,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: metrics.isCompact
+                ? box(0, 7, false)
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 60, child: box(0, 2, true)),
+                      SizedBox(width: metrics.isWide ? 32 : 24),
+                      Expanded(flex: 40, child: box(2, 5, false)),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _galleryDayLabel(DateTime d) {
+    const wd = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+    const mo = [
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
+    ];
+    return '${wd[d.weekday - 1]} ${d.day} ${mo[d.month - 1]}';
   }
 
   Widget _schedulePreview(DashboardMetrics metrics) {

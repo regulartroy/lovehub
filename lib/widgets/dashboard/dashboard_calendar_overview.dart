@@ -130,6 +130,32 @@ String dashboardGlanceTimeLabel(Map<String, dynamic> data) {
   return DateFormat('HH:mm').format(start);
 }
 
+/// Time label for the SCHEDULE week view: the range when an event has a
+/// distinct end, e.g. `19:00–23:00` (en dash), otherwise just the start.
+///
+/// An end on a later calendar day gets a subtle `+N` day marker
+/// (`22:00–03:00 +1`). All-day events read `All day`. The compact LOOK
+/// AHEAD chips keep [dashboardGlanceTimeLabel] (start only).
+String dashboardEventTimeRangeLabel(Map<String, dynamic> data) {
+  if (data['allDay'] == true) return 'All day';
+  final start = dashboardEventDateTime(data['start']);
+  if (start == null) return '';
+  final fmt = DateFormat('HH:mm');
+  final startLabel = fmt.format(start);
+  final end = dashboardEventDateTime(data['end']);
+  if (end == null || !end.isAfter(start)) return startLabel;
+  final endLabel = fmt.format(end);
+  final dayDiff = DateUtils.dateOnly(
+    end,
+  ).difference(DateUtils.dateOnly(start)).inHours;
+  // Hours / 24 rounded copes with a DST change inside the span.
+  final extraDays = (dayDiff / 24).round();
+  if (extraDays <= 0) {
+    return startLabel == endLabel ? startLabel : '$startLabel–$endLabel';
+  }
+  return '$startLabel–$endLabel +$extraDays';
+}
+
 String dashboardCompactDayRange(DateTime start, DateTime end) {
   final startDay = DateUtils.dateOnly(start);
   final endDay = DateUtils.dateOnly(end);
