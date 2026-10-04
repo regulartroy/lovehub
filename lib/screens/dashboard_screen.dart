@@ -927,9 +927,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isMeal = data['category'] == 'meal';
     final category = data['category'] ?? 'general';
     final ownerId = data['assignedTo'] ?? 'shared';
-    final isAllDay = data['allDay'] ?? false;
-    final start = (data['start'] as Timestamp).toDate();
-    final timeStr = isAllDay ? 'All day' : DateFormat('HH:mm').format(start);
+    final timeStr = dashboardEventTimeRangeLabel(data);
 
     final style = CalendarColors.fromMap(data, palette: _memberPalette);
 
@@ -937,6 +935,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       style: style,
       title: _formatMultiDayTitle(data, checkDate),
       subtitle: timeStr,
+      fitSubtitle: true,
       density: large
           ? CalendarSplitPillDensity.comfortable
           : CalendarSplitPillDensity.regular,
@@ -1709,21 +1708,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DashboardSectionHeader(
-            metrics: metrics,
-            icon: Icons.wb_cloudy_rounded,
-            tint: DashboardTheme.weather,
-            title: 'FORECAST',
-            trailing: TextButton.icon(
-              onPressed: _showCitySearchDialog,
-              icon: const Icon(Icons.add_rounded, color: Colors.white38, size: 18),
-              label: const Text(
-                'Add city',
-                style: TextStyle(color: Colors.white38, fontSize: 13),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
           Expanded(child: body),
         ],
       ),
@@ -1737,13 +1721,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DashboardSectionHeader(
-            metrics: metrics,
-            icon: Icons.photo_library_rounded,
-            tint: DashboardTheme.photos,
-            title: 'MEMORIES',
-          ),
-          const SizedBox(height: 16),
           Expanded(
             child: DecoratedBox(
               decoration: BoxDecoration(

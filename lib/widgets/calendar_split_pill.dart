@@ -20,6 +20,7 @@ class CalendarSplitPill extends StatelessWidget {
     this.onTap,
     this.density = CalendarSplitPillDensity.regular,
     this.margin,
+    this.fitSubtitle = false,
   });
 
   final CalendarEventStyle style;
@@ -30,6 +31,10 @@ class CalendarSplitPill extends StatelessWidget {
   final VoidCallback? onTap;
   final CalendarSplitPillDensity density;
   final EdgeInsetsGeometry? margin;
+
+  /// Shrink the time line to fit instead of truncating it with an ellipsis.
+  /// The title is unaffected.
+  final bool fitSubtitle;
 
   static const Key whoKey = Key('calendar-split-who');
   static const Key kindKey = Key('calendar-split-kind');
@@ -81,6 +86,27 @@ class CalendarSplitPill extends StatelessWidget {
     }
   }
 
+  Widget _subtitleText(Color ink) {
+    final text = Text(
+      subtitle!,
+      maxLines: 1,
+      overflow: fitSubtitle ? TextOverflow.visible : TextOverflow.ellipsis,
+      softWrap: !fitSubtitle,
+      style: TextStyle(
+        color: ink.withValues(alpha: 0.82),
+        fontSize: _subtitleSize,
+        fontWeight: FontWeight.w600,
+        height: 1.1,
+      ),
+    );
+    if (!fitSubtitle) return text;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: AlignmentDirectional.centerStart,
+      child: text,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ink = style.inkOnKind;
@@ -96,18 +122,7 @@ class CalendarSplitPill extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (showSubtitle)
-                  Text(
-                    subtitle!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: ink.withValues(alpha: 0.82),
-                      fontSize: _subtitleSize,
-                      fontWeight: FontWeight.w600,
-                      height: 1.1,
-                    ),
-                  ),
+                if (showSubtitle) _subtitleText(ink),
                 Text(
                   title,
                   maxLines: 1,
