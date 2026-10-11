@@ -14,6 +14,7 @@ class DashboardOptionsScreen extends StatefulWidget {
     required this.onSetPrimary,
     required this.onDeleteCity,
     required this.onAddCityTap,
+    required this.onOpenQuotes,
   });
 
   final double slideDuration;
@@ -23,6 +24,9 @@ class DashboardOptionsScreen extends StatefulWidget {
   final Function(String) onSetPrimary;
   final Function(String) onDeleteCity;
   final VoidCallback onAddCityTap;
+  final VoidCallback onOpenQuotes;
+
+  static const quotesTileKey = ValueKey('dashboard-options-quotes');
 
   @override
   State<DashboardOptionsScreen> createState() => _DashboardOptionsScreenState();
@@ -89,6 +93,39 @@ class _DashboardOptionsScreenState extends State<DashboardOptionsScreen> {
                   },
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 36),
+          const Text(
+            'QUOTES',
+            style: TextStyle(
+              color: DashboardTheme.inkMuted,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: DashboardTheme.glassCard(tint: DashboardTheme.accent),
+            child: ListTile(
+              key: DashboardOptionsScreen.quotesTileKey,
+              leading: const Icon(
+                Icons.format_quote_rounded,
+                color: DashboardTheme.accent,
+              ),
+              title: const Text(
+                'Your quotes',
+                style: TextStyle(color: Colors.white),
+              ),
+              subtitle: const Text(
+                'Add by typing or by voice',
+                style: TextStyle(color: DashboardTheme.inkMuted),
+              ),
+              trailing: const Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white54,
+              ),
+              onTap: widget.onOpenQuotes,
             ),
           ),
           const SizedBox(height: 36),

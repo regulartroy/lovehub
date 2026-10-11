@@ -143,6 +143,11 @@
             rec.abort();
           } catch (e) {}
         },
+        // Stop listening but keep what was heard (onend resolves it).
+        stop: function () {
+          if (!active) return;
+          try { active.stop(); } catch (e) {}
+        },
         listen: function () {
           return new Promise(function (resolve) {
             var Ctor = ctor();

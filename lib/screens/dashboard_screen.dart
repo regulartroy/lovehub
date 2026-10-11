@@ -24,7 +24,9 @@ import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
 import 'dashboard/city_weather_card.dart';
 import 'dashboard/dashboard_options_screen.dart';
-import 'dashboard/dashboard_quotes.dart';
+import 'dashboard/quotes_screen.dart';
+import '../models/quote_model.dart';
+import '../repositories/quote_repository.dart';
 import 'dashboard/dashboard_weather_icons.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -78,10 +80,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _weatherError;
   Timer? _weatherUpdateTimer;
 
-  String _quoteText = 'Fetching inspiration...';
+  // Custom quotes only; there are no built-in ones. Empty hides the slide.
+  String _quoteText = '';
   String _quoteAuthor = '';
   Timer? _quoteTimer;
-  List<Map<String, String>> _customQuotes = [];
+  List<QuoteModel> _customQuotes = [];
 
   Timer? _midnightTimer;
   DateTime _currentDay = DateUtils.dateOnly(DateTime.now());
@@ -320,12 +323,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .snapshots()
           .listen((snap) {
         if (!mounted) return;
-        _customQuotes = snap.docs.map((d) {
-          return {
-            'text': d['text'] as String? ?? '',
-            'author': d['author'] as String? ?? 'Us',
-          };
-        }).toList();
+        _customQuotes = snap.docs
+            .map((d) => QuoteModel.fromMap(d.data(), id: d.id))
+            .where((q) => q.text.isNotEmpty)
+            .toList();
         _pickRandomQuote();
       }, onError: (_) {}),
     );
@@ -370,12 +371,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _cachedScreenWidth > 0 ? _cachedScreenWidth : 800;
 
   void _pickRandomQuote() {
-    final allQuotes = [...kRelationshipQuotes, ..._customQuotes];
-    if (allQuotes.isEmpty) return;
-    final random = List.of(allQuotes)..shuffle();
     if (!mounted) return;
-    _quoteText = random.first['text']!;
-    _quoteAuthor = random.first['author']!;
+    final pick = pickDashboardQuote(_customQuotes, Random());
+    _quoteText = pick?.text ?? '';
+    _quoteAuthor = pick?.author ?? '';
     _rebuildSlides(_widthOrDefault);
   }
 
@@ -771,7 +770,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _birthdaySlideIndex = -1;
     }
 
-    slides.add(_buildAffirmationsSlide(metrics));
+    if (_quoteText.isNotEmpty) {
+      slides.add(_buildAffirmationsSlide(metrics));
+    }
     _weatherSlideIndex = slides.length;
     slides.add(_buildWeatherSlide(metrics));
 
@@ -1486,105 +1487,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _showAddQuoteDialog() {
-    final textCtrl = TextEditingController();
-    final authorCtrl = TextEditingController();
-    var isSaving = false;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: DashboardTheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(DashboardTheme.radiusLg),
-          ),
-          title: const Text(
-            'Add a quote',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: textCtrl,
-                style: const TextStyle(color: Colors.white),
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: 'A quote, inside joke, or affirmation…',
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  filled: true,
-                  fillColor: Colors.white10,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: authorCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: "Author (leave blank for 'Us')",
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  filled: true,
-                  fillColor: Colors.white10,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: DashboardTheme.accent),
-              onPressed: isSaving
-                  ? null
-                  : () async {
-                      if (textCtrl.text.trim().isEmpty) return;
-                      setDialogState(() => isSaving = true);
-                      final hubId = widget.visibleHubs.first.key;
-                      await FirebaseFirestore.instance
-                          .collection('hubs')
-                          .doc(hubId)
-                          .collection('quotes')
-                          .add({
-                            'text': textCtrl.text.trim(),
-                            'author': authorCtrl.text.trim().isEmpty
-                                ? 'Us'
-                                : authorCtrl.text.trim(),
-                            'createdAt': FieldValue.serverTimestamp(),
-                          });
-                      if (!ctx.mounted) return;
-                      Navigator.pop(ctx);
-                      _pickRandomQuote();
-                      _showControlsOverlay();
-                    },
-              child: isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text(
-                      'Save quote',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-            ),
-          ],
+  /// Opens the Quotes page. [pause] stops the slideshow while it is open
+  /// (not needed from the options screen, which already paused it).
+  Future<void> _openQuotes(BuildContext navContext, {bool pause = false}) async {
+    if (pause) {
+      setState(() => _isPlaying = false);
+    }
+    await Navigator.push(
+      navContext,
+      MaterialPageRoute(
+        builder: (_) => QuotesScreen(
+          hubId: widget.visibleHubs.first.key,
+          repository: FirestoreQuoteRepository(),
+          speechRecognizer: _speech,
         ),
       ),
     );
+    if (pause && mounted) {
+      setState(() {
+        _isPlaying = true;
+        _secondsSinceLastSlide = 0;
+        _resumeAutoPlayAt = null;
+      });
+    }
   }
 
   Widget _buildAffirmationsSlide(DashboardMetrics metrics) {
@@ -1654,8 +1579,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: Colors.white24,
                 size: 32,
               ),
-              onPressed: _showAddQuoteDialog,
-              tooltip: 'Add a quote',
+              onPressed: () => _openQuotes(context, pause: true),
+              tooltip: 'Quotes',
             ),
           ),
         ],
@@ -2136,6 +2061,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onSetPrimary: _setPrimaryCity,
               onDeleteCity: _deleteCity,
               onAddCityTap: _showCitySearchDialog,
+              onOpenQuotes: () => _openQuotes(context),
             ),
           ),
         ).then((_) {
