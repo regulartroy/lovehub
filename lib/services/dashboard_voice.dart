@@ -17,10 +17,17 @@ class DashboardSpeechCapture {
 abstract class DashboardSpeechRecognizer {
   bool get isSupported;
 
-  Future<DashboardSpeechCapture> listen();
+  /// Listens once. [maxDuration] caps how long the mic stays open; when it is
+  /// reached the recognizer stops and keeps whatever it already heard.
+  Future<DashboardSpeechCapture> listen({
+    Duration maxDuration = kDashboardListenLimit,
+  });
 
   void cancel();
 }
+
+/// Default mic window for a dashboard question.
+const Duration kDashboardListenLimit = Duration(seconds: 10);
 
 /// Used on non-web targets and when the browser has no Speech Recognition.
 class UnavailableDashboardSpeechRecognizer
@@ -31,7 +38,9 @@ class UnavailableDashboardSpeechRecognizer
   bool get isSupported => false;
 
   @override
-  Future<DashboardSpeechCapture> listen() async {
+  Future<DashboardSpeechCapture> listen({
+    Duration maxDuration = kDashboardListenLimit,
+  }) async {
     return const DashboardSpeechCapture(
       outcome: DashboardSpeechOutcome.unavailable,
       message: DashboardVoiceState.speechUnavailableNotice,

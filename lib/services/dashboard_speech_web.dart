@@ -10,6 +10,7 @@ extension type LovehubSpeechBridge._(JSObject _) implements JSObject {
   external bool supported();
   external JSPromise<JSObject> listen();
   external void cancel();
+  external void stop();
 }
 
 extension type _SpeechPayload._(JSObject _) implements JSObject {
@@ -45,7 +46,9 @@ class WebDashboardSpeechRecognizer implements DashboardSpeechRecognizer {
   }
 
   @override
-  Future<DashboardSpeechCapture> listen() async {
+  Future<DashboardSpeechCapture> listen({
+    Duration maxDuration = kDashboardListenLimit,
+  }) async {
     final bridge = _bridge;
     if (bridge == null || !isSupported) {
       return const DashboardSpeechCapture(
@@ -56,17 +59,27 @@ class WebDashboardSpeechRecognizer implements DashboardSpeechRecognizer {
 
     final ticket = ++_ticket;
     try {
-      final payload = await _listen(bridge).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          try {
-            bridge.cancel();
-          } catch (_) {}
-          return const DashboardSpeechCapture(
-            outcome: DashboardSpeechOutcome.empty,
-          );
-        },
-      );
+      final pending = _listen(bridge);
+      DashboardSpeechCapture payload;
+      try {
+        payload = await pending.timeout(maxDuration);
+      } on TimeoutException {
+        // Stop (not abort) so the browser still hands back what it heard.
+        try {
+          bridge.stop();
+        } catch (_) {}
+        payload = await pending.timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            try {
+              bridge.cancel();
+            } catch (_) {}
+            return const DashboardSpeechCapture(
+              outcome: DashboardSpeechOutcome.empty,
+            );
+          },
+        );
+      }
       if (ticket != _ticket) {
         return const DashboardSpeechCapture(
           outcome: DashboardSpeechOutcome.empty,

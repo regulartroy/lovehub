@@ -1,6 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'voice_spike_gallery.dart';
+import 'package:lovehub/models/quote_model.dart';
+import 'package:lovehub/repositories/quote_repository.dart';
+import 'package:lovehub/screens/dashboard/quotes_screen.dart';
+import 'package:lovehub/services/dashboard_voice.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
+import 'package:lovehub/widgets/quote_composer.dart';
 import 'package:lovehub/widgets/calendar_month_scroller.dart';
 import 'package:lovehub/widgets/calendar_split_pill.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_birthday_timeline.dart';
@@ -54,6 +61,11 @@ class DashboardGalleryPage extends StatelessWidget {
           birthdays: galleryBirthdays(today).take(count).toList(),
         ),
       );
+    }
+
+    const quotesOnly = bool.fromEnvironment('QUOTES_ONLY');
+    if (quotesOnly) {
+      return const _QuotesGallery();
     }
 
     const scheduleOnly = bool.fromEnvironment('SCHEDULE_ONLY');
@@ -1045,4 +1057,107 @@ List<DashboardBirthday> galleryBirthdays(DateTime today) {
       turning: 41,
     ),
   ];
+}
+
+/// Quotes page + composer, with an in-memory repo and a fake recognizer.
+/// `?scene=` page | empty | listening | quote | who | unsupported.
+class _QuotesGallery extends StatefulWidget {
+  const _QuotesGallery();
+
+  @override
+  State<_QuotesGallery> createState() => _QuotesGalleryState();
+}
+
+class _GalleryRecognizer implements DashboardSpeechRecognizer {
+  _GalleryRecognizer({required this.supported});
+
+  final bool supported;
+
+  @override
+  bool get isSupported => supported;
+
+  @override
+  Future<DashboardSpeechCapture> listen({
+    Duration maxDuration = kDashboardListenLimit,
+  }) => Completer<DashboardSpeechCapture>().future; // listens forever
+
+  @override
+  void cancel() {}
+}
+
+class _GalleryQuotes implements QuoteRepository {
+  _GalleryQuotes({required this.empty});
+
+  final bool empty;
+
+  @override
+  Stream<List<QuoteModel>> watch(String hubId) => Stream.value(
+    empty
+        ? const []
+        : const [
+            QuoteModel(
+              id: '1',
+              text:
+                  'You still load the dishwasher wrong, and I still love you.',
+              author: 'Maria',
+            ),
+            QuoteModel(
+              id: '2',
+              text: 'Home is wherever I’m with you.',
+              author: 'Us',
+            ),
+            QuoteModel(
+              id: '3',
+              text: 'Tea first, then the world.',
+              author: 'Tom',
+            ),
+            QuoteModel(
+              id: '4',
+              text: 'Two are better than one.',
+              author: 'Nan',
+            ),
+          ],
+  );
+
+  @override
+  Future<void> add(
+    String hubId, {
+    required String text,
+    String author = '',
+  }) async {}
+}
+
+class _QuotesGalleryState extends State<_QuotesGallery> {
+  @override
+  void initState() {
+    super.initState();
+    final scene = Uri.base.queryParameters['scene'] ?? 'page';
+    if (scene == 'page' || scene == 'empty' || scene == 'unsupported') return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showQuoteComposer(
+        context,
+        recognizer: _GalleryRecognizer(supported: true),
+        onSave: (_, _) async {},
+        startListening: scene == 'listening',
+        initialText: scene == 'quote' || scene == 'who'
+            ? 'Tea first, then the world.'
+            : '',
+        dictatedInitialText: scene == 'quote',
+        initialStep: scene == 'who'
+            ? QuoteComposerStep.author
+            : QuoteComposerStep.quote,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scene = Uri.base.queryParameters['scene'] ?? 'page';
+    return QuotesScreen(
+      hubId: 'gallery',
+      repository: _GalleryQuotes(empty: scene == 'empty'),
+      speechRecognizer: _GalleryRecognizer(supported: scene != 'unsupported'),
+    );
+  }
 }
