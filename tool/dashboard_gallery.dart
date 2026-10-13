@@ -700,6 +700,38 @@ class DashboardGalleryPage extends StatelessWidget {
 
     return [
       {
+        'summary': 'C2 — Grace Petrie',
+        'start': at(-17, 15),
+        'end': at(-17, 23, 30),
+        'allDay': false,
+        'category': 'work',
+        'assignedTo': 'tom',
+      },
+      {
+        'summary': 'Dinner at Mum’s',
+        'start': at(-12, 18, 30),
+        'end': at(-12, 22),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Enzo VET',
+        'start': at(-24, 16, 45),
+        'end': at(-24, 17, 45),
+        'allDay': false,
+        'category': 'general',
+        'assignedTo': 'shared',
+      },
+      {
+        'summary': 'Late shift',
+        'start': at(-9, 14),
+        'end': at(-9, 22),
+        'allDay': false,
+        'category': 'work',
+        'assignedTo': 'maria',
+      },
+      {
         'summary': 'Bin night',
         'start': DateUtils.dateOnly(at(-5)),
         'end': DateUtils.dateOnly(at(-5)),
@@ -1017,7 +1049,7 @@ class DashboardGalleryPage extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Same LOOK AHEAD day cells, with scroll that keeps going forward.',
+            'Same LOOK AHEAD day cells. Scroll down for later weeks, up for past ones.',
             style: TextStyle(color: Color(0xFF5A564E), fontSize: 14),
           ),
           const SizedBox(height: 12),
@@ -1026,6 +1058,10 @@ class DashboardGalleryPage extends StatelessWidget {
               now: _previewNow,
               palette: palette,
               events: _lookAheadEvents(),
+              // `?offset=-600` opens scrolled up into past weeks.
+              initialScrollOffset:
+                  double.tryParse(Uri.base.queryParameters['offset'] ?? '') ??
+                  0,
             ),
           ),
         ],

@@ -21,7 +21,7 @@ Map<String, dynamic> calendarLookAheadEventMap(EventModel event) {
 }
 
 /// Calendar tab board: the dashboard LOOK AHEAD UI, scrolled forward without
-/// the ~6 month cap.
+/// the ~6 month cap, and back into past weeks. It opens on the current week.
 ///
 /// Day cells, chips, dots, month headers, and the day-detail card all come
 /// from [DashboardCalendarOverviewSlide]. This wrapper only supplies the
@@ -37,6 +37,8 @@ class CalendarMonthScroller extends StatelessWidget {
     this.onConfirmTentative,
     this.onMarkTentative,
     this.initialWeekCount = 30,
+    this.initialPastMonths = 12,
+    this.initialScrollOffset = 0,
     this.padding = const EdgeInsets.fromLTRB(12, 8, 12, 12),
   });
 
@@ -48,6 +50,13 @@ class CalendarMonthScroller extends StatelessWidget {
   final Future<void> Function(Map<String, dynamic> event)? onConfirmTentative;
   final Future<void> Function(Map<String, dynamic> event)? onMarkTentative;
   final int initialWeekCount;
+
+  /// Months of past weeks loaded above the current week at first; more load
+  /// as the reader scrolls up.
+  final int initialPastMonths;
+
+  /// 0 opens on the current week; negative starts scrolled into the past.
+  final double initialScrollOffset;
   final EdgeInsets padding;
 
   @override
@@ -61,6 +70,9 @@ class CalendarMonthScroller extends StatelessWidget {
       padding: padding,
       infiniteForward: true,
       initialForwardWeeks: initialWeekCount,
+      infiniteBackward: true,
+      initialPastMonths: initialPastMonths,
+      initialScrollOffset: initialScrollOffset,
       onDayTap: onDayTap,
       onConfirmTentative: onConfirmTentative,
       onMarkTentative: onMarkTentative,
