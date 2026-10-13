@@ -16,6 +16,7 @@ import 'widgets/app_drawer.dart';
 import 'screens/cycle_screen.dart'; // <-- Add this!
 import 'services/member_profile.dart';
 import 'screens/dashboard_screen.dart';
+import 'services/app_check_setup.dart';
 import 'services/web_resume.dart';
 import 'services/web_update_firestore.dart';
 import 'services/web_update_platform.dart';
@@ -40,6 +41,7 @@ void main() async {
     if (WebResumeController.instance.resumingFromUpdate)
       precacheWebUpdateSplashLogo(),
   ]);
+  await activateAppCheck();
   runApp(const LovehubApp());
 }
 
