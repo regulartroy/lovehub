@@ -308,6 +308,91 @@ List<DashboardLookAheadMonthSection> dashboardLookAheadMonthSections(
   return sections;
 }
 
+/// Monday–Sunday weeks before the current week, oldest first, reaching back
+/// to the week that holds the 1st of the month [months] before [now].
+///
+/// Starting on a month boundary keeps earlier sections stable when the
+/// Calendar tab loads another chunk further back.
+List<List<DateTime>> dashboardLookAheadPastWeeks(
+  DateTime now, {
+  required int months,
+}) {
+  final today = DateUtils.dateOnly(now);
+  final currentMonday = dashboardMondayOf(today);
+  if (months <= 0) return const [];
+  final first = dashboardMondayOf(
+    DateTime(today.year, today.month - months, 1),
+  );
+  final weeks = <List<DateTime>>[];
+  var monday = first;
+  while (monday.isBefore(currentMonday)) {
+    final m = monday;
+    weeks.add(
+      List<DateTime>.generate(7, (d) => DateTime(m.year, m.month, m.day + d)),
+    );
+    monday = DateTime(m.year, m.month, m.day + 7);
+  }
+  return weeks;
+}
+
+/// Month sections for [dashboardLookAheadPastWeeks] (oldest first).
+///
+/// Same spanning-week rule as the forward board: a week opens a section as
+/// soon as it holds a day of a month not yet labeled. The oldest week is
+/// headed with the month whose 1st it holds. Weeks earlier in the current
+/// month read "EARLIER IN OCTOBER" so they do not repeat the current-week
+/// "OCTOBER" header below them.
+List<DashboardLookAheadMonthSection> dashboardLookAheadPastMonthSections(
+  List<List<DateTime>> weeks, {
+  required DateTime now,
+}) {
+  if (weeks.isEmpty) return const [];
+  final today = DateUtils.dateOnly(now);
+  final currentMonth = dashboardLookAheadMonthOf(today);
+  final labeled = <int>{};
+  final sections = <DashboardLookAheadMonthSection>[];
+  for (var i = 0; i < weeks.length; i++) {
+    final week = weeks[i];
+    DateTime? headerMonth;
+    if (i == 0) {
+      final firstOfMonth = week.firstWhere(
+        (d) => d.day == 1,
+        orElse: () => week.first,
+      );
+      headerMonth = dashboardLookAheadMonthOf(firstOfMonth);
+    } else {
+      for (final day in week) {
+        final id = _lookAheadMonthId(day);
+        if (!labeled.contains(id)) {
+          headerMonth = dashboardLookAheadMonthOf(day);
+          break;
+        }
+      }
+    }
+    if (headerMonth != null) {
+      labeled.add(_lookAheadMonthId(headerMonth));
+      final label = headerMonth == currentMonth
+          ? 'EARLIER IN ${dashboardLookAheadMonthLabel(headerMonth, today)}'
+          : dashboardLookAheadMonthLabel(headerMonth, today);
+      sections.add(
+        DashboardLookAheadMonthSection(
+          month: headerMonth,
+          label: label,
+          weeks: [week],
+        ),
+      );
+    } else {
+      sections.last.weeks.add(week);
+    }
+  }
+  return sections;
+}
+
+String dashboardLookAheadPastMonthKey(DateTime month) {
+  final date = dashboardLookAheadMonthOf(month);
+  return 'look-ahead-past-month-${date.year}-${date.month.toString().padLeft(2, '0')}';
+}
+
 /// Second dashboard slide: Monday–Sunday week-strips for the next ~6 months.
 ///
 /// Each row is a real calendar week (Mon→Sun). Tapping a day opens a detail
@@ -330,6 +415,9 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
     this.onMarkTentative,
     this.infiniteForward = false,
     this.initialForwardWeeks = 30,
+    this.infiniteBackward = false,
+    this.initialPastMonths = 12,
+    this.initialScrollOffset = 0,
     this.boardLabel,
     this.showHeader = true,
   });
@@ -339,6 +427,15 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
 
   /// About twenty years. Far enough that the Calendar tab does not feel capped.
   static const int infiniteMaxWeeks = 52 * 20;
+
+  /// Months of past weeks added each time the reader nears the oldest row.
+  static const int pastChunkMonths = 12;
+
+  /// Twenty years back.
+  static const int pastMaxMonths = 12 * 20;
+
+  /// "Today" button that appears once the board is scrolled away.
+  static const Key jumpToTodayKey = ValueKey('look-ahead-jump-today');
 
   final DashboardMetrics metrics;
   final List<Map<String, dynamic>> events;
@@ -354,7 +451,20 @@ class DashboardCalendarOverviewSlide extends StatefulWidget {
   /// First window when [infiniteForward] is set. Ignored on the dashboard.
   final int initialForwardWeeks;
 
-  /// Inner glass-card label. Defaults to "NEXT 6 MONTHS" or "ONWARD".
+  /// Calendar tab: past weeks above the current week, loaded in chunks as the
+  /// reader scrolls up. The board still opens on the current week. The
+  /// dashboard leaves this off.
+  final bool infiniteBackward;
+
+  /// Months of past weeks in the first window when [infiniteBackward] is set.
+  final int initialPastMonths;
+
+  /// Starting scroll position for [infiniteBackward]. 0 is the current week;
+  /// negative values start in the past (gallery screenshots, restores).
+  final double initialScrollOffset;
+
+  /// Inner glass-card label. Defaults to "NEXT 6 MONTHS", "ONWARD", or
+  /// "WEEK BY WEEK" when the board also scrolls back.
   final String? boardLabel;
 
   /// The LOOK AHEAD title row. The wall dashboard hides it (the board is
@@ -392,6 +502,65 @@ class _DashboardCalendarOverviewSlideState
   String? _confirmingId;
   late int _forwardWeeks;
   bool _expandScheduled = false;
+  late int _pastMonths;
+  bool _expandPastScheduled = false;
+  ScrollController? _scroll;
+  final ValueNotifier<bool> _awayFromToday = ValueNotifier(false);
+
+  void _syncScrollController() {
+    if (widget.infiniteBackward && _scroll == null) {
+      _scroll = ScrollController(
+        initialScrollOffset: widget.initialScrollOffset,
+      )..addListener(_onScroll);
+      if (widget.initialScrollOffset.abs() > dashboardLookAheadRowHeight * 2) {
+        _awayFromToday.value = true;
+      }
+    } else if (!widget.infiniteBackward && _scroll != null) {
+      _scroll!.dispose();
+      _scroll = null;
+      _awayFromToday.value = false;
+    }
+  }
+
+  void _onScroll() {
+    final c = _scroll;
+    if (c == null || !c.hasClients) return;
+    // About two week rows either way.
+    final away = c.offset.abs() > dashboardLookAheadRowHeight * 2;
+    if (_awayFromToday.value != away) _awayFromToday.value = away;
+  }
+
+  void _jumpToToday() {
+    final c = _scroll;
+    if (c == null || !c.hasClients) return;
+    c.animateTo(
+      0,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _maybeExpandBackward() {
+    if (!widget.infiniteBackward || _expandPastScheduled) return;
+    if (_pastMonths >= DashboardCalendarOverviewSlide.pastMaxMonths) return;
+    _expandPastScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _expandPastScheduled = false;
+      if (!mounted || !widget.infiniteBackward) return;
+      setState(() {
+        _pastMonths =
+            (_pastMonths + DashboardCalendarOverviewSlide.pastChunkMonths)
+                .clamp(1, DashboardCalendarOverviewSlide.pastMaxMonths);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll?.dispose();
+    _awayFromToday.dispose();
+    super.dispose();
+  }
 
   int _resolvedForwardWeeks(DashboardCalendarOverviewSlide source) {
     if (!source.infiniteForward) {
@@ -407,6 +576,11 @@ class _DashboardCalendarOverviewSlideState
   void initState() {
     super.initState();
     _forwardWeeks = _resolvedForwardWeeks(widget);
+    _pastMonths = widget.initialPastMonths.clamp(
+      1,
+      DashboardCalendarOverviewSlide.pastMaxMonths,
+    );
+    _syncScrollController();
   }
 
   @override
@@ -419,6 +593,7 @@ class _DashboardCalendarOverviewSlideState
         oldWidget.infiniteForward != widget.infiniteForward) {
       _forwardWeeks = _resolvedForwardWeeks(widget);
     }
+    _syncScrollController();
   }
 
   void _maybeExpandForward() {
@@ -555,11 +730,21 @@ class _DashboardCalendarOverviewSlideState
     final events = _presentedEvents();
     final today = DateUtils.dateOnly(widget.now);
     final weeks = dashboardLookAheadWeeks(today, weekCount: _forwardWeeks);
+    final pastSections = widget.infiniteBackward
+        ? dashboardLookAheadPastMonthSections(
+            dashboardLookAheadPastWeeks(today, months: _pastMonths),
+            now: today,
+          )
+        : null;
     final horizonEnd = weeks.last.last;
     final rangeStart = weeks.first.first;
     final boardLabel =
         widget.boardLabel ??
-        (widget.infiniteForward ? 'ONWARD' : 'NEXT 6 MONTHS');
+        (widget.infiniteBackward
+            ? 'WEEK BY WEEK'
+            : widget.infiniteForward
+            ? 'ONWARD'
+            : 'NEXT 6 MONTHS');
     final hasUpcoming = events.any((event) {
       final startRaw = dashboardEventDateTime(event['start']);
       if (startRaw == null) return false;
@@ -616,6 +801,11 @@ class _DashboardCalendarOverviewSlideState
                   onNearEnd: widget.infiniteForward
                       ? _maybeExpandForward
                       : null,
+                  pastSections: pastSections,
+                  onNearStart: widget.infiniteBackward
+                      ? _maybeExpandBackward
+                      : null,
+                  scrollController: _scroll,
                 ),
               ),
               SizedBox(height: widget.metrics.isCompact ? 8 : 10),
@@ -625,6 +815,44 @@ class _DashboardCalendarOverviewSlideState
               ),
             ],
           ),
+          if (widget.infiniteBackward)
+            Positioned(
+              right: widget.metrics.isCompact ? 16 : 24,
+              bottom: widget.metrics.isCompact ? 56 : 64,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _awayFromToday,
+                builder: (context, away, _) => IgnorePointer(
+                  ignoring: !away,
+                  child: AnimatedOpacity(
+                    opacity: away ? 1 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: FilledButton.icon(
+                      key: DashboardCalendarOverviewSlide.jumpToTodayKey,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: DashboardTheme.fade(
+                          Colors.black,
+                          0.78,
+                        ),
+                        foregroundColor: Colors.greenAccent,
+                        side: BorderSide(
+                          color: DashboardTheme.fade(Colors.greenAccent, 0.5),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                      onPressed: _jumpToToday,
+                      icon: const Icon(Icons.today_rounded, size: 18),
+                      label: const Text(
+                        'Today',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_selectedDay != null)
             _LookAheadDayDetailLayer(
               metrics: widget.metrics,
@@ -778,7 +1006,18 @@ class _LookAheadWeekBoard extends StatelessWidget {
     this.selectedDay,
     this.emptyHint,
     this.onNearEnd,
+    this.pastSections,
+    this.onNearStart,
+    this.scrollController,
   });
+
+  /// Past weeks (oldest first) shown above the current week. Null keeps the
+  /// plain forward list the dashboard uses.
+  final List<DashboardLookAheadMonthSection>? pastSections;
+  final VoidCallback? onNearStart;
+  final ScrollController? scrollController;
+
+  static const _centerKey = ValueKey('look-ahead-center');
 
   final DashboardMetrics metrics;
   final List<List<DateTime>> weeks;
@@ -805,6 +1044,52 @@ class _LookAheadWeekBoard extends StatelessWidget {
         : dashboardLookAheadRowHeight;
     final sections = dashboardLookAheadMonthSections(weeks, now: today);
 
+    List<Widget> sectionBody(
+      DashboardLookAheadMonthSection section,
+      String Function(int i) weekKey,
+    ) {
+      return [
+        _MonthSectionHeader(label: section.label, compact: metrics.isCompact),
+        SizedBox(height: metrics.isCompact ? 8 : 10),
+        for (var i = 0; i < section.weeks.length; i++) ...[
+          if (i > 0) SizedBox(height: rowGap),
+          SizedBox(
+            height: minRow,
+            child: _WeekDayRow(
+              key: ValueKey(weekKey(i)),
+              metrics: metrics,
+              days: section.weeks[i],
+              events: events,
+              today: today,
+              selectedDay: selectedDay,
+              palette: palette,
+              onDayTap: onDayTap,
+            ),
+          ),
+        ],
+      ];
+    }
+
+    Widget forwardSection(int sectionIndex) {
+      final section = sections[sectionIndex];
+      var weekIndex = 0;
+      for (var i = 0; i < sectionIndex; i++) {
+        weekIndex += sections[i].weeks.length;
+      }
+      return Column(
+        key: ValueKey(dashboardLookAheadMonthKey(section.month)),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (sectionIndex > 0)
+            SizedBox(
+              key: ValueKey(dashboardLookAheadMonthGapKey(section.month)),
+              height: monthGap,
+            ),
+          ...sectionBody(section, (i) => 'look-ahead-week-${weekIndex + i}'),
+        ],
+      );
+    }
+
     return DashboardGlassCard(
       tint: DashboardTheme.schedule,
       padding: EdgeInsets.all(metrics.isCompact ? 12 : 16),
@@ -828,55 +1113,66 @@ class _LookAheadWeekBoard extends StatelessWidget {
           ],
           SizedBox(height: metrics.isCompact ? 8 : 12),
           Expanded(
-            child: ListView.builder(
-              key: const ValueKey('look-ahead-week-list'),
-              physics: const BouncingScrollPhysics(),
-              itemCount: sections.length,
-              itemBuilder: (context, sectionIndex) {
-                if (sectionIndex >= sections.length - 1) {
-                  onNearEnd?.call();
-                }
-                final section = sections[sectionIndex];
-                var weekIndex = 0;
-                for (var i = 0; i < sectionIndex; i++) {
-                  weekIndex += sections[i].weeks.length;
-                }
-                return Column(
-                  key: ValueKey(dashboardLookAheadMonthKey(section.month)),
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (sectionIndex > 0)
-                      SizedBox(
-                        key: ValueKey(
-                          dashboardLookAheadMonthGapKey(section.month),
-                        ),
-                        height: monthGap,
+            child: pastSections == null
+                ? ListView.builder(
+                    key: const ValueKey('look-ahead-week-list'),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: sections.length,
+                    itemBuilder: (context, sectionIndex) {
+                      if (sectionIndex >= sections.length - 1) {
+                        onNearEnd?.call();
+                      }
+                      return forwardSection(sectionIndex);
+                    },
+                  )
+                : CustomScrollView(
+                    key: const ValueKey('look-ahead-week-list'),
+                    controller: scrollController,
+                    physics: const BouncingScrollPhysics(),
+                    // Past weeks grow upward from the current week, so
+                    // loading more of them never moves what is on screen.
+                    center: _centerKey,
+                    slivers: [
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final past = pastSections!;
+                          // index 0 is the newest past section.
+                          final sectionIndex = past.length - 1 - index;
+                          if (index >= past.length - 1) onNearStart?.call();
+                          var weekBase = 0;
+                          for (var i = 0; i < sectionIndex; i++) {
+                            weekBase += past[i].weeks.length;
+                          }
+                          final section = past[sectionIndex];
+                          return Column(
+                            key: ValueKey(
+                              dashboardLookAheadPastMonthKey(section.month),
+                            ),
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ...sectionBody(
+                                section,
+                                (i) => 'look-ahead-past-week-${weekBase + i}',
+                              ),
+                              SizedBox(height: monthGap),
+                            ],
+                          );
+                        }, childCount: pastSections!.length),
                       ),
-                    _MonthSectionHeader(
-                      label: section.label,
-                      compact: metrics.isCompact,
-                    ),
-                    SizedBox(height: metrics.isCompact ? 8 : 10),
-                    for (var i = 0; i < section.weeks.length; i++) ...[
-                      if (i > 0) SizedBox(height: rowGap),
-                      SizedBox(
-                        height: minRow,
-                        child: _WeekDayRow(
-                          key: ValueKey('look-ahead-week-${weekIndex + i}'),
-                          metrics: metrics,
-                          days: section.weeks[i],
-                          events: events,
-                          today: today,
-                          selectedDay: selectedDay,
-                          palette: palette,
-                          onDayTap: onDayTap,
-                        ),
+                      SliverList(
+                        key: _centerKey,
+                        delegate: SliverChildBuilderDelegate((
+                          context,
+                          sectionIndex,
+                        ) {
+                          if (sectionIndex >= sections.length - 1) {
+                            onNearEnd?.call();
+                          }
+                          return forwardSection(sectionIndex);
+                        }, childCount: sections.length),
                       ),
                     ],
-                  ],
-                );
-              },
-            ),
+                  ),
           ),
         ],
       ),
