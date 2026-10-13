@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../models/task_model.dart';
 import '../repositories/task_repository.dart';
+import '../services/shopping_aisle_sort.dart';
 import 'dart:convert';
 import 'package:firebase_vertexai/firebase_vertexai.dart';
 
@@ -80,56 +81,33 @@ class _TasksScreenState extends State<TasksScreen> {
     setState(() => _isSortingAI = true);
 
     try {
-      final model = FirebaseVertexAI.instance.generativeModel(
-        model: 'gemini-2.5-flash',
-        generationConfig: GenerationConfig(
-          responseMimeType: 'application/json',
-        ),
-      );
+      final result = await smartSortShoppingIndexes([
+        for (final t in items) (t.id, t.text),
+      ], aiSort: () => _geminiSortIndexes(items));
 
-      // 1. Create a safe payload (IDs and Text ONLY)
-      final payload = items.map((t) => {'id': t.id, 'text': t.text}).toList();
-
-      // 2. The Strict Prompt
-      final prompt =
-          """You are a supermarket layout expert. Look at this JSON list of shopping items. 
-      Assign each item a 'sortIndex' based on the typical path through a supermarket:
-      10: Produce (Fruit/Vegetables)
-      20: Bakery
-      30: Meat/Seafood
-      40: Dairy/Eggs
-      50: Pantry/Dry Goods
-      60: Frozen Foods
-      70: Household/Toiletries
-      80: Other
-
-      Return ONLY a JSON array of objects. Each object MUST have the 'id' (exactly as provided) and the 'sortIndex' (integer). 
-      Do NOT omit any IDs.
-      Items: ${jsonEncode(payload)}""";
-
-      final response = await model.generateContent([Content.text(prompt)]);
-      String rawText = response.text ?? '[]';
-      rawText = rawText.replaceAll('```json', '').replaceAll('```', '').trim();
-
-      final List<dynamic> parsed = jsonDecode(rawText);
-
-      // 3. Batch Update Firestore (Only touches the sortIndex number, completely protecting your text!)
+      // Batch update Firestore (only touches the sortIndex number).
       final batch = FirebaseFirestore.instance.batch();
-      for (var item in parsed) {
+      result.sortIndexes.forEach((id, index) {
         final docRef = FirebaseFirestore.instance
             .collection('hubs')
             .doc(hubId)
             .collection('items')
-            .doc(item['id']);
-        batch.update(docRef, {'sortIndex': item['sortIndex']});
-      }
+            .doc(id);
+        batch.update(docRef, {'sortIndex': index});
+      });
       await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✨ Shopping list smartly sorted!'),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: Text(
+              result.usedFallback
+                  ? '🛒 Sorted by aisle (offline sort)'
+                  : '✨ Shopping list smartly sorted!',
+            ),
+            backgroundColor: result.usedFallback
+                ? Colors.green.shade700
+                : Colors.orange,
           ),
         );
       }
@@ -145,6 +123,40 @@ class _TasksScreenState extends State<TasksScreen> {
     } finally {
       if (mounted) setState(() => _isSortingAI = false);
     }
+  }
+
+  Future<Map<String, int>> _geminiSortIndexes(List<Task> items) async {
+    final model = FirebaseVertexAI.instance.generativeModel(
+      model: 'gemini-2.5-flash',
+      generationConfig: GenerationConfig(responseMimeType: 'application/json'),
+    );
+    final payload = items.map((t) => {'id': t.id, 'text': t.text}).toList();
+    final prompt =
+        """You are a supermarket layout expert. Look at this JSON list of shopping items.
+      Assign each item a 'sortIndex' based on the typical path through a supermarket:
+      10: Produce (Fruit/Vegetables)
+      20: Bakery
+      30: Meat/Seafood
+      40: Dairy/Eggs
+      50: Pantry/Dry Goods
+      60: Frozen Foods
+      70: Household/Toiletries
+      80: Other
+
+      Return ONLY a JSON array of objects. Each object MUST have the 'id' (exactly as provided) and the 'sortIndex' (integer).
+      Do NOT omit any IDs.
+      Items: ${jsonEncode(payload)}""";
+    final response = await model.generateContent([Content.text(prompt)]);
+    var rawText = response.text ?? '[]';
+    rawText = rawText.replaceAll('```json', '').replaceAll('```', '').trim();
+    final parsed = jsonDecode(rawText) as List<dynamic>;
+    final out = <String, int>{};
+    for (final item in parsed) {
+      if (item is Map && item['id'] is String && item['sortIndex'] is num) {
+        out[item['id'] as String] = (item['sortIndex'] as num).toInt();
+      }
+    }
+    return out;
   }
 
   Future<void> _fetchHubMembers() async {
