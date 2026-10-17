@@ -1161,6 +1161,20 @@ class _GalleryQuotes implements QuoteRepository {
     required String text,
     String author = '',
   }) async {}
+
+  @override
+  Future<void> update(
+    String hubId,
+    String id, {
+    required String text,
+    String author = '',
+  }) async {}
+
+  @override
+  Future<void> delete(String hubId, String id) async {}
+
+  @override
+  Future<void> restore(String hubId, QuoteModel quote) async {}
 }
 
 class _QuotesGalleryState extends State<_QuotesGallery> {
@@ -1176,7 +1190,9 @@ class _QuotesGalleryState extends State<_QuotesGallery> {
         recognizer: _GalleryRecognizer(supported: true),
         onSave: (_, _) async {},
         startListening: scene == 'listening',
-        initialText: scene == 'quote' || scene == 'who'
+        editing: scene == 'edit',
+        initialAuthor: scene == 'edit' ? 'Tom' : '',
+        initialText: scene == 'quote' || scene == 'who' || scene == 'edit'
             ? 'Tea first, then the world.'
             : '',
         dictatedInitialText: scene == 'quote',
