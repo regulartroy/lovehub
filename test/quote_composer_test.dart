@@ -92,6 +92,47 @@ class FakeQuotes implements QuoteRepository {
     ];
     _changes.add(null);
   }
+
+  final List<(String, String, String)> updated = [];
+  final List<String> deleted = [];
+  final List<QuoteModel> restored = [];
+
+  @override
+  Future<void> update(
+    String hubId,
+    String id, {
+    required String text,
+    String author = '',
+  }) async {
+    final name = author.trim().isEmpty ? kDefaultQuoteAuthor : author.trim();
+    updated.add((id, text, name));
+    _quotes = [
+      for (final q in _quotes)
+        q.id == id
+            ? QuoteModel(
+                id: id,
+                text: text,
+                author: name,
+                createdAt: q.createdAt,
+              )
+            : q,
+    ];
+    _changes.add(null);
+  }
+
+  @override
+  Future<void> delete(String hubId, String id) async {
+    deleted.add(id);
+    _quotes = _quotes.where((q) => q.id != id).toList();
+    _changes.add(null);
+  }
+
+  @override
+  Future<void> restore(String hubId, QuoteModel quote) async {
+    restored.add(quote);
+    _quotes = sortQuotesNewestFirst([..._quotes, quote]);
+    _changes.add(null);
+  }
 }
 
 Future<void> pumpComposer(
@@ -511,6 +552,153 @@ void main() {
       expect(find.byKey(QuotesScreen.micKey), findsNothing);
       expect(find.byKey(QuotesScreen.unsupportedKey), findsOneWidget);
       expect(find.byKey(QuotesScreen.addKey), findsOneWidget);
+    });
+
+    group('edit and delete', () {
+      final seed = [
+        QuoteModel(
+          id: 'q1',
+          text: 'Are those my pants?',
+          author: 'Sarah M',
+          createdAt: DateTime(2026, 10, 10),
+        ),
+        QuoteModel(
+          id: 'q2',
+          text: 'Tea first',
+          author: 'Pob',
+          createdAt: DateTime(2026, 10, 1),
+        ),
+      ];
+
+      for (final size in const [Size(412, 900), Size(1280, 800)]) {
+        testWidgets('edit prefills and saves (${size.width})', (tester) async {
+          final repo = FakeQuotes(seed);
+          await pumpPage(tester, repo, FakeRecognizer(), size: size);
+          await tester.tap(find.byKey(QuotesScreen.menuKey('q1')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(QuotesScreen.editItemKey));
+          await tester.pumpAndSettle();
+          expect(find.text('Edit quote'), findsOneWidget);
+          final field = tester.widget<TextField>(
+            find
+                .descendant(
+                  of: find.byKey(QuoteComposer.quoteFieldKey),
+                  matching: find.byType(TextField),
+                  matchRoot: true,
+                )
+                .first,
+          );
+          expect(field.controller!.text, 'Are those my pants?');
+          expect(find.byKey(QuoteComposer.micKey), findsOneWidget);
+          await tester.enterText(
+            find.byKey(QuoteComposer.quoteFieldKey),
+            'Are those MY pants?',
+          );
+          await tester.tap(find.byKey(QuoteComposer.nextKey));
+          await tester.pumpAndSettle();
+          final author = tester.widget<TextField>(
+            find
+                .descendant(
+                  of: find.byKey(QuoteComposer.authorFieldKey),
+                  matching: find.byType(TextField),
+                  matchRoot: true,
+                )
+                .first,
+          );
+          expect(author.controller!.text, 'Sarah M');
+          await tester.enterText(
+            find.byKey(QuoteComposer.authorFieldKey),
+            'Sarah',
+          );
+          await tester.tap(find.byKey(QuoteComposer.saveKey));
+          await tester.pumpAndSettle();
+          expect(repo.updated, [('q1', 'Are those MY pants?', 'Sarah')]);
+          expect(repo.saved, isEmpty);
+          expect(find.text('“Are those MY pants?”'), findsOneWidget);
+          expect(find.text('Quote updated'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        });
+      }
+
+      testWidgets('delete asks first; cancel keeps it', (tester) async {
+        final repo = FakeQuotes(seed);
+        await pumpPage(
+          tester,
+          repo,
+          FakeRecognizer(),
+          size: const Size(412, 900),
+        );
+        await tester.tap(find.byKey(QuotesScreen.menuKey('q2')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(QuotesScreen.deleteItemKey));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete this quote?'), findsOneWidget);
+        await tester.tap(find.byKey(QuotesScreen.deleteCancelKey));
+        await tester.pumpAndSettle();
+        expect(repo.deleted, isEmpty);
+        expect(find.text('“Tea first”'), findsOneWidget);
+      });
+
+      testWidgets('delete then Undo restores the same quote', (tester) async {
+        final repo = FakeQuotes(seed);
+        await pumpPage(
+          tester,
+          repo,
+          FakeRecognizer(),
+          size: const Size(412, 900),
+        );
+        await tester.tap(find.byKey(QuotesScreen.menuKey('q2')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(QuotesScreen.deleteItemKey));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(QuotesScreen.deleteConfirmKey));
+        await tester.pumpAndSettle();
+        expect(repo.deleted, ['q2']);
+        expect(find.text('“Tea first”'), findsNothing);
+        expect(find.text('Quote deleted'), findsOneWidget);
+        await tester.tap(find.text('Undo'));
+        await tester.pumpAndSettle();
+        expect(repo.restored.single.id, 'q2');
+        expect(repo.restored.single.createdAt, DateTime(2026, 10, 1));
+        expect(find.text('“Tea first”'), findsOneWidget);
+      });
+
+      testWidgets('Undo snackbar goes away after ~5s', (tester) async {
+        final repo = FakeQuotes(seed);
+        await pumpPage(
+          tester,
+          repo,
+          FakeRecognizer(),
+          size: const Size(412, 900),
+        );
+        await tester.tap(find.byKey(QuotesScreen.menuKey('q1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(QuotesScreen.deleteItemKey));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(QuotesScreen.deleteConfirmKey));
+        await tester.pumpAndSettle();
+        expect(find.text('Undo'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 6));
+        await tester.pumpAndSettle();
+        expect(find.text('Undo'), findsNothing);
+        expect(repo.restored, isEmpty);
+      });
+
+      testWidgets('long-press opens Edit/Delete actions', (tester) async {
+        final repo = FakeQuotes(seed);
+        await pumpPage(
+          tester,
+          repo,
+          FakeRecognizer(),
+          size: const Size(412, 900),
+        );
+        await tester.longPress(find.text('“Tea first”'));
+        await tester.pumpAndSettle();
+        expect(find.text('Edit'), findsOneWidget);
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete this quote?'), findsOneWidget);
+      });
     });
   });
 }

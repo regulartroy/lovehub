@@ -30,6 +30,14 @@ class QuotesScreen extends StatelessWidget {
   static const emptyKey = ValueKey('quotes-empty');
   static const listKey = ValueKey('quotes-list');
   static const unsupportedKey = ValueKey('quotes-voice-unsupported');
+  static const deleteConfirmKey = ValueKey('quotes-delete-confirm');
+  static const deleteCancelKey = ValueKey('quotes-delete-cancel');
+  static const undoDuration = Duration(seconds: 5);
+
+  static ValueKey<String> menuKey(String id) => ValueKey('quote-menu-$id');
+  static ValueKey<String> cardKey(String id) => ValueKey('quote-card-$id');
+  static const editItemKey = ValueKey('quote-menu-edit');
+  static const deleteItemKey = ValueKey('quote-menu-delete');
 
   Future<void> _compose(BuildContext context, {required bool voice}) async {
     final saved = await showQuoteComposer(
@@ -43,6 +51,111 @@ class QuotesScreen extends StatelessWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Quote saved')));
+    }
+  }
+
+  Future<void> _edit(BuildContext context, QuoteModel quote) async {
+    final saved = await showQuoteComposer(
+      context,
+      recognizer: speechRecognizer,
+      editing: true,
+      initialText: quote.text,
+      initialAuthor: quote.author,
+      onSave: (text, author) =>
+          repository.update(hubId, quote.id, text: text, author: author),
+    );
+    if (saved && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Quote updated')));
+    }
+  }
+
+  Future<void> _delete(BuildContext context, QuoteModel quote) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: DashboardTheme.surface,
+        title: const Text(
+          'Delete this quote?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '“${quote.text}”\n— ${quote.author}',
+          style: const TextStyle(color: DashboardTheme.inkMuted),
+        ),
+        actions: [
+          TextButton(
+            key: deleteCancelKey,
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: deleteConfirmKey,
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade400),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await repository.delete(hubId, quote.id);
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Couldn’t delete that. Try again.')),
+      );
+      return;
+    }
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Quote deleted'),
+        duration: undoDuration,
+        persist: false,
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => unawaited(repository.restore(hubId, quote)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showActions(BuildContext context, QuoteModel quote) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: DashboardTheme.surface,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_rounded, color: Colors.white),
+              title: const Text('Edit', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.of(ctx).pop('edit'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.red.shade300,
+              ),
+              title: Text(
+                'Delete',
+                style: TextStyle(color: Colors.red.shade300),
+              ),
+              onTap: () => Navigator.of(ctx).pop('delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (choice == 'edit') {
+      await _edit(context, quote);
+    } else if (choice == 'delete') {
+      await _delete(context, quote);
     }
   }
 
@@ -115,7 +228,7 @@ class QuotesScreen extends StatelessWidget {
                           ),
                         )
                       else
-                        _list(quotes, wide),
+                        _list(context, quotes, wide),
                     ],
                   ),
                 ),
@@ -196,8 +309,18 @@ class QuotesScreen extends StatelessWidget {
     );
   }
 
-  Widget _list(List<QuoteModel> quotes, bool wide) {
-    final cards = [for (final q in quotes) _QuoteCard(quote: q)];
+  Widget _list(BuildContext context, List<QuoteModel> quotes, bool wide) {
+    final cards = [
+      for (final q in quotes)
+        _QuoteCard(
+          key: cardKey(q.id),
+          quote: q,
+          menuKey: menuKey(q.id),
+          onEdit: () => _edit(context, q),
+          onDelete: () => _delete(context, q),
+          onLongPress: () => _showActions(context, q),
+        ),
+    ];
     if (!wide) {
       return Column(
         key: listKey,
@@ -231,39 +354,103 @@ class QuotesScreen extends StatelessWidget {
 }
 
 class _QuoteCard extends StatelessWidget {
-  const _QuoteCard({required this.quote});
+  const _QuoteCard({
+    super.key,
+    required this.quote,
+    required this.menuKey,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onLongPress,
+  });
 
   final QuoteModel quote;
+  final Key menuKey;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: DashboardTheme.glassCard(tint: DashboardTheme.accent),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '“${quote.text}”',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 19,
-              fontWeight: FontWeight.w300,
-              height: 1.35,
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(20, 20, 4, 20),
+        decoration: DashboardTheme.glassCard(tint: DashboardTheme.accent),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '“${quote.text}”',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w300,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '— ${quote.author}',
+                    style: TextStyle(
+                      color: DashboardTheme.fade(DashboardTheme.accent, 0.9),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '— ${quote.author}',
-            style: TextStyle(
-              color: DashboardTheme.fade(DashboardTheme.accent, 0.9),
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
+            PopupMenuButton<String>(
+              key: menuKey,
+              tooltip: 'Quote options',
+              color: DashboardTheme.surface,
+              padding: EdgeInsets.zero,
+              icon: const Icon(
+                Icons.more_vert_rounded,
+                color: Colors.white38,
+                size: 20,
+              ),
+              onSelected: (v) => v == 'edit' ? onEdit() : onDelete(),
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  key: QuotesScreen.editItemKey,
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_rounded, color: Colors.white, size: 18),
+                      SizedBox(width: 10),
+                      Text('Edit', style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  key: QuotesScreen.deleteItemKey,
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.delete_outline_rounded,
+                        color: Colors.red.shade300,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Delete',
+                        style: TextStyle(color: Colors.red.shade300),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

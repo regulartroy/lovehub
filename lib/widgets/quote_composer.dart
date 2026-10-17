@@ -23,6 +23,8 @@ Future<bool> showQuoteComposer(
   String initialText = '',
   QuoteComposerStep initialStep = QuoteComposerStep.quote,
   bool dictatedInitialText = false,
+  String initialAuthor = '',
+  bool editing = false,
 }) async {
   final saved = await showDialog<bool>(
     context: context,
@@ -42,6 +44,8 @@ Future<bool> showQuoteComposer(
           initialText: initialText,
           initialStep: initialStep,
           dictatedInitialText: dictatedInitialText,
+          initialAuthor: initialAuthor,
+          editing: editing,
           onClose: (didSave) => Navigator.of(ctx).pop(didSave),
         ),
       ),
@@ -64,6 +68,8 @@ class QuoteComposer extends StatefulWidget {
     this.initialText = '',
     this.initialStep = QuoteComposerStep.quote,
     this.dictatedInitialText = false,
+    this.initialAuthor = '',
+    this.editing = false,
   });
 
   final DashboardSpeechRecognizer recognizer;
@@ -77,6 +83,12 @@ class QuoteComposer extends StatefulWidget {
 
   /// Treat [initialText] as dictated, so the name step listens by itself.
   final bool dictatedInitialText;
+
+  /// Prefills the "Who said this?" field (editing an existing quote).
+  final String initialAuthor;
+
+  /// Editing an existing quote: titles read "Edit quote".
+  final bool editing;
 
   static const quoteFieldKey = ValueKey('quote-composer-text');
   static const authorFieldKey = ValueKey('quote-composer-author');
@@ -97,7 +109,7 @@ class QuoteComposer extends StatefulWidget {
 
 class _QuoteComposerState extends State<QuoteComposer> {
   late final TextEditingController _text;
-  final TextEditingController _author = TextEditingController();
+  late final TextEditingController _author;
   late QuoteComposerStep _step;
   bool _listening = false;
   bool _saving = false;
@@ -111,6 +123,7 @@ class _QuoteComposerState extends State<QuoteComposer> {
   void initState() {
     super.initState();
     _text = TextEditingController(text: widget.initialText);
+    _author = TextEditingController(text: widget.initialAuthor);
     _step = widget.initialStep;
     _dictated = widget.dictatedInitialText;
     if (widget.startListening && _supported) {
@@ -267,8 +280,8 @@ class _QuoteComposerState extends State<QuoteComposer> {
 
   List<Widget> _quoteStep() {
     return [
-      const Text(
-        'Add a quote',
+      Text(
+        widget.editing ? 'Edit quote' : 'Add a quote',
         style: TextStyle(
           color: Colors.white,
           fontSize: 22,
@@ -527,9 +540,9 @@ class _QuoteComposerState extends State<QuoteComposer> {
                   strokeWidth: 2,
                 ),
               )
-            : const Text(
-                'Save quote',
-                style: TextStyle(
+            : Text(
+                widget.editing ? 'Save changes' : 'Save quote',
+                style: const TextStyle(
                   fontWeight: FontWeight.w700,
                   color: Colors.black87,
                 ),
