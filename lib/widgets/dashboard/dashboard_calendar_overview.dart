@@ -1228,6 +1228,45 @@ class _WeekDayRow extends StatelessWidget {
   }
 }
 
+/// Opacity of event chips/dots on days before today (LOOK AHEAD + Calendar).
+const double dashboardLookAheadPastOpacity = 0.45;
+
+/// Saturation kept for past-day chips (0 = grey, 1 = full colour).
+const double dashboardLookAheadPastSaturation = 0.25;
+
+/// Key on the dimming wrapper of a past day's events (tests).
+String dashboardLookAheadPastDimKey(DateTime day) =>
+    'look-ahead-past-dim-${day.year}-${day.month}-${day.day}';
+
+/// A colour matrix that keeps [saturation] of the original colour.
+List<double> dashboardSaturationMatrix(double saturation) {
+  const r = 0.2126, g = 0.7152, b = 0.0722;
+  final s = saturation;
+  final i = 1 - s;
+  return [
+    i * r + s,
+    i * g,
+    i * b,
+    0,
+    0,
+    i * r,
+    i * g + s,
+    i * b,
+    0,
+    0,
+    i * r,
+    i * g,
+    i * b + s,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+}
+
 class _WeekDayColumn extends StatelessWidget {
   const _WeekDayColumn({
     super.key,
@@ -1257,12 +1296,12 @@ class _WeekDayColumn extends StatelessWidget {
     final labelColor = isToday
         ? Colors.greenAccent
         : isPast
-        ? DashboardTheme.inkFaint
+        ? DashboardTheme.fade(DashboardTheme.inkFaint, 0.6)
         : const Color(0xFF8FB0C8);
     final dateColor = isToday
         ? Colors.greenAccent
         : isPast
-        ? DashboardTheme.inkFaint
+        ? DashboardTheme.fade(DashboardTheme.inkFaint, 0.75)
         : DashboardTheme.ink;
     // 1–4 events stay as chips. Five or more become coloured dots so a
     // busy day still reads as full, without a plain "N events" count.
@@ -1274,28 +1313,28 @@ class _WeekDayColumn extends StatelessWidget {
         borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: DashboardTheme.fade(
-              wash,
-              isSelected
-                  ? 0.20
-                  : isToday
-                  ? 0.12
-                  : isPast
-                  ? 0.03
-                  : 0.05,
-            ),
+            color: isPast && !isSelected
+                ? Colors.black.withValues(alpha: 0.28)
+                : DashboardTheme.fade(
+                    wash,
+                    isSelected
+                        ? 0.20
+                        : isToday
+                        ? 0.12
+                        : 0.05,
+                  ),
             borderRadius: BorderRadius.circular(DashboardTheme.radiusMd),
             border: Border.all(
-              color: DashboardTheme.fade(
-                wash,
-                isSelected
-                    ? 0.70
-                    : isToday
-                    ? 0.45
-                    : isPast
-                    ? 0.10
-                    : 0.16,
-              ),
+              color: isPast && !isSelected
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : DashboardTheme.fade(
+                      wash,
+                      isSelected
+                          ? 0.70
+                          : isToday
+                          ? 0.45
+                          : 0.16,
+                    ),
               width: isSelected || isToday ? 1.4 : 1,
             ),
           ),
@@ -1335,44 +1374,62 @@ class _WeekDayColumn extends StatelessWidget {
                 SizedBox(height: metrics.isCompact ? 6 : 8),
                 Expanded(
                   child: ClipRect(
-                    child: events.isEmpty
-                        ? Align(
-                            alignment: Alignment.topCenter,
-                            child: Text(
-                              'Free',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: DashboardTheme.inkFaint,
-                                fontSize: metrics.isCompact ? 11 : 13,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          )
-                        : showDots
-                        ? Align(
-                            alignment: Alignment.topCenter,
-                            child: LookAheadEventDots(
-                              events: events,
-                              palette: palette,
-                              muted: isPast,
-                            ),
-                          )
-                        : Column(
-                            children: [
-                              for (final event in events)
-                                _EventChip(
-                                  event: event,
-                                  compact: metrics.isCompact,
-                                  palette: palette,
+                    child: _pastDim(
+                      events.isEmpty
+                          ? Align(
+                              alignment: Alignment.topCenter,
+                              child: Text(
+                                'Free',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: DashboardTheme.inkFaint,
+                                  fontSize: metrics.isCompact ? 11 : 13,
+                                  fontStyle: FontStyle.italic,
                                 ),
-                            ],
-                          ),
+                              ),
+                            )
+                          : showDots
+                          ? Align(
+                              alignment: Alignment.topCenter,
+                              child: LookAheadEventDots(
+                                events: events,
+                                palette: palette,
+                                muted: isPast,
+                              ),
+                            )
+                          : Column(
+                              children: [
+                                for (final event in events)
+                                  _EventChip(
+                                    event: event,
+                                    compact: metrics.isCompact,
+                                    palette: palette,
+                                  ),
+                              ],
+                            ),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+extension on _WeekDayColumn {
+  Widget _pastDim(Widget child) {
+    if (!isPast || isSelected) return child;
+    return Opacity(
+      key: ValueKey(dashboardLookAheadPastDimKey(day)),
+      opacity: dashboardLookAheadPastOpacity,
+      child: ColorFiltered(
+        colorFilter: ColorFilter.matrix(
+          dashboardSaturationMatrix(dashboardLookAheadPastSaturation),
+        ),
+        child: child,
       ),
     );
   }
