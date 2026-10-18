@@ -79,6 +79,29 @@ void main() {
     });
   });
 
+  test('greeting follows the clock', () {
+    expect(feedGreeting(DateTime(2026, 10, 18, 5), 'Tom'), 'Good morning, Tom');
+    expect(
+      feedGreeting(DateTime(2026, 10, 18, 11, 59), 'Tom'),
+      'Good morning, Tom',
+    );
+    expect(
+      feedGreeting(DateTime(2026, 10, 18, 12), 'Tom'),
+      'Good afternoon, Tom',
+    );
+    expect(
+      feedGreeting(DateTime(2026, 10, 18, 18, 5), 'Tom'),
+      'Good evening, Tom',
+    );
+    expect(feedGreeting(DateTime(2026, 10, 18, 22), 'Tom'), 'Still up, Tom?');
+    expect(
+      feedGreeting(DateTime(2026, 10, 18, 2, 19), 'Tom'),
+      'Still up, Tom?',
+    );
+    expect(feedGreeting(DateTime(2026, 10, 18, 4, 59)), 'Still up?');
+    expect(feedGreeting(DateTime(2026, 10, 18, 13), ''), 'Good afternoon');
+  });
+
   test('responsive columns', () {
     expect(homeFeedColumns(390), 2);
     expect(homeFeedColumns(599), 2);

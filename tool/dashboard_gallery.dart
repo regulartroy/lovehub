@@ -1370,11 +1370,11 @@ class _FeedGalleryState extends State<_FeedGallery> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 14, 20, 10),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
                 child: Text(
-                  'Good morning, Tom',
-                  style: TextStyle(
+                  feedGreeting(now, 'Tom'),
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w300,
                     color: Colors.black54,
