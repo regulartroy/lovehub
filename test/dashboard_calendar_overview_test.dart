@@ -1433,4 +1433,69 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  group('past days on LOOK AHEAD are greyed out', () {
+    Future<void> pumpSlide(WidgetTester tester, DateTime at) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DashboardCalendarOverviewSlide(
+              metrics: DashboardMetrics(const Size(1280, 800)),
+              events: sampleEvents(),
+              now: at,
+              members: members,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Finder dim(DateTime d) =>
+        find.byKey(ValueKey(dashboardLookAheadPastDimKey(d)));
+
+    testWidgets('earlier days this week dim their chips; today and future do '
+        'not', (tester) async {
+      await pumpSlide(tester, now);
+      final mon = DateTime(2026, 9, 14);
+      expect(dim(mon), findsOneWidget);
+      expect(
+        tester.widget<Opacity>(dim(mon)).opacity,
+        dashboardLookAheadPastOpacity,
+      );
+      expect(
+        find.descendant(of: dim(mon), matching: find.byType(ColorFiltered)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dim(mon), matching: find.textContaining('Bin')),
+        findsWidgets,
+      );
+      for (var d = 15; d <= 18; d++) {
+        expect(dim(DateTime(2026, 9, d)), findsOneWidget);
+      }
+      expect(dim(now), findsNothing);
+      expect(find.text('TODAY'), findsOneWidget);
+      expect(dim(DateTime(2026, 9, 20)), findsNothing);
+      expect(dim(DateTime(2026, 9, 21)), findsNothing);
+    });
+
+    testWidgets('after midnight, yesterday becomes past', (tester) async {
+      await pumpSlide(tester, now);
+      expect(dim(now), findsNothing);
+      await pumpSlide(tester, DateTime(2026, 9, 20, 0, 1));
+      expect(dim(now), findsOneWidget);
+      expect(dim(DateTime(2026, 9, 20)), findsNothing);
+    });
+
+    test('saturation matrix: 1 keeps colour, 0 is greyscale', () {
+      final id = dashboardSaturationMatrix(1);
+      expect(id.sublist(0, 3), [1, 0, 0]);
+      expect(id.sublist(5, 8), [0, 1, 0]);
+      final grey = dashboardSaturationMatrix(0);
+      expect(grey.sublist(0, 3), grey.sublist(5, 8));
+    });
+  });
 }
