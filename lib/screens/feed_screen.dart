@@ -10,8 +10,12 @@ import 'food_screen.dart';
 import '../repositories/rota_repository.dart';
 import '../services/member_profile.dart';
 import '../theme/calendar_colors.dart';
-import '../widgets/calendar_split_pill.dart';
 import '../widgets/member_avatar.dart';
+import '../models/quote_model.dart';
+import '../repositories/quote_repository.dart';
+import '../services/home_feed_logic.dart';
+import '../services/home_feed_weather.dart';
+import '../widgets/home_feed/home_feed_view.dart';
 
 class FeedScreen extends StatefulWidget {
   final User user;
@@ -19,7 +23,11 @@ class FeedScreen extends StatefulWidget {
   final Map<String, dynamic> pendingHubs;
   final List<MapEntry<String, dynamic>> visibleHubs;
 
+  /// Switches the bottom tab (cards tap through to their section).
+  final ValueChanged<int>? onOpenTab;
+
   const FeedScreen({
+    this.onOpenTab,
     super.key,
     required this.user,
     required this.joinedHubs,
@@ -45,9 +53,12 @@ class _FeedScreenState extends State<FeedScreen> {
   List<Map<String, dynamic>> _birthdays = [];
 
   Timer? _midnightTimer;
-  DateTime _currentDay = DateUtils.dateOnly(DateTime.now());
 
   StreamSubscription<QuerySnapshot>? _birthdaySub;
+  StreamSubscription<List<QuoteModel>>? _quoteSub;
+  QuoteModel? _quote;
+  FeedWeather? _weather;
+  Timer? _weatherTimer;
   late final HubMemberDirectory _memberDirectory;
 
   @override
@@ -83,17 +94,179 @@ class _FeedScreenState extends State<FeedScreen> {
           });
     }
 
+    // Ticks every minute: keeps the hero countdown and the day fresh.
     _midnightTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      final now = DateUtils.dateOnly(DateTime.now());
-      if (now.isAfter(_currentDay)) {
-        setState(() => _currentDay = now);
-      }
+      if (!mounted) return;
+      setState(() {});
     });
+
+    _listenToQuotes();
+    _loadWeather();
+    _weatherTimer = Timer.periodic(
+      const Duration(minutes: 30),
+      (_) => _loadWeather(),
+    );
+  }
+
+  void _listenToQuotes() {
+    _quoteSub?.cancel();
+    if (widget.visibleHubs.isEmpty) return;
+    _quoteSub = FirestoreQuoteRepository()
+        .watch(widget.visibleHubs.first.key)
+        .listen((quotes) {
+          if (!mounted) return;
+          final usable = quotes.where((q) => q.text.isNotEmpty).toList();
+          final day = DateTime.now().difference(DateTime(2026)).inDays;
+          setState(
+            () => _quote = usable.isEmpty ? null : usable[day % usable.length],
+          );
+        }, onError: (_) {});
+  }
+
+  Future<void> _loadWeather() async {
+    final w = await fetchHomeFeedWeather(widget.user.uid);
+    if (mounted && w != null) setState(() => _weather = w);
+  }
+
+  HomeFeedData _feedData({
+    required List<Map<String, dynamic>> allEvents,
+    required List<QueryDocumentSnapshot> allItems,
+    required Map<String, dynamic>? rotaInfo,
+    required List<String> completedChores,
+  }) {
+    final chores = <FeedChore>[];
+    if (rotaInfo != null && rotaInfo['isStarted'] == true) {
+      for (final c in List<Map<String, dynamic>>.from(
+        rotaInfo['chores'] ?? const [],
+      )) {
+        final id = (c['id'] ?? '').toString();
+        chores.add(
+          FeedChore(
+            id: id,
+            title: (c['title'] ?? 'Chore').toString(),
+            assignedTo: (c['assignedTo'] ?? 'shared').toString(),
+            minutes: (c['effortMinutes'] as num?)?.toInt(),
+            done:
+                completedChores.contains(id) ||
+                _locallyCompletedChores.contains(id),
+          ),
+        );
+      }
+    }
+    final tasks = <FeedTask>[];
+    for (final doc in allItems) {
+      final m = doc.data() as Map<String, dynamic>;
+      if (m['status'] == 'pending_acceptance') continue;
+      final due = m['dueDate'];
+      tasks.add(
+        FeedTask(
+          id: doc.id,
+          text: (m['text'] ?? '').toString(),
+          listName: (m['listName'] ?? 'General').toString(),
+          urgent: m['isUrgent'] == true,
+          due: due is Timestamp ? due.toDate() : null,
+          assignedTo: (m['assignedTo'] ?? 'shared').toString(),
+          done: _locallyCompleted.contains(doc.id),
+        ),
+      );
+    }
+    return HomeFeedData(
+      now: DateTime.now(),
+      myUid: widget.user.uid,
+      names: {
+        for (final e in _hubMembers.entries)
+          e.key: (e.value['name'] ?? '').toString().split(' ').first,
+      },
+      events: allEvents,
+      chores: chores,
+      tasks: tasks,
+      weather: _weather,
+      quote: _quote?.text,
+      quoteAuthor: _quote?.author,
+    );
+  }
+
+  void _onChoreToggled(
+    BuildContext context,
+    String hubId,
+    String choreId,
+    String weekId,
+    bool done,
+  ) {
+    if (done) {
+      setState(() => _locallyCompletedChores.add(choreId));
+      _choreWeekIds[choreId] = weekId;
+      _choreCompletionTimers[choreId]?.cancel();
+      _choreCompletionTimers[choreId] = Timer(const Duration(seconds: 10), () {
+        _toggleWeeklyChore(hubId, choreId, true, weekId);
+        _choreCompletionTimers.remove(choreId);
+        _choreWeekIds.remove(choreId);
+        if (mounted) setState(() => _locallyCompletedChores.remove(choreId));
+      });
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Chore completed 🎉'),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'UNDO',
+            textColor: Colors.deepPurpleAccent,
+            onPressed: () {
+              _choreCompletionTimers[choreId]?.cancel();
+              _choreCompletionTimers.remove(choreId);
+              _choreWeekIds.remove(choreId);
+              setState(() => _locallyCompletedChores.remove(choreId));
+            },
+          ),
+        ),
+      );
+    } else {
+      _choreCompletionTimers[choreId]?.cancel();
+      _choreCompletionTimers.remove(choreId);
+      _choreWeekIds.remove(choreId);
+      setState(() => _locallyCompletedChores.remove(choreId));
+      _toggleWeeklyChore(hubId, choreId, false, weekId);
+    }
+  }
+
+  void _completeTask(BuildContext context, QueryDocumentSnapshot t) {
+    if (_locallyCompleted.contains(t.id)) {
+      _completionTimers[t.id]?.cancel();
+      _completionTimers.remove(t.id);
+      setState(() => _locallyCompleted.remove(t.id));
+      return;
+    }
+    setState(() => _locallyCompleted.add(t.id));
+    _completionTimers[t.id] = Timer(const Duration(seconds: 10), () {
+      t.reference.update({'isDone': true});
+      _completionTimers.remove(t.id);
+      if (mounted) setState(() => _locallyCompleted.remove(t.id));
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Task completed'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'UNDO',
+          textColor: Colors.tealAccent,
+          onPressed: () {
+            _completionTimers[t.id]?.cancel();
+            _completionTimers.remove(t.id);
+            setState(() => _locallyCompleted.remove(t.id));
+          },
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
     _midnightTimer?.cancel();
+    _weatherTimer?.cancel();
+    _quoteSub?.cancel();
 
     // Save pending Tasks
     for (var entry in _completionTimers.entries) {
@@ -141,6 +314,7 @@ class _FeedScreenState extends State<FeedScreen> {
     if (oldHubId != newHubId) {
       _listenToHubMembers();
       _listenToBirthdays();
+      _listenToQuotes();
     }
   }
 
@@ -202,20 +376,6 @@ class _FeedScreenState extends State<FeedScreen> {
       }
     }
     return virtualEvents;
-  }
-
-  bool _eventOverlapsDay(Map<String, dynamic> data, DateTime day) {
-    if (data['start'] == null) return false;
-    final checkDay = DateUtils.dateOnly(day);
-    final DateTime s = (data['start'] as Timestamp).toDate();
-    final DateTime e = data['end'] != null
-        ? (data['end'] as Timestamp).toDate()
-        : s;
-    final dayStart = DateUtils.dateOnly(s);
-    final dayEnd = DateUtils.dateOnly(e);
-    return (checkDay.isAtSameMomentAs(dayStart) ||
-            checkDay.isAfter(dayStart)) &&
-        (checkDay.isAtSameMomentAs(dayEnd) || checkDay.isBefore(dayEnd));
   }
 
   // --- NEW: Weekly Rota Helpers ---
@@ -449,38 +609,6 @@ class _FeedScreenState extends State<FeedScreen> {
                             return bTime.compareTo(aTime);
                           });
 
-                          final now = DateTime.now();
-                          final todayStart = DateUtils.dateOnly(now);
-
-                          final myEvents = allEvents.where((d) {
-                            return d['assignedTo'] == widget.user.uid ||
-                                d['assignedTo'] == 'shared';
-                          }).toList();
-
-                          final todaysEvents = myEvents.where((d) {
-                            if (!_eventOverlapsDay(d, now)) return false;
-                            final bool isAllDay = d['allDay'] ?? false;
-                            if (!isAllDay) {
-                              final DateTime s = (d['start'] as Timestamp)
-                                  .toDate();
-                              final DateTime e = d['end'] != null
-                                  ? (d['end'] as Timestamp).toDate()
-                                  : s;
-                              if (e.isBefore(now)) return false;
-                            }
-                            return true;
-                          }).toList();
-
-                          todaysEvents.sort((a, b) {
-                            final bool aAllDay = a['allDay'] ?? false;
-                            final bool bAllDay = b['allDay'] ?? false;
-                            if (aAllDay && !bAllDay) return -1;
-                            if (!aAllDay && bAllDay) return 1;
-                            final aStart = a['start'] as Timestamp;
-                            final bStart = b['start'] as Timestamp;
-                            return aStart.compareTo(bStart);
-                          });
-
                           final pendingTasks = allItems.where((d) {
                             final m = d.data() as Map<String, dynamic>;
                             final bool isPending =
@@ -492,55 +620,6 @@ class _FeedScreenState extends State<FeedScreen> {
                             return isPending &&
                                 (isAssignedToMe || isCreatedByMe);
                           }).toList();
-
-                          final activeItems = allItems.where((d) {
-                            final m = d.data() as Map<String, dynamic>;
-                            return m['status'] != 'pending_acceptance' &&
-                                (m['assignedTo'] == widget.user.uid ||
-                                    m['assignedTo'] == 'shared');
-                          }).toList();
-
-                          final priorityItems =
-                              activeItems
-                                  .where(
-                                    (d) =>
-                                        (d.data() as Map)['isUrgent'] == true,
-                                  )
-                                  .toList()
-                                ..sort((a, b) {
-                                  final aIsShop =
-                                      (a.data() as Map)['listName'] ==
-                                          'Shopping'
-                                      ? 1
-                                      : 0;
-                                  final bIsShop =
-                                      (b.data() as Map)['listName'] ==
-                                          'Shopping'
-                                      ? 1
-                                      : 0;
-                                  return aIsShop.compareTo(bIsShop);
-                                });
-
-                          final regularItems =
-                              activeItems
-                                  .where(
-                                    (d) =>
-                                        (d.data() as Map)['isUrgent'] != true,
-                                  )
-                                  .toList()
-                                ..sort((a, b) {
-                                  final aIsShop =
-                                      (a.data() as Map)['listName'] ==
-                                          'Shopping'
-                                      ? 1
-                                      : 0;
-                                  final bIsShop =
-                                      (b.data() as Map)['listName'] ==
-                                          'Shopping'
-                                      ? 1
-                                      : 0;
-                                  return aIsShop.compareTo(bIsShop);
-                                });
 
                           final List<String> rawMembers = _hubMembers.keys
                               .toList();
@@ -775,209 +854,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                 ),
                               ],
 
-                              // --- 1. TODAY'S CALENDAR EVENTS ---
-                              if (todaysEvents
-                                  .where((e) => e['category'] != 'meal')
-                                  .isNotEmpty)
-                                SliverToBoxAdapter(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    child: Column(
-                                      children: todaysEvents
-                                          .where((e) => e['category'] != 'meal')
-                                          .map(
-                                            (e) =>
-                                                _buildHeroCard(e, todayStart),
-                                          )
-                                          .toList(),
-                                    ),
-                                  ),
-                                ),
-
-                              // --- 2. PRIORITY ITEMS ---
-                              if (priorityItems.isNotEmpty) ...[
-                                _buildSectionHeader(
-                                  'PRIORITY',
-                                  icon: Icons.priority_high_rounded,
-                                  color: Colors.red,
-                                ),
-                                SliverList(
-                                  delegate: SliverChildListDelegate(
-                                    priorityItems
-                                        .map(
-                                          (item) => _buildCheckableTile(item),
-                                        )
-                                        .toList(),
-                                  ),
-                                ),
-                              ],
-
-                              // --- 3. TODAY'S MENU ---
-                              if (todaysEvents
-                                  .where((e) => e['category'] == 'meal')
-                                  .isNotEmpty)
-                                SliverToBoxAdapter(
-                                  child: Builder(
-                                    builder: (context) {
-                                      final todaysMeals = todaysEvents
-                                          .where((e) => e['category'] == 'meal')
-                                          .toList();
-
-                                      return Column(
-                                        children: [
-                                          const Padding(
-                                            padding: EdgeInsets.fromLTRB(
-                                              20,
-                                              24,
-                                              20,
-                                              8,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.restaurant_menu,
-                                                  size: 16,
-                                                  color: CalendarColors.meal,
-                                                ),
-                                                SizedBox(width: 8),
-                                                Text(
-                                                  "TODAY'S MENU",
-                                                  style: TextStyle(
-                                                    color: CalendarColors.meal,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
-                                                    letterSpacing: 1.2,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                            ),
-                                            child: Column(
-                                              children: todaysMeals.map((d) {
-                                                final bool hasIngredients =
-                                                    d.containsKey(
-                                                      'ingredients',
-                                                    ) &&
-                                                    (d['ingredients'] as List)
-                                                        .isNotEmpty;
-                                                final mealStyle =
-                                                    CalendarColors.fromMap(
-                                                      d,
-                                                      palette: _feedPalette,
-                                                    );
-                                                final mealAccent =
-                                                    mealStyle.special ??
-                                                    mealStyle.kind;
-
-                                                return Container(
-                                                  margin: const EdgeInsets.only(
-                                                    bottom: 8,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: mealStyle.washLight(
-                                                      0.16,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          12,
-                                                        ),
-                                                    border: Border.all(
-                                                      color: mealAccent
-                                                          .withValues(
-                                                            alpha: 0.45,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                  child: ListTile(
-                                                    leading: Icon(
-                                                      Icons.restaurant,
-                                                      color: mealAccent,
-                                                    ),
-                                                    title: Text(
-                                                      d['summary'] ?? '',
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color: CalendarColors
-                                                            .darkInk,
-                                                      ),
-                                                    ),
-                                                    trailing: hasIngredients
-                                                        ? FilledButton(
-                                                            style: FilledButton.styleFrom(
-                                                              backgroundColor:
-                                                                  mealAccent,
-                                                              foregroundColor:
-                                                                  CalendarColors.inkOn(
-                                                                    mealAccent,
-                                                                  ),
-                                                              visualDensity:
-                                                                  VisualDensity
-                                                                      .compact,
-                                                            ),
-                                                            onPressed: () {
-                                                              showModalBottomSheet(
-                                                                context:
-                                                                    context,
-                                                                isScrollControlled:
-                                                                    true,
-                                                                backgroundColor:
-                                                                    Colors
-                                                                        .transparent,
-                                                                builder: (_) => IngredientReviewSheet(
-                                                                  mealTitle:
-                                                                      d['summary'],
-                                                                  ingredients:
-                                                                      d['ingredients'],
-                                                                  hubId:
-                                                                      activeHubId,
-                                                                ),
-                                                              );
-                                                            },
-                                                            child: const Text(
-                                                              "Prep",
-                                                              style: TextStyle(
-                                                                fontSize: 12,
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : null,
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                ),
-
-                              // --- 4. YOUR TASKS ---
-                              if (regularItems.isNotEmpty) ...[
-                                _buildSectionHeader(
-                                  'YOUR TASKS',
-                                  icon: Icons.check_circle_outline,
-                                  color: Colors.amber.shade800,
-                                ),
-                                SliverList(
-                                  delegate: SliverChildListDelegate(
-                                    regularItems
-                                        .map(
-                                          (item) => _buildCheckableTile(item),
-                                        )
-                                        .toList(),
-                                  ),
-                                ),
-                              ],
-
-                              // --- 5. THIS WEEK'S CHORES ---
+                              // --- Legacy rota notice ---
                               if (rotaInfo != null &&
                                   rotaInfo['isLegacy'] == true)
                                 SliverToBoxAdapter(
@@ -1013,348 +890,49 @@ class _FeedScreenState extends State<FeedScreen> {
                                       ],
                                     ),
                                   ),
-                                )
-                              else if (rotaInfo != null &&
-                                  rotaInfo['isStarted'] == true &&
-                                  (rotaInfo['chores'] as List).isNotEmpty) ...[
-                                _buildSectionHeader(
-                                  'THIS WEEK\'S CHORES',
-                                  icon: Icons.cleaning_services_rounded,
-                                  color: Colors.deepPurple.shade400,
                                 ),
-                                SliverToBoxAdapter(
-                                  child: Builder(
-                                    builder: (context) {
-                                      final weekChores =
-                                          List<Map<String, dynamic>>.from(
-                                            rotaInfo['chores'],
-                                          );
-                                      final String weekId = rotaInfo['weekId'];
 
-                                      // Sort: Unfinished first, then by assigned person
-                                      weekChores.sort((a, b) {
-                                        bool aDone =
-                                            completedChores.contains(a['id']) ||
-                                            _locallyCompletedChores.contains(
-                                              a['id'],
-                                            );
-                                        bool bDone =
-                                            completedChores.contains(b['id']) ||
-                                            _locallyCompletedChores.contains(
-                                              b['id'],
-                                            );
-                                        if (aDone && !bDone) return 1;
-                                        if (!aDone && bDone) return -1;
-                                        int aIsMe =
-                                            a['assignedTo'] == widget.user.uid
-                                            ? 0
-                                            : 1;
-                                        int bIsMe =
-                                            b['assignedTo'] == widget.user.uid
-                                            ? 0
-                                            : 1;
-                                        return aIsMe.compareTo(bIsMe);
-                                      });
-
-                                      return Container(
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 4,
+                              // --- ADAPTIVE HOME FEED ---
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: HomeFeedView(
+                                    data: _feedData(
+                                      allEvents: allEvents,
+                                      allItems: allItems,
+                                      rotaInfo: rotaInfo,
+                                      completedChores: completedChores,
+                                    ),
+                                    palette: _feedPalette,
+                                    onOpenTab: widget.onOpenTab,
+                                    onToggleChore: (chore, done) =>
+                                        _onChoreToggled(
+                                          context,
+                                          activeHubId,
+                                          chore.id,
+                                          rotaInfo!['weekId'] as String,
+                                          done,
                                         ),
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.deepPurple.shade50,
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.deepPurple.shade100,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          children: weekChores.map((chore) {
-                                            final bool isMe =
-                                                chore['assignedTo'] ==
-                                                widget.user.uid;
-                                            final bool isShared =
-                                                chore['assignedTo'] == 'shared';
-                                            final assigneeId =
-                                                chore['assignedTo']
-                                                    ?.toString() ??
-                                                '';
-                                            final whoColor = isShared
-                                                ? CalendarColors.shared
-                                                : _feedPalette.whoColor(
-                                                    assigneeId.isEmpty
-                                                        ? widget.user.uid
-                                                        : assigneeId,
-                                                  );
-
-                                            // Uses local state for instant UI updates!
-                                            final bool isDone =
-                                                completedChores.contains(
-                                                  chore['id'],
-                                                ) ||
-                                                _locallyCompletedChores
-                                                    .contains(chore['id']);
-
-                                            String assigneeText = "Partner";
-                                            if (isMe) assigneeText = "YOU";
-                                            if (isShared)
-                                              assigneeText = "Shared";
-
-                                            return CheckboxListTile(
-                                              dense: true,
-                                              controlAffinity:
-                                                  ListTileControlAffinity
-                                                      .leading,
-                                              activeColor: whoColor,
-                                              value: isDone,
-                                              // Undo Grace Period Logic!
-                                              onChanged: (val) {
-                                                if (val == true) {
-                                                  setState(
-                                                    () =>
-                                                        _locallyCompletedChores
-                                                            .add(chore['id']),
-                                                  );
-                                                  _choreWeekIds[chore['id']] =
-                                                      weekId;
-                                                  _choreCompletionTimers[chore['id']] =
-                                                      Timer(
-                                                        const Duration(
-                                                          seconds: 10,
-                                                        ),
-                                                        () {
-                                                          _toggleWeeklyChore(
-                                                            activeHubId,
-                                                            chore['id'],
-                                                            true,
-                                                            weekId,
-                                                          );
-                                                          _choreCompletionTimers
-                                                              .remove(
-                                                                chore['id'],
-                                                              );
-                                                          _choreWeekIds.remove(
-                                                            chore['id'],
-                                                          );
-                                                          if (mounted)
-                                                            setState(
-                                                              () => _locallyCompletedChores
-                                                                  .remove(
-                                                                    chore['id'],
-                                                                  ),
-                                                            );
-                                                        },
-                                                      );
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).clearSnackBars();
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    SnackBar(
-                                                      content: const Text(
-                                                        'Chore completed',
-                                                      ),
-                                                      duration: const Duration(
-                                                        seconds: 8,
-                                                      ),
-                                                      action: SnackBarAction(
-                                                        label: 'UNDO',
-                                                        textColor: Colors
-                                                            .deepPurpleAccent,
-                                                        onPressed: () {
-                                                          _choreCompletionTimers[chore['id']]
-                                                              ?.cancel();
-                                                          _choreCompletionTimers
-                                                              .remove(
-                                                                chore['id'],
-                                                              );
-                                                          _choreWeekIds.remove(
-                                                            chore['id'],
-                                                          );
-                                                          setState(
-                                                            () => _locallyCompletedChores
-                                                                .remove(
-                                                                  chore['id'],
-                                                                ),
-                                                          );
-                                                        },
-                                                      ),
-                                                    ),
-                                                  );
-                                                } else {
-                                                  _choreCompletionTimers[chore['id']]
-                                                      ?.cancel();
-                                                  _choreCompletionTimers.remove(
-                                                    chore['id'],
-                                                  );
-                                                  _choreWeekIds.remove(
-                                                    chore['id'],
-                                                  );
-                                                  setState(
-                                                    () =>
-                                                        _locallyCompletedChores
-                                                            .remove(
-                                                              chore['id'],
-                                                            ),
-                                                  );
-                                                  _toggleWeeklyChore(
-                                                    activeHubId,
-                                                    chore['id'],
-                                                    false,
-                                                    weekId,
-                                                  );
-                                                }
-                                              },
-                                              title: Text(
-                                                chore['title'],
-                                                style: TextStyle(
-                                                  fontWeight: isMe
-                                                      ? FontWeight.bold
-                                                      : FontWeight.normal,
-                                                  color: isDone
-                                                      ? Colors.grey
-                                                      : (isMe
-                                                            ? Colors.black87
-                                                            : Colors
-                                                                  .grey
-                                                                  .shade600),
-                                                  decoration: isDone
-                                                      ? TextDecoration
-                                                            .lineThrough
-                                                      : null,
-                                                ),
-                                              ),
-                                              subtitle: Text(
-                                                "${chore['effortMinutes']} mins",
-                                                style: TextStyle(
-                                                  color: isDone
-                                                      ? Colors.grey
-                                                      : (isMe
-                                                            ? Colors
-                                                                  .deepPurple
-                                                                  .shade300
-                                                            : Colors
-                                                                  .grey
-                                                                  .shade400),
-                                                ),
-                                              ),
-                                              secondary: isMe
-                                                  // Dims the "YOU" box if completed!
-                                                  ? Chip(
-                                                      label: const Text("YOU"),
-                                                      backgroundColor: isDone
-                                                          ? whoColor.withValues(
-                                                              alpha: 0.45,
-                                                            )
-                                                          : whoColor,
-                                                      labelStyle: TextStyle(
-                                                        color:
-                                                            CalendarColors.inkOn(
-                                                              whoColor,
-                                                            ),
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                      visualDensity:
-                                                          VisualDensity.compact,
-                                                    )
-                                                  : Text(
-                                                      assigneeText,
-                                                      style: TextStyle(
-                                                        color: isShared
-                                                            ? CalendarColors
-                                                                  .shared
-                                                            : (isDone
-                                                                  ? Colors
-                                                                        .grey
-                                                                        .shade300
-                                                                  : Colors
-                                                                        .grey
-                                                                        .shade400),
-                                                        fontSize: 12,
-                                                        fontWeight: isShared
-                                                            ? FontWeight.bold
-                                                            : FontWeight.normal,
-                                                      ),
-                                                    ),
-                                            );
-                                          }).toList(),
-                                        ),
-                                      );
+                                    onCompleteTask: (t) {
+                                      final doc = allItems
+                                          .where((d) => d.id == t.id)
+                                          .firstOrNull;
+                                      if (doc != null) {
+                                        _completeTask(context, doc);
+                                      }
                                     },
+                                    onPrepMeal: (m) => showModalBottomSheet(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      backgroundColor: Colors.transparent,
+                                      builder: (_) => IngredientReviewSheet(
+                                        mealTitle: m['summary'],
+                                        ingredients: m['ingredients'],
+                                        hubId: activeHubId,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ],
-
-                              // --- 6. THE HORIZON ---
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 40),
-                              ),
-                              _buildSectionHeader(
-                                'THE HORIZON',
-                                icon: Icons.remove_red_eye_outlined,
-                              ),
-
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final day = todayStart.add(
-                                    Duration(days: index + 1),
-                                  );
-
-                                  final dayEvents =
-                                      myEvents
-                                          .where(
-                                            (d) => _eventOverlapsDay(d, day),
-                                          )
-                                          .toList()
-                                        ..sort(
-                                          (a, b) => (a['start'] as Timestamp)
-                                              .compareTo(
-                                                b['start'] as Timestamp,
-                                              ),
-                                        );
-
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _buildDateDivider(day),
-                                        if (dayEvents.isEmpty)
-                                          const Padding(
-                                            padding: EdgeInsets.only(
-                                              left: 8,
-                                              bottom: 20,
-                                            ),
-                                            child: Text(
-                                              'Nothing scheduled',
-                                              style: TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          )
-                                        else ...[
-                                          ...dayEvents.map(
-                                            (e) => _buildSmallEventTile(e, day),
-                                          ),
-                                          const SizedBox(height: 10),
-                                        ],
-                                      ],
-                                    ),
-                                  );
-                                }, childCount: 7),
                               ),
                               const SliverToBoxAdapter(
                                 child: SizedBox(height: 100),
@@ -1395,80 +973,6 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeroCard(Map<String, dynamic> d, DateTime day) {
-    final bool isAllDay = d['allDay'] ?? false;
-    final DateTime s = (d['start'] as Timestamp).toDate();
-    final DateTime now = DateTime.now();
-
-    final DateTime e = d['end'] != null ? (d['end'] as Timestamp).toDate() : s;
-    bool isHappeningNow = false;
-    if (isAllDay) {
-      if (_eventOverlapsDay(d, now)) isHappeningNow = true;
-    } else {
-      if (s.isBefore(now) && e.isAfter(now)) isHappeningNow = true;
-    }
-
-    final String timeStr = isAllDay ? 'All Day' : DateFormat('HH:mm').format(s);
-    final String badgeText = isHappeningNow ? 'HAPPENING NOW' : 'ON TODAY';
-
-    final style = CalendarColors.fromMap(d, palette: _feedPalette);
-    final subtitle = isAllDay ? badgeText : '$badgeText · $timeStr';
-
-    return CalendarSplitPill(
-      style: style,
-      title: (d['summary'] ?? '').toString(),
-      subtitle: subtitle,
-      density: CalendarSplitPillDensity.comfortable,
-      margin: const EdgeInsets.only(bottom: 8),
-    );
-  }
-
-  Widget _buildSmallEventTile(Map<String, dynamic> d, DateTime day) {
-    final bool isAllDay = d['allDay'] ?? false;
-    final DateTime s = (d['start'] as Timestamp).toDate();
-    final String timeStr = isAllDay ? 'All Day' : DateFormat('HH:mm').format(s);
-
-    final bool isMeal = d['category'] == 'meal';
-    final String category = d['category'] ?? 'general';
-    final style = CalendarColors.fromMap(d, palette: _feedPalette);
-    final Widget? leading = isMeal
-        ? Icon(Icons.restaurant, color: style.inkOnWho, size: 16)
-        : category == 'birthday'
-        ? Icon(Icons.cake, color: style.inkOnWho, size: 16)
-        : category == 'work'
-        ? Icon(Icons.work, color: style.inkOnWho, size: 16)
-        : null;
-
-    return CalendarSplitPill(
-      style: style,
-      title: (d['summary'] ?? '').toString(),
-      subtitle: isMeal ? null : timeStr,
-      leading: leading,
-      density: CalendarSplitPillDensity.regular,
-      margin: const EdgeInsets.only(bottom: 8),
-    );
-  }
-
-  Widget _buildDateDivider(DateTime day) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 12),
-      child: Row(
-        children: [
-          Text(
-            DateFormat('EEEE, d MMM').format(day).toUpperCase(),
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-              color: Colors.black54,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Divider(color: Colors.grey.shade300)),
-        ],
       ),
     );
   }
@@ -1566,127 +1070,5 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
       );
     }
-  }
-
-  Widget _buildCheckableTile(QueryDocumentSnapshot t) {
-    return Builder(
-      builder: (context) {
-        final d = t.data() as Map<String, dynamic>;
-        final bool isUrgent = d['isUrgent'] == true;
-        final bool isShopping = d['listName'] == 'Shopping';
-        final bool isVisuallyDone = _locallyCompleted.contains(t.id);
-
-        Color bgColor;
-        Color borderColor;
-        Color tickColor;
-
-        if (isUrgent && isShopping) {
-          bgColor = Colors.green.shade50;
-          borderColor = Colors.red.shade300;
-          tickColor = Colors.red;
-        } else if (isUrgent) {
-          bgColor = Colors.red.shade50;
-          borderColor = Colors.red.shade100;
-          tickColor = Colors.red;
-        } else if (isShopping) {
-          bgColor = Colors.green.shade50;
-          borderColor = Colors.green.shade300;
-          tickColor = Colors.green.shade700;
-        } else {
-          bgColor = Colors.amber.shade50; // Amber task background
-          borderColor = Colors.amber.shade200; // Amber border
-          tickColor = Colors.amber.shade800; // Amber tick
-        }
-
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderColor),
-          ),
-          child: Row(
-            children: [
-              Checkbox(
-                value: isVisuallyDone,
-                activeColor: tickColor,
-                checkColor: Colors.white,
-                side: BorderSide(color: tickColor),
-                onChanged: (v) {
-                  if (v == true) {
-                    setState(() => _locallyCompleted.add(t.id));
-                    _completionTimers[t.id] = Timer(
-                      const Duration(seconds: 10),
-                      () {
-                        t.reference.update({'isDone': true});
-                        _completionTimers.remove(t.id);
-                        if (mounted)
-                          setState(() => _locallyCompleted.remove(t.id));
-                      },
-                    );
-                    ScaffoldMessenger.of(context).clearSnackBars();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('Task completed'),
-                        duration: const Duration(seconds: 8),
-                        action: SnackBarAction(
-                          label: 'UNDO',
-                          textColor: Colors.tealAccent,
-                          onPressed: () {
-                            _completionTimers[t.id]?.cancel();
-                            _completionTimers.remove(t.id);
-                            setState(() => _locallyCompleted.remove(t.id));
-                          },
-                        ),
-                      ),
-                    );
-                  } else {
-                    _completionTimers[t.id]?.cancel();
-                    _completionTimers.remove(t.id);
-                    setState(() => _locallyCompleted.remove(t.id));
-                  }
-                },
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        if (isUrgent) ...[
-                          const Icon(
-                            Icons.warning_rounded,
-                            color: Colors.red,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Expanded(
-                          child: Text(
-                            d['text'] ?? '',
-                            style: TextStyle(
-                              fontWeight: isUrgent
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              color: isVisuallyDone
-                                  ? Colors.grey
-                                  : Colors.black87,
-                              decoration: isVisuallyDone
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 }

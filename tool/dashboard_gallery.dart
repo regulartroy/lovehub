@@ -5,6 +5,8 @@ import 'voice_spike_gallery.dart';
 import 'package:lovehub/models/quote_model.dart';
 import 'package:lovehub/repositories/quote_repository.dart';
 import 'package:lovehub/screens/dashboard/quotes_screen.dart';
+import 'package:lovehub/services/home_feed_logic.dart';
+import 'package:lovehub/widgets/home_feed/home_feed_view.dart';
 import 'package:lovehub/services/dashboard_voice.dart';
 import 'package:lovehub/theme/calendar_colors.dart';
 import 'package:lovehub/widgets/quote_composer.dart';
@@ -61,6 +63,11 @@ class DashboardGalleryPage extends StatelessWidget {
           birthdays: galleryBirthdays(today).take(count).toList(),
         ),
       );
+    }
+
+    const feedOnly = bool.fromEnvironment('FEED_ONLY');
+    if (feedOnly) {
+      return const _FeedGallery();
     }
 
     const quotesOnly = bool.fromEnvironment('QUOTES_ONLY');
@@ -1210,6 +1217,184 @@ class _QuotesGalleryState extends State<_QuotesGallery> {
       hubId: 'gallery',
       repository: _GalleryQuotes(empty: scene == 'empty'),
       speechRecognizer: _GalleryRecognizer(supported: scene != 'unsupported'),
+    );
+  }
+}
+
+/// FEED_ONLY gallery: the adaptive Home feed with sample data.
+/// `?time=morning|afternoon|evening|night` picks the moment (Fri 23 Oct).
+class _FeedGallery extends StatefulWidget {
+  const _FeedGallery();
+
+  @override
+  State<_FeedGallery> createState() => _FeedGalleryState();
+}
+
+class _FeedGalleryState extends State<_FeedGallery> {
+  final Set<String> _done = {'c3'};
+
+  static const tom = 'tom';
+  static const maria = 'maria';
+
+  @override
+  Widget build(BuildContext context) {
+    final time = Uri.base.queryParameters['time'] ?? 'morning';
+    final hour = switch (time) {
+      'afternoon' => 13,
+      'evening' => 18,
+      'night' => 23,
+      _ => 8,
+    };
+    final now = DateTime(2026, 10, 23, hour, 5);
+    DateTime at(int d, int h, [int m = 0]) => DateTime(2026, 10, 23 + d, h, m);
+    Map<String, dynamic> e(
+      String title,
+      DateTime s,
+      DateTime en, {
+      String who = 'shared',
+      String cat = 'general',
+      bool allDay = false,
+      String? status,
+    }) => {
+      'summary': title,
+      'start': s,
+      'end': en,
+      'assignedTo': who,
+      'category': cat,
+      'allDay': allDay,
+      'status': ?status,
+    };
+    final chores = [
+      ('c1', 'Dusting (Window sills, appliances, plants etc)', tom, 30),
+      ('c2', 'Clean Bathroom', tom, 25),
+      ('c3', 'Hoovering', tom, 15),
+      ('c4', 'Check fridge for expired food', tom, 5),
+      ('c5', 'Change Bedding', maria, 30),
+      ('c6', 'Change Litter', maria, 20),
+      ('c7', 'Hoovering', maria, 15),
+      ('c8', 'Water plants', maria, 10),
+    ];
+    final data = HomeFeedData(
+      now: now,
+      myUid: tom,
+      names: const {tom: 'Tom', maria: 'Maria'},
+      events: [
+        e(
+          'C2 — R&B Orchestra',
+          at(0, 15),
+          at(0, 23, 30),
+          who: tom,
+          cat: 'work',
+          status: 'tentative',
+        ),
+        e(
+          'C2 — Bou',
+          at(0, 22),
+          at(1, 4, 30),
+          who: tom,
+          cat: 'work',
+          status: 'tentative',
+        ),
+        e('Coffee with Janis', at(0, 10, 30), at(0, 11, 30), who: maria),
+        e('Enzo walk on the Downs', at(0, 9), at(0, 10)),
+        e(
+          'C2 — Dirty DC',
+          at(1, 15),
+          at(1, 23, 30),
+          who: tom,
+          cat: 'work',
+          status: 'tentative',
+        ),
+        e('Brunch at Bills', at(1, 11), at(1, 12, 30)),
+        e(
+          'C2 — Hold Tight',
+          at(1, 22),
+          at(2, 3, 30),
+          who: tom,
+          cat: 'work',
+          status: 'tentative',
+        ),
+        e('Fajitas', at(0, 19), at(0, 20), cat: 'meal'),
+        e(
+          "Bella Burch's Birthday",
+          DateTime(2026, 10, 26),
+          DateTime(2026, 10, 26),
+          cat: 'birthday',
+          allDay: true,
+        ),
+      ],
+      chores: [
+        for (final (id, t, who, m) in chores)
+          FeedChore(
+            id: id,
+            title: t,
+            assignedTo: who,
+            minutes: m,
+            done: _done.contains(id),
+          ),
+      ],
+      tasks: [
+        FeedTask(
+          id: 't1',
+          text: 'Book Enzo vet booster',
+          due: DateTime(2026, 10, 21),
+          urgent: true,
+        ),
+        FeedTask(
+          id: 't2',
+          text: 'Pay council tax',
+          due: DateTime(2026, 10, 23),
+        ),
+        const FeedTask(id: 't3', text: 'Call the letting agent'),
+        FeedTask(id: 't4', text: 'Gift for Bella', due: DateTime(2026, 10, 25)),
+        const FeedTask(id: 's1', text: 'Milk', listName: 'Shopping'),
+        const FeedTask(id: 's2', text: 'Bananas', listName: 'Shopping'),
+        const FeedTask(id: 's3', text: 'Dog food', listName: 'Shopping'),
+        const FeedTask(id: 's4', text: 'Tin foil', listName: 'Shopping'),
+      ],
+      weather: FeedWeather(
+        city: 'Brighton',
+        tempNow: 12,
+        todayMax: 14,
+        todayMin: 8,
+        rainChance: time == 'morning' || time == 'afternoon' ? 70 : 20,
+        rainFrom: at(0, 15),
+      ),
+      quote: "God that soundcheck was long. It was a whole bag of Haribo long",
+      quoteAuthor: 'Pob',
+    );
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 14, 20, 10),
+                child: Text(
+                  'Good morning, Tom',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w300,
+                    color: Colors.black54,
+                  ),
+                ),
+              ),
+              HomeFeedView(
+                data: data,
+                palette: HubMemberPalette.fromMembers(const [
+                  {'uid': tom, 'name': 'Tom'},
+                  {'uid': maria, 'name': 'Maria'},
+                ]),
+                onToggleChore: (c, v) =>
+                    setState(() => v ? _done.add(c.id) : _done.remove(c.id)),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

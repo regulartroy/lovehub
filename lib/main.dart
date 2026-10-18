@@ -608,6 +608,7 @@ class _MainScreenState extends State<MainScreen>
               children: [
                 // We pass _joinedHubs and _pendingHubs into FeedScreen now!
                 FeedScreen(
+                  onOpenTab: (i) => _tabController.animateTo(i),
                   user: _user!,
                   visibleHubs: _visibleHubs,
                   joinedHubs: _joinedHubs,
