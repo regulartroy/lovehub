@@ -639,21 +639,16 @@ class _FeedScreenState extends State<FeedScreen> {
                                     children: [
                                       Builder(
                                         builder: (context) {
-                                          final hour = DateTime.now().hour;
-                                          String greeting = hour < 12
-                                              ? 'Good morning'
-                                              : hour < 17
-                                              ? 'Good afternoon'
-                                              : 'Good evening';
                                           final firstName =
                                               widget.user.displayName?.split(
                                                 ' ',
                                               )[0] ??
                                               '';
                                           return Text(
-                                            firstName.isNotEmpty
-                                                ? '$greeting, $firstName'
-                                                : greeting,
+                                            feedGreeting(
+                                              DateTime.now(),
+                                              firstName,
+                                            ),
                                             style: const TextStyle(
                                               fontSize: 22,
                                               fontWeight: FontWeight.w300,

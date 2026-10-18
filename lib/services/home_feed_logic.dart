@@ -667,3 +667,19 @@ String feedDueLabel(DateTime due, DateTime now) {
   if (days < 7) return DateFormat('EEE d').format(due);
   return DateFormat('d MMM').format(due);
 }
+
+/// Header greeting from the same clock as the Now card:
+/// 05–12 morning, 12–17 afternoon, 17–22 evening, otherwise "Still up?".
+String feedGreeting(DateTime now, [String? firstName]) {
+  final name = (firstName ?? '').trim();
+  switch (feedMomentFor(now)) {
+    case FeedMoment.morning:
+      return name.isEmpty ? 'Good morning' : 'Good morning, $name';
+    case FeedMoment.afternoon:
+      return name.isEmpty ? 'Good afternoon' : 'Good afternoon, $name';
+    case FeedMoment.evening:
+      return name.isEmpty ? 'Good evening' : 'Good evening, $name';
+    case FeedMoment.night:
+      return name.isEmpty ? 'Still up?' : 'Still up, $name?';
+  }
+}
