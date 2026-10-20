@@ -19,6 +19,7 @@ import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../theme/calendar_colors.dart';
 import '../widgets/calendar_split_pill.dart';
 import '../widgets/dashboard/dashboard_chrome.dart';
+import '../widgets/dashboard/dashboard_day_tiles.dart';
 import '../widgets/dashboard/dashboard_controls_overlay.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
 import '../widgets/dashboard/dashboard_today_answer.dart';
@@ -876,7 +877,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        flex: 60,
+                        flex: 64,
                         child: _buildScheduleBox(
                           metrics,
                           startDayOffset: 0,
@@ -886,7 +887,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       SizedBox(width: metrics.isWide ? 32 : 24),
                       Expanded(
-                        flex: 40,
+                        flex: 36,
                         child: _buildScheduleBox(
                           metrics,
                           startDayOffset: 2,
@@ -996,12 +997,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 )
+              else if (large)
+                DashboardDayTiles(
+                  items: [for (final d in events) _dayItem(d, checkDate)],
+                )
               else
                 ...events.map((d) => _eventRow(d, checkDate, large)),
             ],
           );
         }),
       ),
+    );
+  }
+
+  DashboardDayItem _dayItem(Map<String, dynamic> data, DateTime checkDate) {
+    final category = data['category'] ?? 'general';
+    final dayStart = DateUtils.dateOnly(checkDate);
+    final nextDay = calendarDayOffset(dayStart, 1);
+    final start = dashboardEventDateTime(data['start']);
+    final end = dashboardEventDateTime(data['end']);
+    final coversDay =
+        start != null &&
+        end != null &&
+        !start.isAfter(dayStart) &&
+        !end.isBefore(nextDay);
+    return DashboardDayItem(
+      style: CalendarColors.fromMap(data, palette: _memberPalette),
+      title: _formatMultiDayTitle(data, checkDate),
+      timeLabel: dashboardEventTimeRangeLabel(data),
+      start: start == null || start.isBefore(dayStart) ? dayStart : start,
+      allDay: data['allDay'] == true || coversDay,
+      birthday: category == 'birthday',
+      avatar: _memberAvatar(data['assignedTo'] ?? 'shared', radius: 13),
+      icon: category == 'meal' ? Icons.restaurant : null,
     );
   }
 
@@ -1018,6 +1046,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       title: _formatMultiDayTitle(data, checkDate),
       subtitle: timeStr,
       fitSubtitle: true,
+      tentativeMarkInline: true,
       density: large
           ? CalendarSplitPillDensity.comfortable
           : CalendarSplitPillDensity.regular,
@@ -1161,10 +1190,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    isDone ? Icons.check_circle_rounded : Icons.circle_outlined,
-                    color: isDone ? Colors.green : Colors.white38,
-                    size: metrics.isCompact ? 22 : 26,
+                  DashboardChoreIcon(
+                    title: (chore['title'] ?? '').toString(),
+                    done: isDone,
+                    tint: themeColor,
+                    size: metrics.isCompact ? 30 : 36,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1498,16 +1528,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: urgent ? DashboardTheme.shoppingUrgent : Colors.white54,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.3,
+          if (urgent) ...[
+            Text(
+              title,
+              style: const TextStyle(
+                color: DashboardTheme.shoppingUrgent,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.3,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           Expanded(
             child: _shopList(items, isUrgent: urgent, metrics: metrics),
           ),

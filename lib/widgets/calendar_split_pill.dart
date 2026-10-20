@@ -21,6 +21,7 @@ class CalendarSplitPill extends StatelessWidget {
     this.density = CalendarSplitPillDensity.regular,
     this.margin,
     this.fitSubtitle = false,
+    this.tentativeMarkInline = false,
   });
 
   final CalendarEventStyle style;
@@ -35,6 +36,10 @@ class CalendarSplitPill extends StatelessWidget {
   /// Shrink the time line to fit instead of truncating it with an ellipsis.
   /// The title is unaffected.
   final bool fitSubtitle;
+
+  /// Put the tentative `?` right before the title text (on the category
+  /// half) instead of before the avatar on the person half.
+  final bool tentativeMarkInline;
 
   static const Key whoKey = Key('calendar-split-who');
   static const Key kindKey = Key('calendar-split-kind');
@@ -116,6 +121,10 @@ class CalendarSplitPill extends StatelessWidget {
       padding: _kindPadding,
       child: Row(
         children: [
+          if (style.tentative && tentativeMarkInline) ...[
+            _tentativeMark(),
+            SizedBox(width: _compact ? 4 : 8),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -200,28 +209,32 @@ class CalendarSplitPill extends StatelessWidget {
     return Padding(padding: margin!, child: pill);
   }
 
+  Widget _tentativeMark() {
+    return Container(
+      key: CalendarSplitPill.tentativeMarkKey,
+      width: _compact ? 16 : 22,
+      height: _compact ? 16 : 22,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: CalendarColors.darkInk,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        '?',
+        semanticsLabel: 'Tentative',
+        style: TextStyle(
+          color: CalendarColors.lightInk,
+          fontSize: _compact ? 11 : 14,
+          fontWeight: FontWeight.w800,
+          height: 1,
+        ),
+      ),
+    );
+  }
+
   Widget _whoBox() {
-    final mark = style.tentative
-        ? Container(
-            key: CalendarSplitPill.tentativeMarkKey,
-            width: _compact ? 16 : 22,
-            height: _compact ? 16 : 22,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: CalendarColors.darkInk,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              '?',
-              semanticsLabel: 'Tentative',
-              style: TextStyle(
-                color: CalendarColors.lightInk,
-                fontSize: _compact ? 11 : 14,
-                fontWeight: FontWeight.w800,
-                height: 1,
-              ),
-            ),
-          )
+    final mark = style.tentative && !tentativeMarkInline
+        ? _tentativeMark()
         : null;
     final showLeading = leading != null && !(_compact && style.tentative);
     return ColoredBox(

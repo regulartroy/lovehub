@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../services/home_feed_logic.dart';
+
 import 'dashboard_theme.dart';
 
 class DashboardSlide extends StatelessWidget {
@@ -24,10 +26,7 @@ class DashboardSlide extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: gradient ?? DashboardTheme.slideGradient(tint),
       ),
-      child: Padding(
-        padding: padding ?? metrics.slidePadding,
-        child: child,
-      ),
+      child: Padding(padding: padding ?? metrics.slidePadding, child: child),
     );
   }
 }
@@ -162,10 +161,7 @@ class DashboardEmptyState extends StatelessWidget {
                   height: 1.45,
                 ),
               ),
-              if (action != null) ...[
-                const SizedBox(height: 24),
-                action!,
-              ],
+              if (action != null) ...[const SizedBox(height: 24), action!],
             ],
           ),
         ),
@@ -175,7 +171,10 @@ class DashboardEmptyState extends StatelessWidget {
 }
 
 class DashboardLoadingView extends StatelessWidget {
-  const DashboardLoadingView({super.key, this.label = 'Getting your home ready…'});
+  const DashboardLoadingView({
+    super.key,
+    this.label = 'Getting your home ready…',
+  });
 
   final String label;
 
@@ -241,6 +240,45 @@ class DashboardPageDots extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+/// Round chore badge for the HOUSE ROTA slide, using the same per-chore
+/// icon as the Home feed tiles ([choreIconFor]). Done chores show a tick.
+class DashboardChoreIcon extends StatelessWidget {
+  const DashboardChoreIcon({
+    super.key,
+    required this.title,
+    required this.done,
+    required this.tint,
+    this.size = 36,
+  });
+
+  final String title;
+  final bool done;
+  final Color tint;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: done
+            ? Colors.green.withValues(alpha: 0.85)
+            : tint.withValues(alpha: 0.22),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: done ? Colors.transparent : tint.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Icon(
+        done ? Icons.check_rounded : choreIconFor(title),
+        size: size * 0.56,
+        color: done ? Colors.white : tint,
+      ),
     );
   }
 }

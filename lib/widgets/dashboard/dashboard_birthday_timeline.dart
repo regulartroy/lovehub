@@ -468,32 +468,57 @@ class DashboardBirthdayTimeline extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.biggest;
+        // Lay the fan out a little shorter than the slot, then centre it,
+        // so the timeline sits mid-slide instead of hugging the bottom.
         final layout = BirthdayTimelineLayout.compute(
-          size: size,
+          size: Size(size.width, size.height * 0.84),
           birthdays: birthdays,
           today: DateUtils.dateOnly(today),
           compact: metrics.isCompact,
         );
         final count = layout.tiles.length;
-        return Stack(
-          key: const ValueKey('birthday-timeline'),
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _TimelinePainter(layout, compact: metrics.isCompact),
+        // The layout hugs the bottom-left; lift the whole fan so its
+        // visual bounds (line labels to the front tile's foot) sit centred.
+        var top = double.infinity;
+        var bottom = -double.infinity;
+        for (final o in layout.line) {
+          top = math.min(top, o.dy - 28);
+        }
+        for (final t in layout.tiles) {
+          final half = layout.baseTile * t.scale / 2;
+          top = math.min(top, t.center.dy - half);
+          bottom = math.max(bottom, t.center.dy + half);
+        }
+        var lift = 0.0;
+        if (top.isFinite && bottom.isFinite) {
+          lift = (size.height - (top + bottom)) / 2;
+          lift = math.max(lift, 8 - top);
+        }
+        return Transform.translate(
+          offset: Offset(0, lift),
+          child: Stack(
+            key: const ValueKey('birthday-timeline'),
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _TimelinePainter(
+                      layout,
+                      compact: metrics.isCompact,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            for (var i = 0; i < count; i++)
-              _placeTile(
-                layout,
-                layout.tiles[i],
-                // tiles are far → near; index from the front:
-                blur: count - 1 - i < blurredTiles,
-              ),
-          ],
+              for (var i = 0; i < count; i++)
+                _placeTile(
+                  layout,
+                  layout.tiles[i],
+                  // tiles are far → near; index from the front:
+                  blur: count - 1 - i < blurredTiles,
+                ),
+            ],
+          ),
         );
       },
     );
