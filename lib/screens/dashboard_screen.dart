@@ -7,6 +7,7 @@ import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/event_sanity.dart';
+import '../services/shared_streams.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
@@ -72,6 +73,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _rotaConfig;
 
   List<String> _photoUrls = [];
+
+  /// Streams used inside slide widgets. Slides are rebuilt on every data
+  /// event, so they must look streams up here instead of creating them.
+  final SharedStreams _streams = SharedStreams();
+  final Stream<int> _clockTicks = Stream<int>.periodic(
+    const Duration(seconds: 1),
+    (i) => i,
+  ).asBroadcastStream();
   String? _currentPhotoUrl;
 
   String _primaryCityName = 'Brighton';
@@ -168,6 +177,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    _streams.dispose();
     WebResumeController.instance.dashboardClosed();
     for (final sub in _subs) {
       sub.cancel();
@@ -1303,13 +1313,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
+    final hubId = widget.visibleHubs.first.key;
+    final logKey = 'log:$hubId:week_$weekId';
+    _streams.evictPrefix('log:$hubId:', keep: logKey);
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('hubs')
-          .doc(widget.visibleHubs.first.key)
-          .collection('rota_logs')
-          .doc('week_$weekId')
-          .snapshots(),
+      stream: _streams.watch(
+        logKey,
+        () => FirebaseFirestore.instance
+            .collection('hubs')
+            .doc(hubId)
+            .collection('rota_logs')
+            .doc('week_$weekId')
+            .snapshots(),
+      ),
       builder: (context, snapshot) {
         var completed = <String>[];
         if (snapshot.hasData && snapshot.data!.exists) {
@@ -1790,7 +1806,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isDay = (weather?['current']?['is_day'] as num?)?.toInt() ?? 1;
 
     return StreamBuilder<int>(
-      stream: Stream<int>.periodic(const Duration(seconds: 1), (i) => i),
+      stream: _clockTicks,
       builder: (context, _) {
         final now = DateTime.now();
         return SafeArea(

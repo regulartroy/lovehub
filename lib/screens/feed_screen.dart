@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/event_sanity.dart';
+import '../services/shared_streams.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -62,6 +63,12 @@ class _FeedScreenState extends State<FeedScreen> {
   Timer? _weatherTimer;
   late final HubMemberDirectory _memberDirectory;
 
+  /// One Firestore listener per query for this screen's lifetime; build()
+  /// only looks streams up here (see [SharedStreams]).
+  final SharedStreams _streams = SharedStreams();
+  @visibleForTesting
+  SharedStreams get debugStreams => _streams;
+
   @override
   void initState() {
     super.initState();
@@ -79,7 +86,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _listenToHubMembers();
 
     if (widget.visibleHubs.isNotEmpty) {
-      FirebaseFirestore.instance
+      _birthdaySub = FirebaseFirestore.instance
           .collection('hubs')
           .doc(widget.visibleHubs.first.key)
           .collection('birthdays')
@@ -265,6 +272,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   void dispose() {
+    _streams.dispose();
     _midnightTimer?.cancel();
     _weatherTimer?.cancel();
     _quoteSub?.cancel();
@@ -503,7 +511,15 @@ class _FeedScreenState extends State<FeedScreen> {
     }
 
     final activeHubId = widget.visibleHubs.first.key;
-    final lookBack = DateTime.now().subtract(const Duration(days: 60));
+    // Day-granular so the query (and its listener) only changes once a day.
+    final lookBack = DateUtils.dateOnly(
+      DateTime.now(),
+    ).subtract(const Duration(days: 60));
+    final dayKey = DateFormat('yyyy-MM-dd').format(lookBack);
+    _streams.evictPrefix(
+      'events:$activeHubId:',
+      keep: 'events:$activeHubId:$dayKey',
+    );
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -521,7 +537,10 @@ class _FeedScreenState extends State<FeedScreen> {
       ),
 
       body: StreamBuilder<Map<String, dynamic>?>(
-        stream: RotaRepository().streamRotaConfig(activeHubId),
+        stream: _streams.watch(
+          'rota:$activeHubId',
+          () => RotaRepository().streamRotaConfig(activeHubId),
+        ),
         builder: (context, rotaSnapshot) {
           final rotaConfig = rotaSnapshot.data;
           final rotaInfo = _getWeeklyRotaInfo(rotaConfig, DateTime.now());
@@ -529,13 +548,20 @@ class _FeedScreenState extends State<FeedScreen> {
               ? 'week_${rotaInfo!['weekId']}'
               : 'dummy_log';
 
+          _streams.evictPrefix(
+            'log:$activeHubId:',
+            keep: 'log:$activeHubId:$logDocId',
+          );
           return StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('hubs')
-                .doc(activeHubId)
-                .collection('rota_logs')
-                .doc(logDocId)
-                .snapshots(),
+            stream: _streams.watch(
+              'log:$activeHubId:$logDocId',
+              () => FirebaseFirestore.instance
+                  .collection('hubs')
+                  .doc(activeHubId)
+                  .collection('rota_logs')
+                  .doc(logDocId)
+                  .snapshots(),
+            ),
             builder: (context, weeklyLogSnapshot) {
               final weeklyLogDoc = weeklyLogSnapshot.data;
 
@@ -548,33 +574,42 @@ class _FeedScreenState extends State<FeedScreen> {
               }
 
               return StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('hubs')
-                    .doc(activeHubId)
-                    .collection('notifications')
-                    .where('toUid', isEqualTo: widget.user.uid)
-                    .where('isRead', isEqualTo: false)
-                    .snapshots(),
+                stream: _streams.watch(
+                  'notifs:$activeHubId',
+                  () => FirebaseFirestore.instance
+                      .collection('hubs')
+                      .doc(activeHubId)
+                      .collection('notifications')
+                      .where('toUid', isEqualTo: widget.user.uid)
+                      .where('isRead', isEqualTo: false)
+                      .snapshots(),
+                ),
                 builder: (context, notifSnapshot) {
                   return StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('hubs')
-                        .doc(activeHubId)
-                        .collection('events')
-                        .where(
-                          'start',
-                          isGreaterThan: Timestamp.fromDate(lookBack),
-                        )
-                        .orderBy('start')
-                        .snapshots(),
+                    stream: _streams.watch(
+                      'events:$activeHubId:$dayKey',
+                      () => FirebaseFirestore.instance
+                          .collection('hubs')
+                          .doc(activeHubId)
+                          .collection('events')
+                          .where(
+                            'start',
+                            isGreaterThan: Timestamp.fromDate(lookBack),
+                          )
+                          .orderBy('start')
+                          .snapshots(),
+                    ),
                     builder: (context, eventSnapshot) {
                       return StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('hubs')
-                            .doc(activeHubId)
-                            .collection('items')
-                            .where('isDone', isEqualTo: false)
-                            .snapshots(),
+                        stream: _streams.watch(
+                          'items:$activeHubId',
+                          () => FirebaseFirestore.instance
+                              .collection('hubs')
+                              .doc(activeHubId)
+                              .collection('items')
+                              .where('isDone', isEqualTo: false)
+                              .snapshots(),
+                        ),
                         builder: (context, itemSnapshot) {
                           if (!eventSnapshot.hasData && !eventSnapshot.hasError)
                             return const Center(
@@ -763,11 +798,14 @@ class _FeedScreenState extends State<FeedScreen> {
                               if (widget.joinedHubs[activeHubId]?['role'] ==
                                   'admin')
                                 StreamBuilder<QuerySnapshot>(
-                                  stream: FirebaseFirestore.instance
-                                      .collection('hubs')
-                                      .doc(activeHubId)
-                                      .collection('requests')
-                                      .snapshots(),
+                                  stream: _streams.watch(
+                                    'requests:$activeHubId',
+                                    () => FirebaseFirestore.instance
+                                        .collection('hubs')
+                                        .doc(activeHubId)
+                                        .collection('requests')
+                                        .snapshots(),
+                                  ),
                                   builder: (context, reqSnapshot) {
                                     if (!reqSnapshot.hasData ||
                                         reqSnapshot.data!.docs.isEmpty)
