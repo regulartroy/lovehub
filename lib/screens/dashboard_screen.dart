@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../services/event_sanity.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
@@ -195,7 +196,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final year = b['year'] as int?;
 
       for (int y = currentYear - 1; y <= currentYear + 2; y++) {
-        final title = year != null ? "${b['name']} (${y - year})" : "${b['name']}";
+        final title = year != null
+            ? "${b['name']} (${y - year})"
+            : "${b['name']}";
         final date = DateTime(y, month, day);
         virtualEvents.add({
           'id': 'bday_${b['id']}_$y',
@@ -229,7 +232,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final hubId = widget.visibleHubs.first.key;
 
     try {
-      final hubDoc = await FirebaseFirestore.instance.collection('hubs').doc(hubId).get();
+      final hubDoc = await FirebaseFirestore.instance
+          .collection('hubs')
+          .doc(hubId)
+          .get();
       if (!hubDoc.exists) {
         if (!mounted) return;
         setState(() {
@@ -261,11 +267,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .collection('birthdays')
           .snapshots()
           .listen((snap) {
-        if (!mounted) return;
-        _birthdays = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-        _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
-        _rebuildSlides(_widthOrDefault);
-      }, onError: (_) {}),
+            if (!mounted) return;
+            _birthdays = snap.docs
+                .map((d) => {'id': d.id, ...d.data()})
+                .toList();
+            _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
+            _rebuildSlides(_widthOrDefault);
+          }, onError: (_) {}),
     );
 
     final lookBack = DateTime.now().subtract(const Duration(days: 60));
@@ -278,13 +286,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .orderBy('start')
           .snapshots()
           .listen((snap) {
-        if (!mounted) return;
-        _rawEvents = snap.docs
-            .map((d) => {'id': d.id, ...d.data()})
-            .toList();
-        _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
-        _rebuildSlides(_widthOrDefault);
-      }, onError: (_) {}),
+            if (!mounted) return;
+            _rawEvents = sanitizeEventMaps(
+              snap.docs.map((d) => {'id': d.id, ...d.data()}),
+            );
+            _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
+            _rebuildSlides(_widthOrDefault);
+          }, onError: (_) {}),
     );
 
     _subs.add(
@@ -295,10 +303,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .where('isDone', isEqualTo: false)
           .snapshots()
           .listen((snap) {
-        if (!mounted) return;
-        _allTasks = snap.docs;
-        _rebuildSlides(_widthOrDefault);
-      }, onError: (_) {}),
+            if (!mounted) return;
+            _allTasks = snap.docs;
+            _rebuildSlides(_widthOrDefault);
+          }, onError: (_) {}),
     );
 
     _subs.add(
@@ -309,10 +317,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .doc('config')
           .snapshots()
           .listen((snap) {
-        if (!mounted) return;
-        _rotaConfig = snap.data();
-        _rebuildSlides(_widthOrDefault);
-      }, onError: (_) {}),
+            if (!mounted) return;
+            _rotaConfig = snap.data();
+            _rebuildSlides(_widthOrDefault);
+          }, onError: (_) {}),
     );
 
     _subs.add(
@@ -322,13 +330,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .collection('quotes')
           .snapshots()
           .listen((snap) {
-        if (!mounted) return;
-        _customQuotes = snap.docs
-            .map((d) => QuoteModel.fromMap(d.data(), id: d.id))
-            .where((q) => q.text.isNotEmpty)
-            .toList();
-        _pickRandomQuote();
-      }, onError: (_) {}),
+            if (!mounted) return;
+            _customQuotes = snap.docs
+                .map((d) => QuoteModel.fromMap(d.data(), id: d.id))
+                .where((q) => q.text.isNotEmpty)
+                .toList();
+            _pickRandomQuote();
+          }, onError: (_) {}),
     );
 
     _subs.add(
@@ -338,20 +346,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .collection('photos')
           .snapshots()
           .listen((snap) {
-        if (!mounted) return;
-        _photoUrls = snap.docs
-            .map((d) => d.data()['url'] as String?)
-            .whereType<String>()
-            .where((url) => url.isNotEmpty)
-            .toList();
-        if (_photoUrls.isEmpty) {
-          _currentPhotoUrl = null;
-        } else if (_currentPhotoUrl == null ||
-            !_photoUrls.contains(_currentPhotoUrl)) {
-          _pickRandomPhoto();
-        }
-        _rebuildSlides(_widthOrDefault);
-      }, onError: (_) {}),
+            if (!mounted) return;
+            _photoUrls = snap.docs
+                .map((d) => d.data()['url'] as String?)
+                .whereType<String>()
+                .where((url) => url.isNotEmpty)
+                .toList();
+            if (_photoUrls.isEmpty) {
+              _currentPhotoUrl = null;
+            } else if (_currentPhotoUrl == null ||
+                !_photoUrls.contains(_currentPhotoUrl)) {
+              _pickRandomPhoto();
+            }
+            _rebuildSlides(_widthOrDefault);
+          }, onError: (_) {}),
     );
 
     _initWeatherSystem();
@@ -427,23 +435,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (uid == null) return;
 
     _subs.add(
-      FirebaseFirestore.instance.collection('users').doc(uid).snapshots().listen((
-        snapshot,
-      ) {
-        if (!mounted) return;
-        final data = snapshot.data();
-        final rawCities = data?['weatherCities'] ?? [];
-        _savedCities = (rawCities as List).isEmpty
-            ? [
-                {'name': 'Brighton', 'lat': 50.82, 'lng': -0.13},
-              ]
-            : List<Map<String, dynamic>>.from(rawCities);
-        _primaryCityName = data?['primaryCity'] ?? _savedCities.first['name'];
-        if (data != null && data.containsKey('dashboardSlideDuration')) {
-          _slideDuration = (data['dashboardSlideDuration'] as num).toDouble();
-        }
-        _fetchAllWeather();
-      }, onError: (_) {}),
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .snapshots()
+          .listen((snapshot) {
+            if (!mounted) return;
+            final data = snapshot.data();
+            final rawCities = data?['weatherCities'] ?? [];
+            _savedCities = (rawCities as List).isEmpty
+                ? [
+                    {'name': 'Brighton', 'lat': 50.82, 'lng': -0.13},
+                  ]
+                : List<Map<String, dynamic>>.from(rawCities);
+            _primaryCityName =
+                data?['primaryCity'] ?? _savedCities.first['name'];
+            if (data != null && data.containsKey('dashboardSlideDuration')) {
+              _slideDuration = (data['dashboardSlideDuration'] as num)
+                  .toDouble();
+            }
+            _fetchAllWeather();
+          }, onError: (_) {}),
     );
   }
 
@@ -564,7 +576,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 if (isSearching)
                   const Padding(
                     padding: EdgeInsets.only(top: 12),
-                    child: LinearProgressIndicator(color: DashboardTheme.weather),
+                    child: LinearProgressIndicator(
+                      color: DashboardTheme.weather,
+                    ),
                   ),
                 if (searchError != null)
                   Padding(
@@ -594,9 +608,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           onTap: () async {
                             final uid = FirebaseAuth.instance.currentUser?.uid;
                             if (uid != null) {
-                              final newCities =
-                                  List<Map<String, dynamic>>.from(_savedCities);
-                              if (!newCities.any((c) => c['name'] == city['name'])) {
+                              final newCities = List<Map<String, dynamic>>.from(
+                                _savedCities,
+                              );
+                              if (!newCities.any(
+                                (c) => c['name'] == city['name'],
+                              )) {
                                 newCities.add({
                                   'name': city['name'],
                                   'lat': city['latitude'],
@@ -647,11 +664,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           'https://geocoding-api.open-meteo.com/v1/search?name=${Uri.encodeQueryComponent(query.trim())}&count=5&language=en&format=json',
         ),
       );
-      final results = (json.decode(res.body)['results'] as List<dynamic>?) ?? [];
+      final results =
+          (json.decode(res.body)['results'] as List<dynamic>?) ?? [];
       setDialogState(
         () => apply(
           results,
-          results.isEmpty ? 'No matching cities. Try a different spelling.' : null,
+          results.isEmpty
+              ? 'No matching cities. Try a different spelling.'
+              : null,
           false,
         ),
       );
@@ -669,14 +689,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _formatMultiDayTitle(Map<String, dynamic> data, DateTime currentDate) {
-    final title = data['summary'] ?? 'Event';
-    final start = (data['start'] as Timestamp).toDate();
-    final end = data['end'] != null ? (data['end'] as Timestamp).toDate() : start;
+    final title = (data['summary'] ?? 'Event').toString();
+    final start = dashboardEventDateTime(data['start']);
+    if (start == null) return title;
+    var end = dashboardEventDateTime(data['end']) ?? start;
+    if (end.isBefore(start)) end = start;
     if (!DateUtils.isSameDay(start, end)) {
       final totalDays =
-          DateUtils.dateOnly(end).difference(DateUtils.dateOnly(start)).inDays + 1;
+          DateUtils.dateOnly(end).difference(DateUtils.dateOnly(start)).inDays +
+          1;
+      if (totalDays < 2) return title;
       final currentDayNum =
-          (DateUtils.dateOnly(currentDate).difference(DateUtils.dateOnly(start)).inDays +
+          (DateUtils.dateOnly(
+                    currentDate,
+                  ).difference(DateUtils.dateOnly(start)).inDays +
                   1)
               .clamp(1, totalDays);
       return '$title (Day $currentDayNum/$totalDays)';
@@ -687,13 +713,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   DashboardMetrics _metricsFor(double width) =>
       DashboardMetrics(Size(width, 800));
 
+  /// Builds one slide; a slide that throws is logged and left out, so one
+  /// bad record can never blank the whole dashboard.
+  void _addSlide(List<Widget> slides, String name, Widget Function() build) {
+    final slide = guardedBuild('slide $name', build);
+    if (slide != null) slides.add(slide);
+  }
+
   List<Widget> _generateSlides(double screenWidth) {
     final slides = <Widget>[];
     final metrics = _metricsFor(screenWidth);
 
-    slides.add(_buildScheduleSlide(metrics));
-    slides.add(
-      DashboardCalendarOverviewSlide(
+    _addSlide(slides, 'schedule', () => _buildScheduleSlide(metrics));
+    _addSlide(
+      slides,
+      'look ahead',
+      () => DashboardCalendarOverviewSlide(
         key: const ValueKey('look-ahead-slide'),
         metrics: metrics,
         events: _eventsAll,
@@ -712,44 +747,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return d['listName'] != 'Shopping' && d['status'] != 'pending_acceptance';
     }).toList();
     if (nonShopTasks.isNotEmpty) {
-      slides.add(_buildTasksSlide(nonShopTasks, metrics));
+      _addSlide(slides, 'tasks', () => _buildTasksSlide(nonShopTasks, metrics));
     }
 
     if (_rotaConfig != null && !_rotaConfig!.containsKey('cycleLength')) {
-      slides.add(_buildWeeklyChoresSlide(metrics));
+      _addSlide(slides, 'chores', () => _buildWeeklyChoresSlide(metrics));
     }
 
     final shopItems = _allTasks
         .where((t) => (t.data() as Map)['listName'] == 'Shopping')
         .toList();
-    final urgentShop =
-        shopItems.where((t) => (t.data() as Map)['isUrgent'] == true).toList();
-    final regularShop =
-        shopItems.where((t) => (t.data() as Map)['isUrgent'] != true).toList();
+    final urgentShop = shopItems
+        .where((t) => (t.data() as Map)['isUrgent'] == true)
+        .toList();
+    final regularShop = shopItems
+        .where((t) => (t.data() as Map)['isUrgent'] != true)
+        .toList();
 
     if (metrics.isCompact) {
       if (urgentShop.isNotEmpty) {
-        slides.add(_buildShoppingSlide(urgentShop, regular: const [], metrics: metrics, mobileUrgent: true));
+        _addSlide(
+          slides,
+          'shopping',
+          () => _buildShoppingSlide(
+            urgentShop,
+            regular: const [],
+            metrics: metrics,
+            mobileUrgent: true,
+          ),
+        );
       }
       if (regularShop.isNotEmpty) {
-        slides.add(_buildShoppingSlide(const [], regular: regularShop, metrics: metrics, mobileUrgent: false));
+        _addSlide(
+          slides,
+          'shopping',
+          () => _buildShoppingSlide(
+            const [],
+            regular: regularShop,
+            metrics: metrics,
+            mobileUrgent: false,
+          ),
+        );
       }
     } else if (shopItems.isNotEmpty) {
-      slides.add(
-        _buildShoppingSlide(urgentShop, regular: regularShop, metrics: metrics),
+      _addSlide(
+        slides,
+        'shopping',
+        () => _buildShoppingSlide(
+          urgentShop,
+          regular: regularShop,
+          metrics: metrics,
+        ),
       );
     }
 
     final today = DateUtils.dateOnly(DateTime.now());
-    final birthdays = _eventsAll.where((d) {
-      if ((d['category'] ?? '') != 'birthday') return false;
-      final start = (d['start'] as Timestamp).toDate();
-      return start.isAfter(DateTime.now().subtract(const Duration(days: 1))) &&
-          start.isBefore(DateTime.now().add(const Duration(days: 365)));
-    }).toList()
-      ..sort(
-        (a, b) => (a['start'] as Timestamp).compareTo(b['start'] as Timestamp),
-      );
+    final birthdays =
+        _eventsAll.where((d) {
+          if ((d['category'] ?? '') != 'birthday') return false;
+          final start = (d['start'] as Timestamp).toDate();
+          return start.isAfter(
+                DateTime.now().subtract(const Duration(days: 1)),
+              ) &&
+              start.isBefore(DateTime.now().add(const Duration(days: 365)));
+        }).toList()..sort(
+          (a, b) =>
+              (a['start'] as Timestamp).compareTo(b['start'] as Timestamp),
+        );
     final topBirthdays = birthdays.take(10).toList();
     _hasBirthdayToday = topBirthdays.any((d) {
       final start = (d['start'] as Timestamp).toDate();
@@ -765,19 +829,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     if (showBirthdays) {
       _birthdaySlideIndex = slides.length;
-      slides.add(_buildBirthdaysSlide(metrics));
+      _addSlide(slides, 'birthdays', () => _buildBirthdaysSlide(metrics));
     } else {
       _birthdaySlideIndex = -1;
     }
 
     if (_quoteText.isNotEmpty) {
-      slides.add(_buildAffirmationsSlide(metrics));
+      _addSlide(slides, 'affirmations', () => _buildAffirmationsSlide(metrics));
     }
     _weatherSlideIndex = slides.length;
-    slides.add(_buildWeatherSlide(metrics));
+    _addSlide(slides, 'weather', () => _buildWeatherSlide(metrics));
 
     if (_photoUrls.isNotEmpty) {
-      slides.add(_buildPhotosSlide(metrics));
+      _addSlide(slides, 'photos', () => _buildPhotosSlide(metrics));
     }
 
     return slides;
@@ -792,7 +856,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           Expanded(
             child: metrics.isCompact
-                ? _buildScheduleBox(metrics, startDayOffset: 0, dayCount: 7, large: false)
+                ? _buildScheduleBox(
+                    metrics,
+                    startDayOffset: 0,
+                    dayCount: 7,
+                    large: false,
+                  )
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -836,26 +905,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: ListView(
         children: List.generate(dayCount, (index) {
           final i = startDayOffset + index;
-          final checkDate = todayStart.add(Duration(days: i));
-          final events = _eventsAll.where((d) {
-            if (!_eventOverlapsDay(d, checkDate)) return false;
-            if (i == 0 && d['allDay'] != true) {
-              final start = (d['start'] as Timestamp).toDate();
-              final end = d['end'] != null
-                  ? (d['end'] as Timestamp).toDate()
-                  : start;
-              if (end.isBefore(DateTime.now())) return false;
-            }
-            return true;
-          }).toList()
-            ..sort(
-              (a, b) =>
-                  (a['start'] as Timestamp).compareTo(b['start'] as Timestamp),
-            );
+          final checkDate = calendarDayOffset(todayStart, i);
+          final events =
+              _eventsAll.where((d) {
+                return guardedBuild('schedule filter ${d['id']}', () {
+                      if (!_eventOverlapsDay(d, checkDate)) return false;
+                      if (i == 0 && d['allDay'] != true) {
+                        final start = (d['start'] as Timestamp).toDate();
+                        final end = d['end'] != null
+                            ? (d['end'] as Timestamp).toDate()
+                            : start;
+                        if (end.isBefore(DateTime.now())) return false;
+                      }
+                      return true;
+                    }) ??
+                    false;
+              }).toList()..sort(
+                (a, b) => (a['start'] as Timestamp).compareTo(
+                  b['start'] as Timestamp,
+                ),
+              );
 
           var emptyText = 'Nothing planned';
           if (events.isEmpty && i == 0) {
-            final hadAny = _eventsAll.any((d) => _eventOverlapsDay(d, checkDate));
+            final hadAny = _eventsAll.any(
+              (d) => _eventOverlapsDay(d, checkDate),
+            );
             if (hadAny) emptyText = 'All done for today';
           }
 
@@ -920,11 +995,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _eventRow(
-    Map<String, dynamic> data,
-    DateTime checkDate,
-    bool large,
-  ) {
+  Widget _eventRow(Map<String, dynamic> data, DateTime checkDate, bool large) {
     final isMeal = data['category'] == 'meal';
     final category = data['category'] ?? 'general';
     final ownerId = data['assignedTo'] ?? 'shared';
@@ -1040,8 +1111,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 20),
           ...items.map((item) {
             if (isTasks) {
-              final d = (item as QueryDocumentSnapshot).data()
-                  as Map<String, dynamic>;
+              final d =
+                  (item as QueryDocumentSnapshot).data()
+                      as Map<String, dynamic>;
               final isUrgent = d['isUrgent'] == true;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -1060,7 +1132,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: metrics.bodySize,
-                          fontWeight: isUrgent ? FontWeight.w700 : FontWeight.w400,
+                          fontWeight: isUrgent
+                              ? FontWeight.w700
+                              : FontWeight.w400,
                           height: 1.25,
                         ),
                       ),
@@ -1205,14 +1279,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     final anchorDate = (_rotaConfig!['anchorDate'] as Timestamp).toDate();
-    final daysSince = DateUtils.dateOnly(DateTime.now())
-        .difference(DateUtils.dateOnly(anchorDate))
-        .inDays;
+    final daysSince = DateUtils.dateOnly(
+      DateTime.now(),
+    ).difference(DateUtils.dateOnly(anchorDate)).inDays;
     if (daysSince < 0) {
-      return _rotaEmptySlide(
-        metrics,
-        'This week’s rota has not started yet.',
-      );
+      return _rotaEmptySlide(metrics, 'This week’s rota has not started yet.');
     }
 
     final absoluteWeekNum = (daysSince ~/ 7) + 1;
@@ -1489,7 +1560,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Opens the Quotes page. [pause] stops the slideshow while it is open
   /// (not needed from the options screen, which already paused it).
-  Future<void> _openQuotes(BuildContext navContext, {bool pause = false}) async {
+  Future<void> _openQuotes(
+    BuildContext navContext, {
+    bool pause = false,
+  }) async {
     if (pause) {
       setState(() => _isPlaying = false);
     }
@@ -1537,9 +1611,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: metrics.size.width,
-                      ),
+                      constraints: BoxConstraints(maxWidth: metrics.size.width),
                       child: Text(
                         '"$_quoteText"',
                         textAlign: TextAlign.center,
@@ -1632,9 +1704,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       tint: DashboardTheme.weather,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: body),
-        ],
+        children: [Expanded(child: body)],
       ),
     );
   }
@@ -1693,7 +1763,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Align(
                             alignment: Alignment.bottomRight,
                             child: Padding(
-                              padding: EdgeInsets.all(metrics.isCompact ? 16 : 24),
+                              padding: EdgeInsets.all(
+                                metrics.isCompact ? 16 : 24,
+                              ),
                               child: Icon(
                                 Icons.photo_camera_back,
                                 color: Colors.white54,
@@ -2177,7 +2249,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final metrics = DashboardMetrics(size);
 
     if (_boot == _DashboardBoot.ready &&
-        ( _slides.isEmpty || (size.width - _cachedScreenWidth).abs() > 1)) {
+        (_slides.isEmpty || (size.width - _cachedScreenWidth).abs() > 1)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _rebuildSlides(size.width);
       });
@@ -2195,7 +2267,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           message:
               'Open a shared hub from settings, then come back to this wall view.',
           action: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: DashboardTheme.accent),
+            style: FilledButton.styleFrom(
+              backgroundColor: DashboardTheme.accent,
+            ),
             onPressed: () => Navigator.pop(context),
             child: const Text('Back to LoveHub'),
           ),
@@ -2209,7 +2283,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           title: 'Dashboard needs a moment',
           message: _bootError,
           action: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: DashboardTheme.accent),
+            style: FilledButton.styleFrom(
+              backgroundColor: DashboardTheme.accent,
+            ),
             onPressed: _retryBoot,
             child: const Text('Try again'),
           ),
@@ -2229,7 +2305,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               WebResumeController.instance.dashboardSlideChanged(
                 _currentPageIndex,
               );
-              if (_currentPageIndex == _birthdaySlideIndex && _hasBirthdayToday) {
+              if (_currentPageIndex == _birthdaySlideIndex &&
+                  _hasBirthdayToday) {
                 _confettiController.play();
               }
               if (!_isAutoAnimating) {

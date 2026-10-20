@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../services/event_sanity.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -677,7 +678,7 @@ class _MealPlannerTab extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           itemCount: 7,
           itemBuilder: (context, index) {
-            final day = todayStart.add(Duration(days: index));
+            final day = calendarDayOffset(todayStart, index);
             final isToday = index == 0;
 
             final meals = events.where((doc) {

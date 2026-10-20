@@ -402,8 +402,17 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   DateTime _getShiftedDate(DateTime orig, String repeat, int index) {
     if (index == 0) return orig;
-    if (repeat == 'Daily') return orig.add(Duration(days: index));
-    if (repeat == 'Weekly') return orig.add(Duration(days: index * 7));
+    // Calendar-day steps keep the wall-clock time across clock changes.
+    if (repeat == 'Daily' || repeat == 'Weekly') {
+      final step = repeat == 'Daily' ? index : index * 7;
+      return DateTime(
+        orig.year,
+        orig.month,
+        orig.day + step,
+        orig.hour,
+        orig.minute,
+      );
+    }
     if (repeat == 'Monthly')
       return DateTime(
         orig.year,

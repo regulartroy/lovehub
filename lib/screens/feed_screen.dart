@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/event_sanity.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -584,11 +585,14 @@ class _FeedScreenState extends State<FeedScreen> {
                               child: CircularProgressIndicator(),
                             );
 
-                          final rawEvents =
-                              eventSnapshot.data?.docs
-                                  .map((d) => d.data() as Map<String, dynamic>)
-                                  .toList() ??
-                              [];
+                          final rawEvents = sanitizeEventMaps(
+                            (eventSnapshot.data?.docs ?? const []).map(
+                              (d) => {
+                                'id': d.id,
+                                ...d.data() as Map<String, dynamic>,
+                              },
+                            ),
+                          );
                           final allEvents = [
                             ...rawEvents,
                             ..._getProjectedBirthdays(),
