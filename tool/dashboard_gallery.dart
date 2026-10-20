@@ -15,6 +15,7 @@ import 'package:lovehub/widgets/calendar_split_pill.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_birthday_timeline.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_chrome.dart';
+import 'package:lovehub/widgets/dashboard/dashboard_day_tiles.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
 
 /// Local visual gallery for dashboard chrome. Not used in production.
@@ -73,6 +74,22 @@ class DashboardGalleryPage extends StatelessWidget {
     const quotesOnly = bool.fromEnvironment('QUOTES_ONLY');
     if (quotesOnly) {
       return const _QuotesGallery();
+    }
+
+    const choresOnly = bool.fromEnvironment('CHORES_ONLY');
+    if (choresOnly) {
+      return Scaffold(
+        backgroundColor: DashboardTheme.canvas,
+        body: _choresPreview(metrics),
+      );
+    }
+
+    const shoppingOnly = bool.fromEnvironment('SHOPPING_ONLY');
+    if (shoppingOnly) {
+      return Scaffold(
+        backgroundColor: DashboardTheme.canvas,
+        body: _shoppingPreview(metrics),
+      );
     }
 
     const scheduleOnly = bool.fromEnvironment('SCHEDULE_ONLY');
@@ -320,8 +337,42 @@ class DashboardGalleryPage extends StatelessWidget {
       if (icon != null) 'icon': icon,
     };
 
+    final tentative = CalendarEventStyle(
+      who: CalendarColors.mute(CalendarColors.tom),
+      kind: CalendarColors.mute(CalendarColors.work),
+      tentative: true,
+    );
     final days = <List<Map<String, dynamic>>>[
       [
+        ev(
+          'School run',
+          CalendarColors.maria,
+          CalendarColors.personal,
+          at(0, 8, 15),
+          end: at(0, 8, 45),
+        ),
+        ev(
+          'Gym',
+          CalendarColors.tom,
+          CalendarColors.personal,
+          at(0, 9, 30),
+          end: at(0, 10, 30),
+        ),
+        ev(
+          'Standup',
+          CalendarColors.tom,
+          CalendarColors.work,
+          at(0, 11),
+          end: at(0, 11, 30),
+        ),
+        ev(
+          'Lunch with Mum',
+          CalendarColors.shared,
+          CalendarColors.personal,
+          at(0, 13),
+          end: at(0, 14),
+          icon: Icons.restaurant,
+        ),
         ev(
           'Dentist',
           CalendarColors.maria,
@@ -338,16 +389,16 @@ class DashboardGalleryPage extends StatelessWidget {
           icon: Icons.restaurant,
         ),
         ev(
-          'Gig at Concorde 2 (Day 1/2)',
+          'Gig at Concorde 2',
           CalendarColors.tom,
-          CalendarColors.personal,
+          CalendarColors.work,
           at(0, 22),
           end: at(1, 3),
         ),
       ],
       [
         ev(
-          "Maria's birthday",
+          "Jordan's birthday",
           CalendarColors.shared,
           CalendarColors.birthday,
           at(1, 0),
@@ -356,24 +407,18 @@ class DashboardGalleryPage extends StatelessWidget {
           icon: Icons.cake_rounded,
         ),
         ev(
-          'Early shift',
-          CalendarColors.tom,
-          CalendarColors.work,
-          at(1, 7),
-          end: at(1, 15),
-        ),
-        ev(
-          'Farmers market walk',
-          CalendarColors.shared,
-          CalendarColors.personal,
-          at(1, 9, 30),
-        ),
-        ev(
-          "Parents' evening at St Mary's Primary School",
+          'General checkup',
           CalendarColors.maria,
           CalendarColors.personal,
-          at(1, 18, 15),
-          end: at(1, 19, 30),
+          at(1, 10),
+          end: at(1, 10, 30),
+        ),
+        ev(
+          'C2 shift',
+          CalendarColors.tom,
+          CalendarColors.work,
+          at(1, 17),
+          end: at(1, 23, 30),
         ),
       ],
       [
@@ -384,6 +429,16 @@ class DashboardGalleryPage extends StatelessWidget {
           at(2, 18),
           end: at(4, 16),
         ),
+        {
+          ...ev(
+            'Concorde shift',
+            CalendarColors.tom,
+            CalendarColors.work,
+            at(2, 12),
+            end: at(2, 18),
+          ),
+          'style': tentative,
+        },
       ],
       [
         ev(
@@ -468,6 +523,27 @@ class DashboardGalleryPage extends StatelessWidget {
                         ),
                       ),
                     )
+                  else if (large)
+                    DashboardDayTiles(
+                      items: [
+                        for (final e in days[from + index])
+                          DashboardDayItem(
+                            style: e['style'] as CalendarEventStyle,
+                            title: e['title'] as String,
+                            timeLabel: dashboardEventTimeRangeLabel(e),
+                            start: e['start'] as DateTime,
+                            allDay: e['allDay'] == true,
+                            birthday: e['icon'] == Icons.cake_rounded,
+                            avatar: const CircleAvatar(
+                              radius: 13,
+                              backgroundColor: Colors.white24,
+                            ),
+                            icon: e['icon'] == Icons.cake_rounded
+                                ? null
+                                : e['icon'] as IconData?,
+                          ),
+                      ],
+                    )
                   else
                     for (final e in days[from + index])
                       CalendarSplitPill(
@@ -475,20 +551,16 @@ class DashboardGalleryPage extends StatelessWidget {
                         title: e['title'] as String,
                         subtitle: dashboardEventTimeRangeLabel(e),
                         fitSubtitle: true,
-                        density: large
-                            ? CalendarSplitPillDensity.comfortable
-                            : CalendarSplitPillDensity.regular,
+                        tentativeMarkInline: true,
+                        density: CalendarSplitPillDensity.regular,
                         margin: const EdgeInsets.only(bottom: 12),
-                        leading: CircleAvatar(
-                          radius: large ? 16 : 13,
+                        leading: const CircleAvatar(
+                          radius: 13,
                           backgroundColor: Colors.white24,
                         ),
                         trailing: e['icon'] == null
                             ? null
-                            : Icon(
-                                e['icon'] as IconData,
-                                size: large ? 20 : 16,
-                              ),
+                            : Icon(e['icon'] as IconData, size: 16),
                       ),
                 ],
               ),
@@ -509,11 +581,199 @@ class DashboardGalleryPage extends StatelessWidget {
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(flex: 60, child: box(0, 2, true)),
+                      Expanded(flex: 64, child: box(0, 2, true)),
                       SizedBox(width: metrics.isWide ? 32 : 24),
-                      Expanded(flex: 40, child: box(2, 5, false)),
+                      Expanded(flex: 36, child: box(2, 5, false)),
                     ],
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// CHORES_ONLY: mirrors the HOUSE ROTA slide's per-person cards.
+  Widget _choresPreview(DashboardMetrics metrics) {
+    Widget group(String name, Color who, List<(String, int, bool)> chores) {
+      return DashboardGlassCard(
+        tint: DashboardTheme.rota,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(radius: 22, backgroundColor: who),
+                const SizedBox(width: 12),
+                Text(
+                  name,
+                  style: const TextStyle(
+                    color: DashboardTheme.rota,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            for (final (title, mins, done) in chores)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  children: [
+                    DashboardChoreIcon(
+                      title: title,
+                      done: done,
+                      tint: DashboardTheme.rota,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          color: done ? Colors.white38 : Colors.white,
+                          fontSize: metrics.bodySize,
+                          decoration: done ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${mins}m',
+                      style: TextStyle(
+                        color: done ? Colors.white24 : DashboardTheme.rota,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return DashboardSlide(
+      metrics: metrics,
+      tint: DashboardTheme.rota,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DashboardSectionHeader(
+            metrics: metrics,
+            icon: Icons.cleaning_services_rounded,
+            tint: DashboardTheme.rota,
+            title: 'HOUSE ROTA',
+          ),
+          const SizedBox(height: 18),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: group('TOM', CalendarColors.tom, [
+                    ('Hoover downstairs', 20, false),
+                    ('Take the bins out', 5, true),
+                    ('Clean the bathroom', 25, false),
+                  ]),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: group('MARIA', CalendarColors.maria, [
+                    ('Change the bed sheets', 15, false),
+                    ('Mop the kitchen floor', 15, false),
+                    ('Laundry', 30, true),
+                  ]),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: group('SHARED', CalendarColors.shared, [
+                    ('Water the plants', 10, false),
+                    ('Dust the living room', 15, false),
+                  ]),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// SHOPPING_ONLY: mirrors the SHOPPING slide (priority + regular).
+  Widget _shoppingPreview(DashboardMetrics metrics) {
+    Widget list(List<String> items, bool urgent) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final t in items)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  urgent ? Icons.error_rounded : Icons.circle_outlined,
+                  color: urgent ? Colors.redAccent : Colors.white38,
+                  size: 26,
+                ),
+                const SizedBox(width: 14),
+                Text(
+                  t,
+                  style: const TextStyle(color: Colors.white, fontSize: 26),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    return DashboardSlide(
+      metrics: metrics,
+      tint: DashboardTheme.shopping,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DashboardSectionHeader(
+            metrics: metrics,
+            icon: Icons.shopping_cart_rounded,
+            tint: DashboardTheme.shopping,
+            title: 'SHOPPING',
+          ),
+          const SizedBox(height: 18),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DashboardGlassCard(
+                    tint: DashboardTheme.shoppingUrgent,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'PRIORITY',
+                          style: TextStyle(
+                            color: DashboardTheme.shoppingUrgent,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        list(['Milk', 'Bin bags'], true),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: DashboardGlassCard(
+                    tint: DashboardTheme.shopping,
+                    child: list(['Bread', 'Bananas', 'Coffee', 'Pasta'], false),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
