@@ -34,8 +34,7 @@ class DashboardDayItem {
 }
 
 /// TODAY / TOMORROW body: all-day strips across the top, then timed events
-/// as tiles placed left-to-right on a loose timeline (morning left, evening
-/// right), wrapping onto more rows when a day is busy.
+/// as tiles packed from the left edge in start order, wrapping onto more rows when a day is busy.
 class DashboardDayTiles extends StatelessWidget {
   const DashboardDayTiles({super.key, required this.items, this.large = true});
 
@@ -49,25 +48,6 @@ class DashboardDayTiles extends StatelessWidget {
   /// Columns that fit in [width] with tiles at least [minTile] wide.
   static int columnsFor(double width, double minTile, double gap) =>
       math.max(1, math.min(4, ((width + gap) / (minTile + gap)).floor()));
-
-  /// Slot (0..[columns]-1) for each of [starts] in one row: roughly where
-  /// its start time falls between 06:00 and 24:00, kept in order and
-  /// leaving room for the tiles after it.
-  static List<int> slotsFor(List<DateTime?> starts, int columns) {
-    final n = starts.length;
-    final slots = <int>[];
-    for (var i = 0; i < n; i++) {
-      final s = starts[i];
-      final hours = s == null ? 12.0 : s.hour + s.minute / 60;
-      final frac = ((hours - 6) / 18).clamp(0.0, 1.0);
-      var slot = (frac * (columns - 1)).round();
-      final minSlot = slots.isEmpty ? 0 : slots.last + 1;
-      final maxSlot = columns - (n - i);
-      slot = slot.clamp(minSlot, maxSlot);
-      slots.add(slot);
-    }
-    return slots;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,11 +104,13 @@ class DashboardDayTiles extends StatelessWidget {
   }
 
   Widget _row(List<DashboardDayItem> row, int cols, double gap) {
-    final slots = slotsFor([for (final e in row) e.start], cols);
-    final cells = List<Widget>.generate(cols, (_) => const SizedBox());
-    for (var i = 0; i < row.length; i++) {
-      cells[slots[i]] = _DayTile(item: row[i], large: large);
-    }
+    // Left-aligned packing: tiles fill from the left in start order.
+    final cells = List<Widget>.generate(
+      cols,
+      (c) => c < row.length
+          ? _DayTile(item: row[c], large: large)
+          : const SizedBox(),
+    );
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
