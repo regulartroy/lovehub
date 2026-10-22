@@ -8,6 +8,7 @@ import '../models/task_model.dart';
 import '../repositories/task_repository.dart';
 import '../services/shopping_aisle_sort.dart';
 import 'dart:convert';
+import '../widgets/undo_snackbar.dart';
 import 'package:firebase_vertexai/firebase_vertexai.dart';
 
 class TasksScreen extends StatefulWidget {
@@ -1310,32 +1311,23 @@ class _TasksScreenState extends State<TasksScreen> {
                 if (!isVisuallyDone) {
                   setState(() => _locallyCompleted.add(task.id));
 
-                  _completionTimers[task.id] = Timer(
-                    const Duration(seconds: 10),
-                    () {
-                      _taskRepo.toggleTaskCompletion(hubId, task.id, true);
-                      _completionTimers.remove(task.id);
-                      if (mounted)
-                        setState(() => _locallyCompleted.remove(task.id));
-                    },
-                  );
+                  _completionTimers[task.id] = Timer(kUndoCommitDelay, () {
+                    _taskRepo.toggleTaskCompletion(hubId, task.id, true);
+                    _completionTimers.remove(task.id);
+                    if (mounted)
+                      setState(() => _locallyCompleted.remove(task.id));
+                  });
 
-                  ScaffoldMessenger.of(context).clearSnackBars();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Item checked off'),
-                      duration: const Duration(seconds: 8),
-                      behavior: SnackBarBehavior.floating,
-                      action: SnackBarAction(
-                        label: 'UNDO',
-                        textColor: Colors.tealAccent,
-                        onPressed: () {
-                          _completionTimers[task.id]?.cancel();
-                          _completionTimers.remove(task.id);
-                          setState(() => _locallyCompleted.remove(task.id));
-                        },
-                      ),
-                    ),
+                  showUndoSnackBar(
+                    context,
+                    message: 'Item checked off',
+                    behavior: SnackBarBehavior.floating,
+                    actionColor: Colors.tealAccent,
+                    onUndo: () {
+                      _completionTimers[task.id]?.cancel();
+                      _completionTimers.remove(task.id);
+                      setState(() => _locallyCompleted.remove(task.id));
+                    },
                   );
                 } else {
                   if (_locallyCompleted.contains(task.id)) {

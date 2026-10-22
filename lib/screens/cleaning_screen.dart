@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'dart:async'; // <-- ADD THIS
+import '../widgets/undo_snackbar.dart';
 import '../repositories/rota_repository.dart';
 
 class CleaningScreen extends StatefulWidget {
@@ -579,7 +580,7 @@ class _CleaningScreenState extends State<CleaningScreen> {
                         if (!isDone) {
                           setState(() => _locallyCompleted.add(chore['id']));
                           _completionTimers[chore['id']] = Timer(
-                            const Duration(seconds: 10),
+                            kUndoCommitDelay,
                             () {
                               _toggleChoreCompletion(chore['id'], true);
                               _completionTimers.remove(chore['id']);
@@ -589,23 +590,17 @@ class _CleaningScreenState extends State<CleaningScreen> {
                                 );
                             },
                           );
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Chore completed'),
-                              duration: const Duration(seconds: 8),
-                              action: SnackBarAction(
-                                label: 'UNDO',
-                                textColor: Colors.greenAccent,
-                                onPressed: () {
-                                  _completionTimers[chore['id']]?.cancel();
-                                  _completionTimers.remove(chore['id']);
-                                  setState(
-                                    () => _locallyCompleted.remove(chore['id']),
-                                  );
-                                },
-                              ),
-                            ),
+                          showUndoSnackBar(
+                            context,
+                            message: 'Chore completed',
+                            actionColor: Colors.greenAccent,
+                            onUndo: () {
+                              _completionTimers[chore['id']]?.cancel();
+                              _completionTimers.remove(chore['id']);
+                              setState(
+                                () => _locallyCompleted.remove(chore['id']),
+                              );
+                            },
                           );
                         } else {
                           _completionTimers[chore['id']]?.cancel();

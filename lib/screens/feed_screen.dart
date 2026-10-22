@@ -17,6 +17,7 @@ import '../models/quote_model.dart';
 import '../repositories/quote_repository.dart';
 import '../services/home_feed_logic.dart';
 import '../services/home_feed_weather.dart';
+import '../widgets/undo_snackbar.dart';
 import '../widgets/home_feed/home_feed_view.dart';
 
 class FeedScreen extends StatefulWidget {
@@ -205,29 +206,22 @@ class _FeedScreenState extends State<FeedScreen> {
       setState(() => _locallyCompletedChores.add(choreId));
       _choreWeekIds[choreId] = weekId;
       _choreCompletionTimers[choreId]?.cancel();
-      _choreCompletionTimers[choreId] = Timer(const Duration(seconds: 10), () {
+      _choreCompletionTimers[choreId] = Timer(kUndoCommitDelay, () {
         _toggleWeeklyChore(hubId, choreId, true, weekId);
         _choreCompletionTimers.remove(choreId);
         _choreWeekIds.remove(choreId);
         if (mounted) setState(() => _locallyCompletedChores.remove(choreId));
       });
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.clearSnackBars();
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Chore completed 🎉'),
-          duration: const Duration(seconds: 8),
-          action: SnackBarAction(
-            label: 'UNDO',
-            textColor: Colors.deepPurpleAccent,
-            onPressed: () {
-              _choreCompletionTimers[choreId]?.cancel();
-              _choreCompletionTimers.remove(choreId);
-              _choreWeekIds.remove(choreId);
-              setState(() => _locallyCompletedChores.remove(choreId));
-            },
-          ),
-        ),
+      showUndoSnackBar(
+        context,
+        message: 'Chore completed 🎉',
+        actionColor: Colors.deepPurpleAccent,
+        onUndo: () {
+          _choreCompletionTimers[choreId]?.cancel();
+          _choreCompletionTimers.remove(choreId);
+          _choreWeekIds.remove(choreId);
+          setState(() => _locallyCompletedChores.remove(choreId));
+        },
       );
     } else {
       _choreCompletionTimers[choreId]?.cancel();
@@ -246,27 +240,20 @@ class _FeedScreenState extends State<FeedScreen> {
       return;
     }
     setState(() => _locallyCompleted.add(t.id));
-    _completionTimers[t.id] = Timer(const Duration(seconds: 10), () {
+    _completionTimers[t.id] = Timer(kUndoCommitDelay, () {
       t.reference.update({'isDone': true});
       _completionTimers.remove(t.id);
       if (mounted) setState(() => _locallyCompleted.remove(t.id));
     });
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: const Text('Task completed'),
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: 'UNDO',
-          textColor: Colors.tealAccent,
-          onPressed: () {
-            _completionTimers[t.id]?.cancel();
-            _completionTimers.remove(t.id);
-            setState(() => _locallyCompleted.remove(t.id));
-          },
-        ),
-      ),
+    showUndoSnackBar(
+      context,
+      message: 'Task completed',
+      actionColor: Colors.tealAccent,
+      onUndo: () {
+        _completionTimers[t.id]?.cancel();
+        _completionTimers.remove(t.id);
+        setState(() => _locallyCompleted.remove(t.id));
+      },
     );
   }
 

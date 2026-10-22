@@ -19,6 +19,7 @@ import 'screens/dashboard_screen.dart';
 import 'services/web_resume.dart';
 import 'services/web_update_firestore.dart';
 import 'services/web_update_platform.dart';
+import 'widgets/undo_snackbar.dart';
 import 'widgets/web_update_host.dart';
 
 void main() async {
@@ -52,6 +53,7 @@ class LovehubApp extends StatefulWidget {
 
 class _LovehubAppState extends State<LovehubApp> {
   final _sheetTracker = WebUpdateSheetTracker();
+  final _snackBarClearer = SnackBarClearingObserver();
   late final Stream<String?>? _webBuildUpdates = kIsWeb
       ? watchWebBuildStamp()
       : null;
@@ -67,7 +69,8 @@ class _LovehubAppState extends State<LovehubApp> {
     return MaterialApp(
       title: 'Lovehub',
       debugShowCheckedModeBanner: false,
-      navigatorObservers: [_sheetTracker],
+      scaffoldMessengerKey: appScaffoldMessengerKey,
+      navigatorObservers: [_sheetTracker, _snackBarClearer],
       builder: (context, child) {
         return WebUpdateHost(
           enabled: kIsWeb,
