@@ -5,9 +5,13 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+
 import '../services/event_sanity.dart';
+import '../services/memory_photos.dart';
 import '../services/shared_streams.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
@@ -24,6 +28,7 @@ import '../widgets/dashboard/dashboard_controls_overlay.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
 import '../widgets/dashboard/dashboard_today_answer.dart';
 import '../services/member_profile.dart';
+import '../widgets/hub_memory_image.dart';
 import '../widgets/member_avatar.dart';
 import 'dashboard/city_weather_card.dart';
 import 'dashboard/dashboard_options_screen.dart';
@@ -73,7 +78,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<QueryDocumentSnapshot> _allTasks = [];
   Map<String, dynamic>? _rotaConfig;
 
-  List<String> _photoUrls = [];
+  /// In-memory memory rotation. Download URLs are refreshed here only, never
+  /// written back to Firestore.
+  final MemoryPhotoDeck _photoDeck = MemoryPhotoDeck();
 
   /// Streams used inside slide widgets. Slides are rebuilt on every data
   /// event, so they must look streams up here instead of creating them.
@@ -82,7 +89,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const Duration(seconds: 1),
     (i) => i,
   ).asBroadcastStream();
-  String? _currentPhotoUrl;
 
   String _primaryCityName = 'Brighton';
   List<Map<String, dynamic>> _savedCities = [];
@@ -358,17 +364,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .snapshots()
           .listen((snap) {
             if (!mounted) return;
-            _photoUrls = snap.docs
-                .map((d) => d.data()['url'] as String?)
-                .whereType<String>()
-                .where((url) => url.isNotEmpty)
-                .toList();
-            if (_photoUrls.isEmpty) {
-              _currentPhotoUrl = null;
-            } else if (_currentPhotoUrl == null ||
-                !_photoUrls.contains(_currentPhotoUrl)) {
-              _pickRandomPhoto();
-            }
+            _photoDeck.setPhotos(
+              memoryPhotosFromDocs(
+                snap.docs.map((doc) => (id: doc.id, data: doc.data())),
+              ),
+            );
             _rebuildSlides(_widthOrDefault);
           }, onError: (_) {}),
     );
@@ -376,8 +376,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _initWeatherSystem();
     _startTimer();
     _quoteTimer = Timer.periodic(const Duration(minutes: 2), (_) {
-      _pickRandomQuote();
-      _pickRandomPhoto();
+      if (!mounted) return;
+      // Advance before the rebuild so this frame shows the new memory.
+      commitMemoryRotation(
+        advance: _photoDeck.advance,
+        evict: evictHubMemoryImage,
+        rebuild: _pickRandomQuote,
+      );
     });
     _weatherUpdateTimer = Timer.periodic(
       const Duration(hours: 1),
@@ -397,11 +402,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _rebuildSlides(_widthOrDefault);
   }
 
-  void _pickRandomPhoto() {
-    if (_photoUrls.isEmpty) return;
-    final random = List.of(_photoUrls)..shuffle();
-    if (!mounted) return;
-    _currentPhotoUrl = random.first;
+  void _onMemoryPhotoError(String url) {
+    unawaited(
+      recoverMemoryPhoto(
+        deck: _photoDeck,
+        failedUrl: url,
+        refreshDownloadUrl: _refreshMemoryDownloadUrl,
+        evict: evictHubMemoryImage,
+        onChanged: () {
+          if (!mounted) return;
+          _rebuildSlides(_widthOrDefault);
+        },
+      ),
+    );
+  }
+
+  /// One metadata read for a hub photo object. The image bytes still come
+  /// from the download URL itself.
+  Future<String?> _refreshMemoryDownloadUrl(String storagePath) async {
+    try {
+      return await FirebaseStorage.instance.ref(storagePath).getDownloadURL();
+    } catch (_) {
+      debugPrint('Memory photo URL refresh failed');
+      return null;
+    }
   }
 
   HubMemberPalette get _memberPalette =>
@@ -711,9 +735,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           1;
       if (totalDays < 2) return title;
       final currentDayNum =
-          (DateUtils.dateOnly(
-                    currentDate,
-                  ).difference(DateUtils.dateOnly(start)).inDays +
+          (DateUtils.dateOnly(currentDate)
+                      .difference(DateUtils.dateOnly(start))
+                      .inDays +
                   1)
               .clamp(1, totalDays);
       return '$title (Day $currentDayNum/$totalDays)';
@@ -851,7 +875,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _weatherSlideIndex = slides.length;
     _addSlide(slides, 'weather', () => _buildWeatherSlide(metrics));
 
-    if (_photoUrls.isNotEmpty) {
+    if (_photoDeck.hasPhotos) {
       _addSlide(slides, 'photos', () => _buildPhotosSlide(metrics));
     }
 
@@ -1319,18 +1343,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     final anchorDate = (_rotaConfig!['anchorDate'] as Timestamp).toDate();
-    final daysSince = DateUtils.dateOnly(
-      DateTime.now(),
-    ).difference(DateUtils.dateOnly(anchorDate)).inDays;
+    final daysSince = DateUtils.dateOnly(DateTime.now())
+        .difference(DateUtils.dateOnly(anchorDate))
+        .inDays;
     if (daysSince < 0) {
       return _rotaEmptySlide(metrics, 'This week’s rota has not started yet.');
     }
 
     final absoluteWeekNum = (daysSince ~/ 7) + 1;
     final currentCycleWeek = ((daysSince ~/ 7) % 8) + 1;
-    final startOfWeek = DateUtils.dateOnly(
-      anchorDate,
-    ).add(Duration(days: (absoluteWeekNum - 1) * 7));
+    final startOfWeek = DateUtils.dateOnly(anchorDate)
+        .add(Duration(days: (absoluteWeekNum - 1) * 7));
     final weekId = DateFormat('yyyy-MM-dd').format(startOfWeek);
     final blueprint = _rotaConfig!['blueprint'] as Map<String, dynamic>? ?? {};
     final weekChores = List<Map<String, dynamic>>.from(
@@ -1779,19 +1802,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(DashboardTheme.radiusLg),
-                child: _currentPhotoUrl == null
+                child: _photoDeck.currentUrl == null
                     ? const DashboardEmptyState(
                         icon: Icons.photo_outlined,
                         tint: DashboardTheme.photos,
                         title: 'No photo yet',
                         message: 'Add a picture in Gallery to fill this slide.',
                       )
+                    : _photoDeck.holdingError
+                    ? const DashboardEmptyState(
+                        icon: Icons.broken_image_outlined,
+                        tint: DashboardTheme.photos,
+                        title: 'Photo could not load',
+                        message:
+                            'The next memory will appear on the next refresh.',
+                      )
                     : Stack(
                         fit: StackFit.expand,
                         children: [
-                          Image.network(
-                            _currentPhotoUrl!,
+                          HubMemoryImage(
+                            key: ValueKey(_photoDeck.currentUrl),
+                            url: _photoDeck.currentUrl!,
                             fit: BoxFit.contain,
+                            width: double.infinity,
+                            height: double.infinity,
+                            onLoadError: _onMemoryPhotoError,
                             loadingBuilder: (context, child, progress) {
                               if (progress == null) return child;
                               return const DashboardLoadingView(
@@ -1799,12 +1834,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               );
                             },
                             errorBuilder: (context, error, stack) {
-                              return const DashboardEmptyState(
-                                icon: Icons.broken_image_outlined,
-                                tint: DashboardTheme.photos,
-                                title: 'Photo could not load',
-                                message:
-                                    'The next memory will appear on the next refresh.',
+                              return const DashboardLoadingView(
+                                label: 'Loading a memory…',
                               );
                             },
                           ),
@@ -2312,8 +2343,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: DashboardEmptyState(
           icon: Icons.favorite_outline_rounded,
           title: 'No hub selected',
-          message:
-              'Open a shared hub from settings, then come back to this wall view.',
+          message: 'Open a shared hub from settings, then come back to this wall view.',
           action: FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: DashboardTheme.accent,
