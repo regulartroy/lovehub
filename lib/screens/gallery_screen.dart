@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../widgets/hub_memory_image.dart';
+
 class GalleryScreen extends StatefulWidget {
   final User user;
   final List<MapEntry<String, dynamic>> visibleHubs;
@@ -102,14 +104,12 @@ class _GalleryScreenState extends State<GalleryScreen> {
       }
 
       if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Upload complete!")));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text("Upload complete!")));
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Upload Error: $e")));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Upload Error: $e")));
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -154,9 +154,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
           .delete();
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Delete Error: $e")));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Delete Error: $e")));
     }
   }
 
@@ -270,8 +269,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                         secondaryAnimation,
                                       ) => FullScreenImageViewer(
                                         imageUrl: url,
-                                        heroTag: doc
-                                            .id, // The unique ID ties the two screens together
+                                        heroTag: doc.id, // The unique ID ties the two screens together
                                       ),
                                   transitionsBuilder:
                                       (
@@ -289,12 +287,11 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               );
                             },
                             child: Hero(
-                              tag: doc
-                                  .id, // The unique ID ties the two screens together
+                              tag: doc.id, // The unique ID ties the two screens together
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.network(
-                                  url,
+                                child: HubMemoryImage(
+                                  url: url,
                                   fit: BoxFit.cover,
                                   loadingBuilder: (ctx, child, progress) {
                                     if (progress == null) return child;
@@ -303,6 +300,17 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                       child: const Center(
                                         child: Icon(
                                           Icons.photo,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  errorBuilder: (ctx, error, stack) {
+                                    return Container(
+                                      color: Colors.grey.shade200,
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.broken_image,
                                           color: Colors.grey,
                                         ),
                                       ),
@@ -389,11 +397,18 @@ class FullScreenImageViewer extends StatelessWidget {
             maxScale: 4,
             child: Hero(
               tag: heroTag, // This MUST match the tag in the grid!
-              child: Image.network(
-                imageUrl,
+              child: HubMemoryImage(
+                url: imageUrl,
                 fit: BoxFit.contain,
                 width: double.infinity,
                 height: double.infinity,
+                errorBuilder: (context, error, stack) {
+                  return const Icon(
+                    Icons.broken_image,
+                    color: Colors.white54,
+                    size: 48,
+                  );
+                },
               ),
             ),
           ),
