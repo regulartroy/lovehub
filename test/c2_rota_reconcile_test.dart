@@ -3,10 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/event_import/c2_rota_reconcile.dart';
-import 'package:lovehub/event_import/firebase_cli_auth.dart';
 import 'package:lovehub/event_import/imported_event.dart';
 import 'package:lovehub/event_import/london_date.dart';
-import 'package:lovehub/services/web_build_stamp.dart';
 
 void main() {
   final reviewedAt = DateTime.utc(2026, 11, 8, 12);
@@ -811,7 +809,7 @@ void main() {
     });
   });
 
-  group('cli args and firebase login selection', () {
+  group('cli args and Application Default Credentials', () {
     test(
       'dry-run is the default and apply cannot use a fixture clock or file',
       () {
@@ -868,58 +866,50 @@ void main() {
       },
     );
 
-    test(
-      'GOOGLE_ACCESS_TOKEN wins and a missing login does not echo secrets',
-      () async {
-        var exchanged = 0;
-        final selected = await selectFirebaseCliAccessToken(
-          environment: const {'GOOGLE_ACCESS_TOKEN': 'ya29.direct-token'},
-          now: reviewedAt,
-          storedTokens: const FirebaseCliTokens(refreshToken: 'refresh-secret'),
-          readGcloudAccessToken: () async => 'gcloud-secret',
-          exchangeRefreshToken: (_) async {
-            exchanged++;
-            return 'exchanged';
-          },
-        );
-        expect(selected, 'ya29.direct-token');
-        expect(exchanged, 0);
+    test('missing ADC explains setup and withholds a token', () {
+      final message = c2RotaAdcUnavailableMessage(
+        'token ya29.secret refresh_token=abc private_key client_secret',
+      );
+      expect(message, contains('gcloud auth application-default login'));
+      expect(message, contains('set-quota-project lovehub-26107'));
+      expect(message, isNot(contains('ya29')));
+      expect(message, isNot(contains('refresh_token')));
+      expect(message, isNot(contains('private_key')));
+      expect(message, isNot(contains('client_secret')));
+      expect(
+        c2RotaAdcUnavailableMessage(
+          'Cloud Firestore refused the Application Default Credential (401).',
+        ),
+        contains('(401)'),
+      );
+    });
 
-        final cached = await selectFirebaseCliAccessToken(
-          environment: const {},
-          now: DateTime.utc(2026, 9, 25, 12),
-          storedTokens: FirebaseCliTokens(
-            accessToken: 'ya29.cached',
-            refreshToken: 'refresh-secret',
-            expiresAtMs: DateTime.utc(2026, 9, 25, 13).millisecondsSinceEpoch,
-          ),
-          readGcloudAccessToken: () async => null,
-          exchangeRefreshToken: (_) async => 'exchanged',
-        );
-        expect(cached, 'ya29.cached');
-
-        expect(
-          firebaseCliConfigCandidates(const {'HOME': '/home/box'}),
-          contains('/home/box/.config/configstore/firebase-tools.json'),
-        );
-        expect(
-          () => selectFirebaseCliAccessToken(
-            environment: const {},
-            now: reviewedAt,
-            storedTokens: null,
-            readGcloudAccessToken: () async => null,
-            exchangeRefreshToken: (_) async => 'nope',
-          ),
-          throwsA(
-            isA<FirebaseCliAuthException>().having(
-              (error) => error.message,
-              'message',
-              isNot(contains('ya29')),
-            ),
-          ),
-        );
-      },
-    );
+    test('the sync path does not scrape the Firebase CLI credential cache', () {
+      expect(
+        File('lib/event_import/firebase_cli_auth.dart').existsSync(),
+        isFalse,
+      );
+      final tool = File('tool/reconcile_c2_rota.dart').readAsStringSync();
+      for (final forbidden in [
+        'firebase-tools.json',
+        'configstore',
+        'print-access-token',
+        'FIREBASE_TOKEN',
+        'GOOGLE_ACCESS_TOKEN',
+        'firebaseToolsOauth',
+        'refresh_token',
+        'client_secret',
+        '_readCliConfig',
+        '_exchangeRefreshToken',
+      ]) {
+        expect(tool, isNot(contains(forbidden)), reason: forbidden);
+      }
+      expect(tool, contains('clientViaApplicationDefaultCredentials'));
+      expect(
+        c2RotaFirestoreScope,
+        'https://www.googleapis.com/auth/cloud-platform',
+      );
+    });
   });
 }
 

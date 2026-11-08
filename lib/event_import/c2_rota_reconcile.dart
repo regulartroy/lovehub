@@ -26,6 +26,23 @@ const c2RotaMaxFeedAge = Duration(hours: 6);
 const c2RotaMaxFutureSkew = Duration(minutes: 5);
 const c2CommitMaxAttempts = 3;
 
+/// Scope that `gcloud auth application-default login` grants and that the
+/// Cloud Firestore REST API accepts. The sync tool asks the official ADC
+/// client library for this scope and does not mint a token itself.
+const c2RotaFirestoreScope = 'https://www.googleapis.com/auth/cloud-platform';
+
+/// Printed when Application Default Credentials are missing or refused.
+/// Names the one-time setup. Does not include a token.
+const c2RotaAdcSetup = '''
+Firestore for this job uses Application Default Credentials from the Google client library.
+This process does not read the Firebase CLI login cache, does not exchange a stored refresh token, and does not ask gcloud to print a token.
+
+One-time setup, as the Google account that can read and write Cloud Firestore on lovehub-26107. Do not create a service-account key:
+  gcloud auth application-default login
+  gcloud auth application-default set-quota-project lovehub-26107
+
+A firebase login by itself is not used.''';
+
 const _auditIdPattern = r'^c2sync-\d{8}T\d{9}Z-[0-9a-f]{8}$';
 
 class C2RotaFeedException implements Exception {
@@ -54,6 +71,42 @@ class C2RotaWriteException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class C2RotaAuthException implements Exception {
+  C2RotaAuthException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Setup text plus a short library detail. Drops the detail when it could
+/// carry a token or a private key.
+String c2RotaAdcUnavailableMessage(Object? detail) {
+  final extra = _safeAuthDetail(detail);
+  if (extra == null) return c2RotaAdcSetup.trim();
+  return '${c2RotaAdcSetup.trim()}\n$extra';
+}
+
+String? _safeAuthDetail(Object? detail) {
+  if (detail == null) return null;
+  final text = detail.toString().trim();
+  if (text.isEmpty || text.length > 300) return null;
+  final lower = text.toLowerCase();
+  const withheld = [
+    'ya29',
+    'refresh_token',
+    'access_token',
+    'private_key',
+    'client_secret',
+    'bearer ',
+  ];
+  for (final marker in withheld) {
+    if (lower.contains(marker)) return null;
+  }
+  return text;
 }
 
 enum C2TomState { working, notWorking, undecided }

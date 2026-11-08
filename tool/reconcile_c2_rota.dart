@@ -9,18 +9,22 @@
 // Default is dry-run. --apply writes. See docs/c2-rota-reconcile.md.
 //
 // Feed token: file path only (default /home/box/secrets/tom_rota_feed_token).
-// Firestore: firebase login, FIREBASE_TOKEN, GOOGLE_ACCESS_TOKEN, or gcloud.
-// No service-account file. The token is never printed.
+// Firestore: Application Default Credentials via package:googleapis_auth.
+// The Firebase CLI credential cache is not read. The feed token is never printed.
+//
+// Firestore MCP (firebase-tools, proxied from firestore.googleapis.com/mcp)
+// can update or delete one document with a currentDocument precondition.
+// It has no documents:commit tool, so a multi-document reconcile would not
+// be atomic. This tool keeps one REST commit instead.
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:googleapis_auth/auth_io.dart';
 import 'package:http/http.dart' as http;
 import 'package:lovehub/event_import/c2_rota_reconcile.dart';
-import 'package:lovehub/event_import/firebase_cli_auth.dart';
 import 'package:lovehub/event_import/imported_event.dart';
-import 'package:lovehub/services/web_build_stamp.dart';
 
 const _usage = '''
 Reconcile imported c2-rota events with the Concorde rota feed.
@@ -50,13 +54,15 @@ Credential-free review:
     --events-file tool/c2_rota_events_example.json \\
     --now 2026-11-08T12:00:00Z
 
-Firestore auth is the existing firebase login (or GOOGLE_ACCESS_TOKEN /
-FIREBASE_TOKEN / gcloud). --events-file and --now cannot be combined with
---apply. Caps default to 12 confirms and 8 deletes (absolute max 40).
+Firestore uses Application Default Credentials (googleapis_auth). One-time:
+  gcloud auth application-default login
+  gcloud auth application-default set-quota-project lovehub-26107
+Do not create a service-account key. --events-file and --now cannot be
+combined with --apply. Caps default to 12 confirms and 8 deletes
+(absolute max 40).
 ''';
 
 Future<void> main(List<String> args) async {
-  final client = http.Client();
   try {
     final command = parseC2ReconcileArgs(
       args,
@@ -67,17 +73,17 @@ Future<void> main(List<String> args) async {
       return;
     }
     if (command.rollbackId != null) {
-      await _rollback(client, command);
+      await _rollback(command);
       return;
     }
-    await _reconcile(client, command);
+    await _reconcile(command);
   } on C2RotaArgsException catch (error) {
     stderr.writeln(error.message);
     exitCode = 1;
   } on C2RotaFeedException catch (error) {
     stderr.writeln(error.message);
     exitCode = 2;
-  } on FirebaseCliAuthException catch (error) {
+  } on C2RotaAuthException catch (error) {
     stderr.writeln(error.message);
     exitCode = 4;
   } on C2RotaWriteException catch (error) {
@@ -98,94 +104,104 @@ Future<void> main(List<String> args) async {
   } on FileSystemException catch (error) {
     stderr.writeln('Could not read ${error.path ?? 'a local file'}.');
     exitCode = 1;
-  } finally {
-    client.close();
   }
 }
 
-Future<void> _reconcile(http.Client client, C2ReconcileCommand command) async {
+Future<void> _reconcile(C2ReconcileCommand command) async {
   final hubId = command.hubId!;
   final now = command.now ?? DateTime.now().toUtc();
   final feed = parseC2RotaFeed(await _loadFeed(command));
-  final events = command.eventsFile != null
-      ? parseC2EventFixture(_readJsonFile(command.eventsFile!))
-      : await _queryEvents(client, hubId, await _googleAccessToken(client));
-  final plan = planC2RotaReconcile(
-    feed: feed,
-    events: events,
-    now: now,
-    maxConfirms: command.maxConfirms,
-    maxDeletes: command.maxDeletes,
-  );
-  stdout.write(renderC2RotaPlan(plan, hubId: hubId, applying: command.apply));
-  _writePlanFiles(command, plan);
+  AutoRefreshingAuthClient? firestore;
+  late final List<C2StoredEvent> events;
+  try {
+    if (command.eventsFile == null) {
+      firestore = await _firestoreClient();
+    }
+    events = command.eventsFile != null
+        ? parseC2EventFixture(_readJsonFile(command.eventsFile!))
+        : await _queryEvents(firestore!, hubId);
+    final plan = planC2RotaReconcile(
+      feed: feed,
+      events: events,
+      now: now,
+      maxConfirms: command.maxConfirms,
+      maxDeletes: command.maxDeletes,
+    );
+    stdout.write(renderC2RotaPlan(plan, hubId: hubId, applying: command.apply));
+    _writePlanFiles(command, plan);
 
-  if (!command.apply) {
-    exitCode = plan.blockReason == null ? 0 : 2;
-    return;
-  }
-  if (!plan.canCommit) {
-    exitCode = 2;
-    return;
-  }
-  if (!plan.hasMutations) return;
+    if (!command.apply) {
+      exitCode = plan.blockReason == null ? 0 : 2;
+      return;
+    }
+    if (!plan.canCommit) {
+      exitCode = 2;
+      return;
+    }
+    if (!plan.hasMutations) return;
 
-  final appliedAt = DateTime.now().toUtc();
-  final auditId = c2RotaAuditId(appliedAt, plan.planKey);
-  final writes = c2RotaCommitWrites(
-    projectId: lovehubFirebaseProjectId,
-    hubId: hubId,
-    plan: plan,
-    auditId: auditId,
-    appliedAt: appliedAt,
-  );
-  _writePendingAudit(command, auditId, writes);
-  await _commit(client, await _googleAccessToken(client), writes);
-  stdout.writeln('Applied audit hubs/$hubId/$c2RotaAuditCollection/$auditId');
+    final appliedAt = DateTime.now().toUtc();
+    final auditId = c2RotaAuditId(appliedAt, plan.planKey);
+    final writes = c2RotaCommitWrites(
+      projectId: lovehubFirebaseProjectId,
+      hubId: hubId,
+      plan: plan,
+      auditId: auditId,
+      appliedAt: appliedAt,
+    );
+    _writePendingAudit(command, auditId, writes);
+    await _commit(firestore!, writes);
+    stdout.writeln('Applied audit hubs/$hubId/$c2RotaAuditCollection/$auditId');
+  } finally {
+    firestore?.close();
+  }
 }
 
-Future<void> _rollback(http.Client client, C2ReconcileCommand command) async {
+Future<void> _rollback(C2ReconcileCommand command) async {
   final hubId = command.hubId!;
   final auditId = command.rollbackId!;
-  final access = await _googleAccessToken(client);
-  final document = await _getDocument(
-    client,
-    access,
-    'hubs/${Uri.encodeComponent(hubId)}/$c2RotaAuditCollection/${Uri.encodeComponent(auditId)}',
-  );
-  final audit = parseC2RotaAuditDocument(runId: auditId, document: document);
-  if (audit.hubId != hubId) {
-    throw C2RotaFeedException('Audit $auditId belongs to a different hub.');
+  final firestore = await _firestoreClient();
+  try {
+    final document = await _getDocument(
+      firestore,
+      'hubs/${Uri.encodeComponent(hubId)}/$c2RotaAuditCollection/${Uri.encodeComponent(auditId)}',
+    );
+    final audit = parseC2RotaAuditDocument(runId: auditId, document: document);
+    if (audit.hubId != hubId) {
+      throw C2RotaFeedException('Audit $auditId belongs to a different hub.');
+    }
+    final current = await _queryEvents(firestore, hubId);
+    final plan = planC2RotaRollback(audit: audit, currentEvents: current);
+    stdout.writeln(
+      command.apply ? 'C2 rota rollback: apply' : 'C2 rota rollback: dry-run',
+    );
+    stdout.writeln('hub: $hubId');
+    stdout.writeln('reverts: $auditId');
+    for (final action in plan.actions) {
+      stdout.writeln('${action.op}  ${action.docId}  ${action.reason}');
+    }
+    stdout.writeln('rollback writes: ${plan.writes.length}');
+    if (!command.apply || plan.writes.isEmpty) {
+      stdout.writeln('nothing written');
+      return;
+    }
+    final appliedAt = DateTime.now().toUtc();
+    final rollbackId = c2RotaAuditId(appliedAt, 'rollback:$auditId');
+    final writes = c2RollbackCommitWrites(
+      projectId: lovehubFirebaseProjectId,
+      hubId: hubId,
+      plan: plan,
+      sourceAuditId: auditId,
+      rollbackAuditId: rollbackId,
+      appliedAt: appliedAt,
+    );
+    await _commit(firestore, writes);
+    stdout.writeln(
+      'Applied rollback hubs/$hubId/$c2RotaAuditCollection/$rollbackId',
+    );
+  } finally {
+    firestore.close();
   }
-  final current = await _queryEvents(client, hubId, access);
-  final plan = planC2RotaRollback(audit: audit, currentEvents: current);
-  stdout.writeln(
-    command.apply ? 'C2 rota rollback: apply' : 'C2 rota rollback: dry-run',
-  );
-  stdout.writeln('hub: $hubId');
-  stdout.writeln('reverts: $auditId');
-  for (final action in plan.actions) {
-    stdout.writeln('${action.op}  ${action.docId}  ${action.reason}');
-  }
-  stdout.writeln('rollback writes: ${plan.writes.length}');
-  if (!command.apply || plan.writes.isEmpty) {
-    stdout.writeln('nothing written');
-    return;
-  }
-  final appliedAt = DateTime.now().toUtc();
-  final rollbackId = c2RotaAuditId(appliedAt, 'rollback:$auditId');
-  final writes = c2RollbackCommitWrites(
-    projectId: lovehubFirebaseProjectId,
-    hubId: hubId,
-    plan: plan,
-    sourceAuditId: auditId,
-    rollbackAuditId: rollbackId,
-    appliedAt: appliedAt,
-  );
-  await _commit(client, access, writes);
-  stdout.writeln(
-    'Applied rollback hubs/$hubId/$c2RotaAuditCollection/$rollbackId',
-  );
 }
 
 Future<Object?> _loadFeed(C2ReconcileCommand command) async {
@@ -231,10 +247,39 @@ Object? _readJsonFile(String path) {
   return jsonDecode(File(path).readAsStringSync());
 }
 
+Future<AutoRefreshingAuthClient> _firestoreClient() async {
+  try {
+    return await clientViaApplicationDefaultCredentials(
+      scopes: const [c2RotaFirestoreScope],
+    );
+  } catch (_) {
+    // The library's last error on a normal computer is the GCE metadata
+    // probe. The setup text is the actionable failure. Do not print it:
+    // it is not a credential, and it hides the missing-login cause.
+    throw C2RotaAuthException(c2RotaAdcUnavailableMessage(null));
+  }
+}
+
+Map<String, String> _firestoreHeaders({bool json = false}) {
+  return {
+    if (json) 'Content-Type': 'application/json',
+    'x-goog-user-project': lovehubFirebaseProjectId,
+  };
+}
+
+void _refuseFirestoreStatus(int statusCode) {
+  if (statusCode == 401 || statusCode == 403) {
+    throw C2RotaAuthException(
+      c2RotaAdcUnavailableMessage(
+        'Cloud Firestore refused the Application Default Credential ($statusCode).',
+      ),
+    );
+  }
+}
+
 Future<List<C2StoredEvent>> _queryEvents(
   http.Client client,
   String hubId,
-  String accessToken,
 ) async {
   final uri = Uri.parse(
     'https://firestore.googleapis.com/v1/projects/$lovehubFirebaseProjectId'
@@ -242,10 +287,7 @@ Future<List<C2StoredEvent>> _queryEvents(
   );
   final response = await client.post(
     uri,
-    headers: {
-      'Authorization': 'Bearer $accessToken',
-      'Content-Type': 'application/json',
-    },
+    headers: _firestoreHeaders(json: true),
     body: jsonEncode({
       'structuredQuery': {
         'from': [
@@ -261,6 +303,7 @@ Future<List<C2StoredEvent>> _queryEvents(
       },
     }),
   );
+  _refuseFirestoreStatus(response.statusCode);
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw C2RotaFeedException(
       'Could not read c2-rota events (${response.statusCode}).',
@@ -272,20 +315,17 @@ Future<List<C2StoredEvent>> _queryEvents(
 
 Future<Map<String, dynamic>> _getDocument(
   http.Client client,
-  String accessToken,
   String path,
 ) async {
   final uri = Uri.parse(
     'https://firestore.googleapis.com/v1/projects/$lovehubFirebaseProjectId'
     '/databases/(default)/documents/$path',
   );
-  final response = await client.get(
-    uri,
-    headers: {'Authorization': 'Bearer $accessToken'},
-  );
+  final response = await client.get(uri, headers: _firestoreHeaders());
   if (response.statusCode == 404) {
     throw C2RotaFeedException('Audit document was not found.');
   }
+  _refuseFirestoreStatus(response.statusCode);
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw C2RotaFeedException(
       'Could not read the audit document (${response.statusCode}).',
@@ -300,7 +340,6 @@ Future<Map<String, dynamic>> _getDocument(
 
 Future<void> _commit(
   http.Client client,
-  String accessToken,
   List<Map<String, dynamic>> writes,
 ) async {
   if (writes.isEmpty) return;
@@ -312,19 +351,16 @@ Future<void> _commit(
   for (var attempt = 0; attempt < c2CommitMaxAttempts; attempt++) {
     final response = await client.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $accessToken',
-        'Content-Type': 'application/json',
-      },
+      headers: _firestoreHeaders(json: true),
       body: body,
     );
     if (response.statusCode >= 200 && response.statusCode < 300) return;
-    final redacted = redactSecret(response.body, accessToken);
+    _refuseFirestoreStatus(response.statusCode);
     if (c2CommitShouldRetry(response.statusCode, attempt)) {
       await Future<void>.delayed(Duration(milliseconds: 400 << attempt));
       continue;
     }
-    if (c2CommitConflict(response.statusCode, redacted)) {
+    if (c2CommitConflict(response.statusCode, response.body)) {
       throw C2RotaWriteException(
         'Firestore rejected the batch because a document changed since it '
         'was read. Nothing was written. The next run reads again.',
@@ -336,92 +372,6 @@ Future<void> _commit(
       exitCode: 1,
     );
   }
-}
-
-Future<String> _googleAccessToken(http.Client client) {
-  return selectFirebaseCliAccessToken(
-    environment: Platform.environment,
-    now: DateTime.now(),
-    storedTokens: _readCliConfig(),
-    readGcloudAccessToken: _gcloudAccessToken,
-    exchangeRefreshToken: (refresh) => _exchangeRefreshToken(client, refresh),
-  );
-}
-
-FirebaseCliTokens? _readCliConfig() {
-  for (final path in firebaseCliConfigCandidates(Platform.environment)) {
-    final file = File(path);
-    if (!file.existsSync()) continue;
-    Object? decoded;
-    try {
-      decoded = jsonDecode(file.readAsStringSync());
-    } on FormatException {
-      throw FirebaseCliAuthException('Could not read $path.');
-    }
-    if (decoded is! Map) {
-      throw FirebaseCliAuthException('Could not read $path.');
-    }
-    return parseFirebaseCliConfig(Map<String, dynamic>.from(decoded));
-  }
-  return null;
-}
-
-Future<String?> _gcloudAccessToken() async {
-  try {
-    final result = await Process.run('gcloud', ['auth', 'print-access-token']);
-    if (result.exitCode != 0) return null;
-    final token = '${result.stdout}'.trim();
-    if (token.isEmpty || token.contains('\n')) return null;
-    return token;
-  } on ProcessException {
-    return null;
-  }
-}
-
-Future<String> _exchangeRefreshToken(
-  http.Client client,
-  String refreshToken,
-) async {
-  final clientId = _envOr('FIREBASE_CLIENT_ID', firebaseToolsOauthClientId);
-  final clientSecret = _envOr(
-    'FIREBASE_CLIENT_SECRET',
-    firebaseToolsOauthClientSecret,
-  );
-  final response = await client.post(
-    Uri.parse('https://oauth2.googleapis.com/token'),
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: {
-      'grant_type': 'refresh_token',
-      'refresh_token': refreshToken,
-      'client_id': clientId,
-      'client_secret': clientSecret,
-    },
-  );
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw FirebaseCliAuthException(
-      'Could not refresh the Firebase CLI credential '
-      '(${response.statusCode}). Run `firebase login` again.',
-    );
-  }
-  final decoded = jsonDecode(response.body);
-  if (decoded is! Map || decoded['access_token'] is! String) {
-    throw FirebaseCliAuthException(
-      'Token refresh did not return an access token.',
-    );
-  }
-  final access = (decoded['access_token'] as String).trim();
-  if (access.isEmpty) {
-    throw FirebaseCliAuthException(
-      'Token refresh did not return an access token.',
-    );
-  }
-  return access;
-}
-
-String _envOr(String name, String fallback) {
-  final value = Platform.environment[name]?.trim();
-  if (value == null || value.isEmpty) return fallback;
-  return value;
 }
 
 void _writePlanFiles(C2ReconcileCommand command, C2RotaPlan plan) {

@@ -68,7 +68,14 @@ The fixture has no Firestore `updateTime`, so the last line says a live dry-run 
 The production hub is `pobIb3qupVJudoQGMJjl` in project `lovehub-26107`. `HUB_ID` can replace `--hub`.
 
 1. The feed token is the raw bearer token in `/home/box/secrets/tom_rota_feed_token` (mode `0600`, owner the user who will run the job). A leading `Bearer ` is accepted. The file must not be a JSON key or a private key. Override the path with `--token-file` or `TOM_ROTA_FEED_TOKEN_FILE`. Do not pass the token as an argument.
-2. `firebase login` as that same user, for project `lovehub-26107`. The job reads `~/.config/configstore/firebase-tools.json`. `FIREBASE_TOKEN` (`firebase login:ci`), `GOOGLE_ACCESS_TOKEN`, or `gcloud auth print-access-token` also work, in that order after an explicit access token. No service-account JSON file.
+2. Application Default Credentials for the Google account that can read and write Cloud Firestore on `lovehub-26107`. This is separate from `firebase login`. The job uses `package:googleapis_auth` `clientViaApplicationDefaultCredentials` and the scope `https://www.googleapis.com/auth/cloud-platform`. It does not read the Firebase CLI credential cache, does not exchange a stored refresh token, and does not run a command that prints an access token. Do not create a service-account key.
+
+```bash
+gcloud auth application-default login
+gcloud auth application-default set-quota-project lovehub-26107
+```
+
+If that has not been done, a live run exits 4 and prints those two commands. It does not start the login itself.
 
 ```bash
 dart run tool/reconcile_c2_rota.dart --hub pobIb3qupVJudoQGMJjl
@@ -90,7 +97,7 @@ dart run tool/reconcile_c2_rota.dart --hub pobIb3qupVJudoQGMJjl --apply
 
 A no-op apply writes nothing. A real apply prints `Applied audit hubs/pobIb3qupVJudoQGMJjl/c2RotaSyncAudit/c2sync-…`. Run it again. The second run should report no changes: confirms stay confirmed, deletes are already gone, undecided stays tentative.
 
-Schedule it only after that. Cron must be the Unix user who ran `firebase login`, so `HOME` points at that configstore. Do not wrap this script in another `flock` on the same lock file; the script already holds one.
+Schedule it only after that. Cron must be the Unix user who ran `gcloud auth application-default login`, so `HOME` is that user's home. Do not wrap this script in another `flock` on the same lock file; the script already holds one.
 
 ```cron
 PATH=/home/box/flutter/bin:/usr/bin:/bin
@@ -99,7 +106,9 @@ PATH=/home/box/flutter/bin:/usr/bin:/bin
 
 `tool/reconcile_c2_rota.sh` `cd`s to the repo, takes the lock, and runs `dart`. Set `DART` if `dart` is not on `PATH`. Overlapping runs exit 0 and leave the in-flight one alone.
 
-There is no `firebase deploy` for this job. `firebase.json` is unchanged. A Cloud Function is not a fit for the current project: there is no `functions` codebase, a function would have to store the feed token in the cloud, and Cloud Scheduler needs the Blaze plan. This job keeps the token on the shared computer and uses the Firebase CLI login that already stamps `appMeta/web`.
+There is no `firebase deploy` for this job. `firebase.json` is unchanged. A Cloud Function is not a fit for the current project: there is no `functions` codebase, a function would have to store the feed token in the cloud, and Cloud Scheduler needs the Blaze plan. This job keeps the feed token on the shared computer.
+
+Firestore MCP is not used for the write. `npx firebase-tools mcp` proxies Firestore tools from `https://firestore.googleapis.com/mcp`. A `tools/list` against that endpoint (no project, no document call) shows `update_document` and `delete_document`, each with a `currentDocument` precondition (`updateTime` or `exists`), plus `add_document`, `get_document`, and `list_documents`. There is no commit, batch, or begin-transaction tool. The local `firestore_query_collection` tool is read-only and defaults to 10 documents. Confirming one show, deleting others, and writing the audit has to be one `documents:commit`, so this job calls that REST method with the ADC client. The requests send `x-goog-user-project: lovehub-26107`.
 
 ## Rollback
 
@@ -120,7 +129,7 @@ The id is the one printed by `--apply`. Dry-run is the default. `--audit-dir c2-
 
 ## Permissions
 
-The Google account from `firebase login` needs Firestore read and write on `lovehub-26107`: get, list, create, update, and delete. The account that already deploys Hosting and runs `tool/stamp_web_build.dart` has that (Editor, or an equivalent custom role). IAM credentials bypass security rules, which is the same path the build stamp uses.
+The Google account from `gcloud auth application-default login` needs Firestore read and write on `lovehub-26107`: get, list, create, update, and delete (`roles/datastore.user`, or Editor). That can be the same person who deploys Hosting, but this job does not reuse the Firebase CLI login. User ADC bypasses security rules the same way other IAM credentials do.
 
 This change does not edit `firestore.rules`, indexes, or IAM. A hub member's ID token is not required.
 
@@ -144,7 +153,7 @@ Writes happen only when a show changes: one write per confirm, one delete per re
 | 1 | Bad arguments or a local file could not be read |
 | 2 | Feed missing, empty, stale, invalid, or over a cap. Nothing written |
 | 3 | A document changed since it was read. Nothing written; the next run reads again |
-| 4 | No Firebase CLI login |
+| 4 | Application Default Credentials are missing or Firestore refused them. Nothing written |
 
 ## Tests
 
