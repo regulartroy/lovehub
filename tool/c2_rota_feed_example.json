@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-11-08T09:39:00Z",
+  "days": [
+    {
+      "date": "2026-11-09",
+      "show": "Cardinals",
+      "status": "on",
+      "tom": "working",
+      "role": null,
+      "loadIn": null,
+      "finish": null
+    },
+    {
+      "date": "2026-11-10",
+      "show": "Mykki Blanco",
+      "status": "on",
+      "tom": "undecided",
+      "role": null,
+      "loadIn": null,
+      "finish": null
+    },
+    {
+      "date": "2026-11-12",
+      "show": "Allergies",
+      "status": "on",
+      "tom": "undecided",
+      "role": null,
+      "loadIn": null,
+      "finish": null
+    },
+    {
+      "date": "2026-11-13",
+      "show": "John Digweed",
+      "status": "on",
+      "tom": "not_working",
+      "role": null,
+      "loadIn": null,
+      "finish": null
+    },
+    {
+      "date": "2026-11-13",
+      "show": "Junebabies (Bar)",
+      "status": "on",
+      "tom": "not_working",
+      "role": null,
+      "loadIn": null,
+      "finish": null
+    },
+    {
+      "date": "2026-11-15",
+      "show": "MNEK",
+      "status": "cancelled",
+      "tom": "not_working",
+      "role": null,
+      "loadIn": null,
+      "finish": null
+    }
+  ]
+}

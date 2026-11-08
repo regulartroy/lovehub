@@ -54,3 +54,6 @@ functions/node_modules/
 *serviceAccount*.json
 *service-account*.json
 *firebase-adminsdk*.json
+
+# Local journals from tool/reconcile_c2_rota.dart (--audit-dir).
+c2-rota-audit/

@@ -145,3 +145,17 @@ Dry-run with no token only checks the JSON. It does not resolve `tom` to a
 uid and it does not write.
 
 A second run of the same file overwrites those documents in place.
+
+## Automatic C2 reconciliation
+
+`tool/reconcile_c2_rota.dart` is a separate job. It does not import new shows.
+It reads the Concorde feed and updates **existing** `c2-rota:{externalId}`
+documents only: confirm a tentative show when Tom is working, leave an
+undecided show tentative, and delete a tentative show when that show is
+cancelled or `tom` is `not_working`. Confirmed documents stay as they are.
+Personal, `seb`, and `rot90s` events are not read for changes.
+
+A later `--tentative` import can mark a show tentative again. The next
+reconcile confirms it if the feed still says Tom is working, or removes it
+if the feed says that show is cancelled or not working. Details, the dry-run,
+and the 15-minute activation are in [c2-rota-reconcile.md](c2-rota-reconcile.md).
