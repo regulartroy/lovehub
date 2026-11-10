@@ -206,6 +206,59 @@ void main() {
         'failed [redacted]',
       );
     });
+
+    test('skips empty show off-days and keeps valid rows', () {
+      final parsed = parseC2RotaFeed({
+        'generatedAt': '2026-11-08T09:39:00Z',
+        'days': [
+          {
+            'date': '2026-11-02',
+            'show': '',
+            'status': 'on',
+            'tom': 'undecided',
+          },
+          _row('2026-11-09', 'Cardinals', 'working'),
+          {
+            'date': '2026-11-11',
+            'show': '   ',
+            'status': 'on',
+            'tom': 'undecided',
+          },
+        ],
+      });
+      expect(parsed.days.map((day) => day.show), ['Cardinals']);
+      expect(parsed.warnings, hasLength(2));
+      expect(parsed.warnings.first, contains('empty show'));
+      expect(parsed.warnings.first, contains('2026-11-02'));
+    });
+
+    test('treats postponed like cancelled and skips unknown status', () {
+      final parsed = parseC2RotaFeed({
+        'generatedAt': '2026-11-08T09:39:00Z',
+        'days': [
+          {
+            'date': '2026-11-07',
+            'show': 'DAY RAVE',
+            'status': 'postponed',
+            'tom': 'not_working',
+          },
+          {
+            'date': '2026-11-09',
+            'show': 'Mystery',
+            'status': 'tbc',
+            'tom': 'undecided',
+          },
+          _row('2026-11-15', 'MNEK', 'not_working', 'cancelled'),
+        ],
+      });
+      expect(parsed.days, hasLength(2));
+      expect(parsed.days.first.show, 'DAY RAVE');
+      expect(parsed.days.first.showStatus, C2ShowStatus.cancelled);
+      expect(parsed.days.last.show, 'MNEK');
+      expect(parsed.warnings, hasLength(1));
+      expect(parsed.warnings.single, contains('unknown status'));
+      expect(parsed.warnings.single, contains('tbc'));
+    });
   });
 
   group('8 Nov review', () {
@@ -505,6 +558,92 @@ void main() {
       );
       expect(plan.outOfScope, 1);
       expect(plan.deletes, isEmpty);
+    });
+
+    test('postponed deletes a tentative show like cancelled', () {
+      final plan = _plan(
+        days: [
+          {
+            'date': '2026-11-15',
+            'show': 'DAY RAVE',
+            'status': 'postponed',
+            'tom': 'working',
+          },
+        ],
+        events: [_show('2026-11-15', 'C2 — DAY RAVE')],
+      );
+      expect(plan.deletes.map((action) => action.docId), [
+        'c2-rota:2026-11-15',
+      ]);
+      expect(plan.deletes.single.reason, 'show cancelled');
+    });
+
+    test('does not delete before today but may confirm a past worked show', () {
+      final now = DateTime.utc(2026, 11, 10, 12);
+      final plan = planC2RotaReconcile(
+        feed: parseC2RotaFeed({
+          'generatedAt': '2026-11-10T00:00:00Z',
+          'days': [
+            _row('2026-11-08', 'Holy Fawn', 'not_working'),
+            _row('2026-11-09', 'Cardinals', 'working'),
+            _row('2026-11-10', 'Mykki Blanco', 'not_working'),
+            _row('2026-11-13', 'John Digweed', 'not_working'),
+          ],
+        }),
+        events: [
+          _show('2026-11-08', 'C2 — Holy Fawn'),
+          _show('2026-11-09', 'C2 — Cardinals'),
+          _show('2026-11-10', 'C2 — Mykki Blanco'),
+          _show('2026-11-13', 'C2 — John Digweed'),
+        ],
+        now: now,
+      );
+      expect(plan.confirms.map((action) => action.docId), [
+        'c2-rota:2026-11-09',
+      ]);
+      expect(plan.deletes.map((action) => action.docId), [
+        'c2-rota:2026-11-10',
+        'c2-rota:2026-11-13',
+      ]);
+      final pastKeep = plan.actions.singleWhere(
+        (action) => action.docId == 'c2-rota:2026-11-08',
+      );
+      expect(pastKeep.kind, C2RotaActionKind.keepTentative);
+      expect(pastKeep.reason, 'before today; not deleted');
+    });
+
+    test('skipped feed rows appear as warnings without blocking the plan', () {
+      final plan = _plan(
+        days: [
+          {
+            'date': '2026-11-02',
+            'show': '',
+            'status': 'on',
+            'tom': 'undecided',
+          },
+          {
+            'date': '2026-11-09',
+            'show': 'Cardinals',
+            'status': 'tbc',
+            'tom': 'working',
+          },
+          _row('2026-11-12', 'The Allergies', 'undecided'),
+        ],
+        events: [_show('2026-11-12', 'C2 — The Allergies')],
+      );
+      expect(plan.blockReason, isNull);
+      expect(plan.deletes, isEmpty);
+      expect(plan.confirms, isEmpty);
+      expect(
+        plan.actions.where((action) => action.kind == C2RotaActionKind.skip),
+        hasLength(2),
+      );
+      expect(
+        plan.actions.singleWhere(
+          (action) => action.kind == C2RotaActionKind.keepTentative,
+        ).docId,
+        'c2-rota:2026-11-12',
+      );
     });
 
     test('slug helpers', () {

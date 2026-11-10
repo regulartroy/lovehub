@@ -6,9 +6,9 @@ LoveHub already stores imported Concorde shifts as `hubs/{hubId}/events/c2-rota:
 | --- | --- | --- |
 | `tom=working` and `status=on` | Set `status` to `confirmed` | Leave it |
 | `tom=undecided` and `status=on` | Leave it tentative | Leave it |
-| `status=cancelled`, or `tom=not_working` | Delete that document | Leave it |
+| `status=cancelled` or `postponed`, or `tom=not_working` | Delete that document (today or future only) | Leave it |
 
-`cancelled` removes a tentative show even when `tom` is `working` or `undecided`. A confirmed show is never deleted and never moved back to tentative.
+`cancelled` and `postponed` remove a tentative show even when `tom` is `working` or `undecided`. A confirmed show is never deleted and never moved back to tentative. Deletes never apply to events dated before today (Europe/London); past history is left as stored. Confirming a past tentative show Tom worked is still allowed.
 
 ## What it will not touch
 
@@ -29,11 +29,11 @@ Matching is per show, on the Europe/London civil date:
 - A feed row with no imported event is logged and not created.
 - An imported event with no matching feed row is left in place. Absence is not a cancellation.
 
-The feed has to be a JSON object with `generatedAt` and a non-empty `days` array. Each day needs `date` (`YYYY-MM-DD`), `show`, `status` (`on` or `cancelled`), and `tom` (`working`, `not_working`, or `undecided`). One bad row, an empty list, a duplicate show on the same date, or more than 500 rows rejects the whole feed. Nothing is written.
+The feed has to be a JSON object with `generatedAt` and a non-empty `days` array. Each kept day needs `date` (`YYYY-MM-DD`), a non-empty `show`, `status` (`on`, `cancelled`, or `postponed`), and `tom` (`working`, `not_working`, or `undecided`). Empty `show` rows (off-days) and unknown `status` values are skipped with a warning rather than failing the feed. An empty list after skips, a duplicate show on the same date, a structurally invalid row, or more than 500 rows rejects the whole feed. Nothing is written.
 
 `generatedAt` must be within 6 hours of the clock, and not more than 5 minutes ahead. A stale feed still prints the plan. `--apply` refuses it.
 
-Days are acted on only inside the London window of 14 days back through 90 days ahead. That is the span the feed covers. Rows outside it are ignored.
+Days are acted on only inside the London window of 14 days back through 90 days ahead. That is the span the feed covers. Rows outside it are ignored. Within that window, deletes still refuse any show dated before today in Europe/London.
 
 One run confirms at most 12 events and deletes at most 8 (raise with `--max-confirms` / `--max-deletes`, hard ceiling 40). Over the cap, the run writes nothing: it does not apply the first few. More than 500 imported `c2-rota` documents also writes nothing.
 
