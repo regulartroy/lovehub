@@ -70,8 +70,7 @@ void main() {
   });
 
   test('keeps the raw Auth / stored Google URL', () {
-    const auth =
-        'https://lh3.googleusercontent.com/a/ACg8ocMaria=s96-c';
+    const auth = 'https://lh3.googleusercontent.com/a/ACg8ocMaria=s96-c';
     expect(
       resolveMemberPhotoUrl(
         uid: 'maria',
@@ -94,7 +93,10 @@ void main() {
       currentUserProfileUpdates(
         authPhotoURL: 'https://example.com/tom.jpg',
         authDisplayName: 'Tom',
-        existing: {'photoURL': 'https://example.com/tom.jpg', 'displayName': 'Tom'},
+        existing: {
+          'photoURL': 'https://example.com/tom.jpg',
+          'displayName': 'Tom',
+        },
       ),
       isNull,
     );
@@ -112,10 +114,7 @@ void main() {
         authDisplayName: 'Tom Hughes',
         existing: {},
       ),
-      {
-        'photoURL': 'https://example.com/tom.jpg',
-        'displayName': 'Tom Hughes',
-      },
+      {'photoURL': 'https://example.com/tom.jpg', 'displayName': 'Tom Hughes'},
     );
     expect(
       currentUserProfileUpdates(

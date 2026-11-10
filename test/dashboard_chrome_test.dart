@@ -48,9 +48,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: Center(
-            child: DashboardPageDots(count: 4, index: 2),
-          ),
+          body: Center(child: DashboardPageDots(count: 4, index: 2)),
         ),
       ),
     );

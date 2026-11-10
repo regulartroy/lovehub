@@ -16,6 +16,41 @@ works. On 10 Nov 2026 that page published schema.org **microdata**
 recipe sites publish JSON-LD. The parser tries JSON-LD first and uses
 microdata when JSON-LD has no ingredients or steps.
 
+## Pictures
+
+Every recipe can have one picture. In **New Recipe** or **Edit Recipe**, use
+**Take photo** (the phone camera), **Choose photo** (the library, or a file
+chooser on the web), or **Remove picture**. The picture replaces the
+cutlery placeholder on the Recipes grid and sits at the top of the recipe.
+Recipes without one keep the placeholder.
+
+When a link is imported, `importRecipePage` also returns `imageUrl`: a
+suggested picture from the page. It looks for the JSON-LD Recipe `image`
+(a string, an array, or an ImageObject; the widest one wins), then
+microdata `itemprop="image"`, then `og:image` / `twitter:image`. Relative
+links are resolved against the page. The app then calls `fetchRecipeImage`
+to download it, because recipe sites don't let a browser read their images
+(CORS). The suggestion shows in the preview and is kept by default. Tom can
+remove it (and bring it back), or replace it with his own.
+
+`fetchRecipeImage` (callable, `europe-west2`) uses the same SSRF guards as
+the page fetch. It only returns JPEG, PNG, WebP, or GIF, checked against the
+file's first bytes as well as the header, and it refuses anything over 5 MB.
+It returns base64, and nothing is stored until **Save**. Same sign-in and
+hub check as the import, with 30 pictures per user per minute.
+
+The app shrinks every picture before upload: the longest side becomes 1200px,
+it is saved as a JPEG at quality 80, it is turned upright, and transparent
+areas become white. The upload goes to Firebase Storage at
+`hubs/{hubId}/recipes/{recipeId}/{millis}.jpg`, and the recipe doc gets
+`imagePath` and `imageUrl` (the download URL). Replacing or removing a
+picture, or deleting the recipe, deletes the old object.
+
+`storage.rules` (deployed with `firebase deploy --only storage`) allows
+recipe pictures for signed-in users only. Uploads must be `image/jpeg`,
+`png`, `webp`, or `gif`, and under 5 MB. The existing `hubs/{hubId}/photos`
+gallery rule is unchanged.
+
 ## Why a Cloud Function
 
 The app is Flutter web on `love-hub.web.app`. A browser cannot fetch
@@ -82,7 +117,7 @@ tablet pick up the new build:
 
 ```bash
 cd functions && npm ci && cd ..
-firebase deploy --only functions:importRecipePage --project lovehub-26107
+firebase deploy --only functions:importRecipePage,functions:fetchRecipeImage,storage --project lovehub-26107
 tool/deploy_hosting.sh
 ```
 
@@ -114,7 +149,7 @@ function uses the default credentials of the Cloud Functions runtime.
 ## Tests
 
 ```bash
-flutter test test/recipe_page_parser_test.dart test/recipe_url_test.dart test/recipe_import_client_test.dart test/recipe_link_import_sheet_test.dart test/shopping_list_items_test.dart
+flutter test test/recipe_picture_test.dart test/recipe_page_parser_test.dart test/recipe_url_test.dart test/recipe_import_client_test.dart test/recipe_link_import_sheet_test.dart test/shopping_list_items_test.dart
 cd functions && node --test
 ```
 

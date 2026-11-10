@@ -639,9 +639,11 @@ void main() {
         hasLength(2),
       );
       expect(
-        plan.actions.singleWhere(
-          (action) => action.kind == C2RotaActionKind.keepTentative,
-        ).docId,
+        plan.actions
+            .singleWhere(
+              (action) => action.kind == C2RotaActionKind.keepTentative,
+            )
+            .docId,
         'c2-rota:2026-11-12',
       );
     });

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/event_sanity.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,10 +11,12 @@ import 'package:firebase_vertexai/firebase_vertexai.dart';
 
 import '../models/recipe_model.dart';
 import '../recipe_import/recipe_import_client.dart';
+import '../recipe_import/recipe_picture.dart';
 import '../recipe_import/recipe_url.dart';
 import '../repositories/recipe_repository.dart';
 import '../repositories/task_repository.dart';
 import '../widgets/recipe_link_import_sheet.dart';
+import '../widgets/recipe_picture.dart';
 import 'tasks_screen.dart'; // (if you still have this here)
 
 class FoodScreen extends StatefulWidget {
@@ -125,12 +128,20 @@ class _RecipesTab extends StatelessWidget {
       builder: (sheetContext) => RecipeLinkImportSheet(
         importPage: (url) =>
             RecipeImportClient().importUrl(hubId: hubId, url: url),
-        onSave: (recipe) => RecipeRepository().createRecipe(
+        loadSuggestedImage: (imageUrl) async {
+          final original = await RecipeImportClient().fetchSuggestedImage(
+            hubId: hubId,
+            url: imageUrl,
+          );
+          return prepareRecipeImageAsync(original);
+        },
+        onSave: (recipe, imageJpeg) => RecipeRepository().createRecipe(
           hubId,
           title: recipe.title,
           ingredients: recipe.ingredients,
           method: recipe.method,
           sourceUrl: recipe.sourceUrl,
+          imageJpeg: imageJpeg,
         ),
       ),
     );
@@ -167,7 +178,10 @@ class _RecipesTab extends StatelessWidget {
             icon: const Icon(Icons.add, color: Colors.white),
             label: const Text(
               "New Recipe",
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -255,18 +269,11 @@ class _RecipeCard extends StatelessWidget {
           children: [
             Expanded(
               flex: 3,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(15),
                 ),
-                child: Icon(
-                  Icons.restaurant_menu,
-                  size: 40,
-                  color: Colors.green.shade300,
-                ),
+                child: RecipeImage(imageUrl: recipe.imageUrl),
               ),
             ),
             Expanded(
@@ -342,7 +349,10 @@ class _RecipeDetailSheet extends StatelessWidget {
                         recipe.sourceUrl!.trim().isNotEmpty)
                       Text(
                         'From ${recipeSourceLabel(recipe.sourceUrl!)}',
-                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
                       ),
                   ],
                 ),
@@ -375,12 +385,7 @@ class _RecipeDetailSheet extends StatelessWidget {
                   );
 
                   if (confirm == true) {
-                    await FirebaseFirestore.instance
-                        .collection('hubs')
-                        .doc(hubId)
-                        .collection('recipes')
-                        .doc(recipe.id)
-                        .delete();
+                    await RecipeRepository().deleteRecipe(hubId, recipe);
                     if (context.mounted) Navigator.pop(context);
                   }
                 },
@@ -416,6 +421,20 @@ class _RecipeDetailSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (recipe.imageUrl != null) ...[
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: RecipeImage(
+                          imageUrl: recipe.imageUrl,
+                          iconSize: 60,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   const SizedBox(height: 10),
                   const Text(
                     "INGREDIENTS",
@@ -524,6 +543,58 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
   late TextEditingController _methodCtrl;
   bool _isSaving = false;
 
+  /// New picture chosen in this sheet (already resized).
+  Uint8List? _newPicture;
+
+  /// The saved picture was removed in this sheet.
+  bool _pictureRemoved = false;
+  bool _pictureLoading = false;
+  String? _pictureError;
+
+  String? get _savedImageUrl =>
+      _pictureRemoved ? null : widget.existingRecipe?.imageUrl;
+
+  Future<void> _pickPicture(ImageSource source) async {
+    setState(() {
+      _pictureLoading = true;
+      _pictureError = null;
+    });
+    try {
+      final bytes = await pickRecipePicture(source);
+      if (!mounted) return;
+      setState(() {
+        _pictureLoading = false;
+        if (bytes != null) _newPicture = bytes;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _pictureLoading = false;
+        _pictureError = e is RecipePictureException
+            ? e.message
+            : "Couldn't use that picture.";
+      });
+    }
+  }
+
+  void _removePicture() {
+    setState(() {
+      if (_newPicture != null) {
+        _newPicture = null;
+      } else {
+        _pictureRemoved = true;
+      }
+    });
+  }
+
+  RecipePictureChange get _pictureChange {
+    if (_newPicture != null) return ReplaceRecipePicture(_newPicture!);
+    if (_pictureRemoved && widget.existingRecipe?.imageUrl != null) {
+      return const RemoveRecipePicture();
+    }
+    return const KeepRecipePicture();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -540,7 +611,7 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
   }
 
   void _save() async {
-    if (_titleCtrl.text.trim().isEmpty) return;
+    if (_titleCtrl.text.trim().isEmpty || _pictureLoading) return;
     setState(() => _isSaving = true);
 
     List<String> ingredients = _ingCtrl.text
@@ -552,22 +623,21 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
     try {
       if (widget.existingRecipe != null) {
         // UPDATE EXISTING
-        await FirebaseFirestore.instance
-            .collection('hubs')
-            .doc(widget.hubId)
-            .collection('recipes')
-            .doc(widget.existingRecipe!.id)
-            .update({
-              'title': _titleCtrl.text.trim(),
-              'ingredients': ingredients,
-              'method': _methodCtrl.text.trim(),
-            });
+        await RecipeRepository().updateRecipe(
+          widget.hubId,
+          widget.existingRecipe!,
+          title: _titleCtrl.text.trim(),
+          ingredients: ingredients,
+          method: _methodCtrl.text.trim(),
+          picture: _pictureChange,
+        );
       } else {
         await RecipeRepository().createRecipe(
           widget.hubId,
           title: _titleCtrl.text.trim(),
           ingredients: ingredients,
           method: _methodCtrl.text.trim(),
+          imageJpeg: _newPicture,
         );
       }
 
@@ -613,6 +683,15 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
+            RecipePictureEditor(
+              bytes: _newPicture,
+              imageUrl: _savedImageUrl,
+              loading: _pictureLoading,
+              error: _pictureError,
+              onPick: _pickPicture,
+              onRemove: _removePicture,
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _titleCtrl,
               decoration: InputDecoration(
@@ -657,7 +736,7 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
             ),
             const SizedBox(height: 20),
             FilledButton(
-              onPressed: _isSaving ? null : _save,
+              onPressed: _isSaving || _pictureLoading ? null : _save,
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.green.shade600,
                 padding: const EdgeInsets.symmetric(vertical: 16),

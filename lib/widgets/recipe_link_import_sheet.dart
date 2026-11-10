@@ -1,9 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../recipe_import/recipe_import_client.dart';
 import '../recipe_import/recipe_page_parser.dart';
+import '../recipe_import/recipe_picture.dart';
+import 'recipe_picture.dart';
 
 /// Paste a recipe link, check the parsed title, ingredients, and method,
 /// then save. Nothing is written until Save.
@@ -13,10 +17,19 @@ class RecipeLinkImportSheet extends StatefulWidget {
     required this.importPage,
     required this.onSave,
     this.saveTimeout = const Duration(seconds: 20),
+    this.loadSuggestedImage,
+    this.pickPicture = pickRecipePicture,
   });
 
   final Future<ParsedRecipe> Function(String url) importPage;
-  final Future<void> Function(ParsedRecipe recipe) onSave;
+
+  /// Saves the recipe. [imageJpeg] is the resized picture, or null.
+  final Future<void> Function(ParsedRecipe recipe, Uint8List? imageJpeg) onSave;
+
+  /// Fetches the page's suggested picture and returns it ready to save.
+  final Future<Uint8List?> Function(String imageUrl)? loadSuggestedImage;
+
+  final RecipePicturePicker pickPicture;
 
   /// A save that has not finished by then is reported as failed, so the
   /// button never just spins (for example offline on the web).
@@ -49,6 +62,13 @@ class _RecipeLinkImportSheetState extends State<RecipeLinkImportSheet> {
   bool _saving = false;
   String? _error;
   String? _saveError;
+
+  Uint8List? _imageBytes;
+  Uint8List? _suggestedBytes;
+  bool _usingSuggestion = false;
+  bool _imageLoading = false;
+  String? _imageError;
+  int _imageToken = 0;
 
   @override
   void initState() {
@@ -99,7 +119,83 @@ class _RecipeLinkImportSheetState extends State<RecipeLinkImportSheet> {
     }
   }
 
+  void _resetPicture() {
+    _imageToken++;
+    _imageBytes = null;
+    _suggestedBytes = null;
+    _usingSuggestion = false;
+    _imageLoading = false;
+    _imageError = null;
+  }
+
+  Future<void> _loadSuggestion(String url) async {
+    final loader = widget.loadSuggestedImage;
+    if (loader == null) return;
+    final token = ++_imageToken;
+    setState(() => _imageLoading = true);
+    Uint8List? bytes;
+    String? error;
+    try {
+      bytes = await loader(url);
+    } catch (_) {
+      error = "Couldn't load the picture from that page.";
+    }
+    if (!mounted || token != _imageToken) return;
+    setState(() {
+      _imageLoading = false;
+      if (bytes != null && bytes.isNotEmpty) {
+        _suggestedBytes = bytes;
+        _imageBytes = bytes;
+        _usingSuggestion = true;
+      } else {
+        _imageError = error;
+      }
+    });
+  }
+
+  Future<void> _pickPicture(ImageSource source) async {
+    final token = ++_imageToken;
+    setState(() {
+      _imageLoading = true;
+      _imageError = null;
+    });
+    Uint8List? bytes;
+    String? error;
+    try {
+      bytes = await widget.pickPicture(source);
+    } on RecipePictureException catch (e) {
+      error = e.message;
+    } catch (_) {
+      error = "Couldn't use that picture.";
+    }
+    if (!mounted || token != _imageToken) return;
+    setState(() {
+      _imageLoading = false;
+      _imageError = error;
+      if (bytes != null) {
+        _imageBytes = bytes;
+        _usingSuggestion = false;
+      }
+    });
+  }
+
+  void _removePicture() {
+    setState(() {
+      _imageBytes = null;
+      _usingSuggestion = false;
+      _imageError = null;
+    });
+  }
+
+  void _useSuggestion() {
+    setState(() {
+      _imageBytes = _suggestedBytes;
+      _usingSuggestion = true;
+    });
+  }
+
   void _apply(ParsedRecipe recipe) {
+    _resetPicture();
     _titleCtrl.text = recipe.title;
     _ingCtrl.text = recipe.ingredients.join('\n');
     _methodCtrl.text = recipe.method;
@@ -109,12 +205,15 @@ class _RecipeLinkImportSheetState extends State<RecipeLinkImportSheet> {
       _loading = false;
       _error = null;
     });
+    final imageUrl = recipe.imageUrl;
+    if (imageUrl != null) _loadSuggestion(imageUrl);
   }
 
   void _addByHand() {
     _titleCtrl.clear();
     _ingCtrl.clear();
     _methodCtrl.clear();
+    _resetPicture();
     setState(() {
       _parsed = null;
       _showForm = true;
@@ -124,7 +223,7 @@ class _RecipeLinkImportSheetState extends State<RecipeLinkImportSheet> {
 
   Future<void> _save() async {
     final title = _titleCtrl.text.trim();
-    if (_saving) return;
+    if (_saving || _imageLoading) return;
     if (title.isEmpty) {
       _showSaveError('Add a recipe name before saving.');
       return;
@@ -147,7 +246,7 @@ class _RecipeLinkImportSheetState extends State<RecipeLinkImportSheet> {
     );
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
-      await widget.onSave(recipe).timeout(widget.saveTimeout);
+      await widget.onSave(recipe, _imageBytes).timeout(widget.saveTimeout);
     } on TimeoutException {
       if (!mounted) return;
       _showSaveError(
@@ -310,6 +409,22 @@ class _RecipeLinkImportSheetState extends State<RecipeLinkImportSheet> {
                       ),
                     ],
                     const SizedBox(height: 12),
+                    RecipePictureEditor(
+                      bytes: _imageBytes,
+                      loading: _imageLoading,
+                      error: _imageError,
+                      caption: _usingSuggestion
+                          ? 'Picture from ${host.isEmpty ? 'the page' : host}. '
+                                'Keep it, remove it, or choose your own.'
+                          : null,
+                      onPick: _pickPicture,
+                      onRemove: _removePicture,
+                      onUseSuggestion:
+                          _suggestedBytes != null && !_usingSuggestion
+                          ? _useSuggestion
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       key: RecipeLinkImportSheet.titleFieldKey,
                       controller: _titleCtrl,
@@ -360,7 +475,7 @@ class _RecipeLinkImportSheetState extends State<RecipeLinkImportSheet> {
             const SizedBox(height: 12),
             FilledButton(
               key: RecipeLinkImportSheet.saveButtonKey,
-              onPressed: _saving ? null : _save,
+              onPressed: _saving || _imageLoading ? null : _save,
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.green.shade600,
                 padding: const EdgeInsets.symmetric(vertical: 16),

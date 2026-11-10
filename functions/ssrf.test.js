@@ -283,3 +283,71 @@ test('fetchPublicPage gunzips a compressed HTML body', async () => {
   });
   assert.match(page.html, /Gzipped/);
 });
+
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+test('fetchPublicImage returns image bytes and checks the real type', async () => {
+  const { fetchPublicImage } = require('./ssrf');
+  let accept;
+  const image = await fetchPublicImage('https://recipes.example/pic.jpg', {
+    resolve: publicResolve(),
+    request: async (args) => {
+      accept = args.accept;
+      assert.equal(args.maxBytes, 5_000_000);
+      return { status: 200, headers: { 'content-type': 'image/jpeg' }, body: JPEG };
+    },
+  });
+  assert.equal(image.contentType, 'image/jpeg');
+  assert.deepEqual(image.bytes, JPEG);
+  assert.match(accept, /^image\//);
+});
+
+test('fetchPublicImage refuses html, svg, lying headers, and oversize pictures', async () => {
+  const { fetchPublicImage, MAX_IMAGE_BYTES } = require('./ssrf');
+  const reply = (headers, body) => ({ resolve: publicResolve(), request: async () => ({ status: 200, headers, body }) });
+  await assert.rejects(
+    fetchPublicImage('https://recipes.example/p', reply({ 'content-type': 'text/html' }, Buffer.from('<html>'))),
+    /isn't a picture/,
+  );
+  await assert.rejects(
+    fetchPublicImage('https://recipes.example/p.svg', reply({ 'content-type': 'image/svg+xml' }, Buffer.from('<svg/>'))),
+    /isn't a picture/,
+  );
+  await assert.rejects(
+    fetchPublicImage('https://recipes.example/p', reply({ 'content-type': 'text/plain' }, JPEG)),
+    /isn't a picture/,
+  );
+  await assert.rejects(
+    fetchPublicImage(
+      'https://recipes.example/p',
+      reply({ 'content-type': 'image/jpeg' }, Buffer.alloc(MAX_IMAGE_BYTES + 1, 0xff)),
+    ),
+    (error) => error.code === 'resource-exhausted',
+  );
+});
+
+test('fetchPublicImage keeps the SSRF guards', async () => {
+  const { fetchPublicImage } = require('./ssrf');
+  let requested = false;
+  await assert.rejects(
+    fetchPublicImage('http://169.254.169.254/latest/meta-data', {
+      resolve: publicResolve(),
+      request: async () => {
+        requested = true;
+        return { status: 200, headers: {}, body: JPEG };
+      },
+    }),
+    /can't be fetched/,
+  );
+  await assert.rejects(
+    fetchPublicImage('https://pics.example/p.jpg', {
+      resolve: async () => [{ address: '10.0.0.5', family: 4 }],
+      request: async () => {
+        requested = true;
+        return { status: 200, headers: {}, body: JPEG };
+      },
+    }),
+    /can't be fetched/,
+  );
+  assert.equal(requested, false);
+});
