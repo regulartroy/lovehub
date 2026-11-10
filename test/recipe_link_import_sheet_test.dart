@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/recipe_import/recipe_import_client.dart';
 import 'package:lovehub/recipe_import/recipe_page_parser.dart';
 import 'package:lovehub/widgets/recipe_link_import_sheet.dart';
+import 'package:lovehub/widgets/recipe_picture.dart';
 
 void main() {
   const imported = ParsedRecipe(
@@ -20,9 +24,12 @@ void main() {
   Future<void> pumpSheet(
     WidgetTester tester, {
     required Future<ParsedRecipe> Function(String url) importPage,
-    required Future<void> Function(ParsedRecipe recipe) onSave,
+    required Future<void> Function(ParsedRecipe recipe, Uint8List? image)
+    onSave,
     Size size = const Size(800, 2400),
     Duration saveTimeout = const Duration(seconds: 20),
+    Future<Uint8List?> Function(String url)? loadSuggestedImage,
+    RecipePicturePicker? pickPicture,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -41,6 +48,8 @@ void main() {
                     importPage: importPage,
                     onSave: onSave,
                     saveTimeout: saveTimeout,
+                    loadSuggestedImage: loadSuggestedImage,
+                    pickPicture: pickPicture ?? (source) async => null,
                   ),
                 );
               },
@@ -64,7 +73,7 @@ void main() {
         expect(url, contains('nigella.com'));
         return imported;
       },
-      onSave: (recipe) async {
+      onSave: (recipe, image) async {
         saved = recipe;
       },
     );
@@ -106,7 +115,7 @@ void main() {
           "This page doesn't publish a recipe we can read. Try another link, or add it by hand.",
         );
       },
-      onSave: (recipe) async {
+      onSave: (recipe, image) async {
         saved = true;
       },
     );
@@ -144,7 +153,8 @@ void main() {
 
   Future<void> importOnPhone(
     WidgetTester tester, {
-    required Future<void> Function(ParsedRecipe recipe) onSave,
+    required Future<void> Function(ParsedRecipe recipe, Uint8List? image)
+    onSave,
     Duration saveTimeout = const Duration(seconds: 20),
   }) async {
     await pumpSheet(
@@ -166,7 +176,10 @@ void main() {
     tester,
   ) async {
     ParsedRecipe? saved;
-    await importOnPhone(tester, onSave: (recipe) async => saved = recipe);
+    await importOnPhone(
+      tester,
+      onSave: (recipe, image) async => saved = recipe,
+    );
 
     // The top button no longer reads "Import" once the preview is showing.
     expect(find.text('Import'), findsNothing);
@@ -188,7 +201,7 @@ void main() {
   });
 
   testWidgets('the method field shows the whole method', (tester) async {
-    await importOnPhone(tester, onSave: (recipe) async {});
+    await importOnPhone(tester, onSave: (recipe, image) async {});
     final field = tester.widget<TextField>(
       find.byKey(RecipeLinkImportSheet.methodFieldKey),
     );
@@ -201,7 +214,7 @@ void main() {
   ) async {
     await importOnPhone(
       tester,
-      onSave: (recipe) async => throw Exception('permission-denied'),
+      onSave: (recipe, image) async => throw Exception('permission-denied'),
     );
     await tester.tap(find.byKey(RecipeLinkImportSheet.saveButtonKey));
     await tester.pump();
@@ -227,7 +240,7 @@ void main() {
     await importOnPhone(
       tester,
       saveTimeout: const Duration(seconds: 2),
-      onSave: (recipe) => Completer<void>().future,
+      onSave: (recipe, image) => Completer<void>().future,
     );
     await tester.tap(find.byKey(RecipeLinkImportSheet.saveButtonKey));
     await tester.pump(const Duration(seconds: 3));
@@ -236,5 +249,145 @@ void main() {
     expect(find.byType(RecipeLinkImportSheet), findsOneWidget);
     expect(find.byKey(RecipeLinkImportSheet.saveErrorKey), findsOneWidget);
     expect(find.textContaining('Check your connection'), findsWidgets);
+  });
+
+  final suggested = Uint8List.fromList(
+    img.encodeJpg(img.Image(width: 4, height: 3)),
+  );
+  final mine = Uint8List.fromList(
+    img.encodeJpg(img.Image(width: 3, height: 4)),
+  );
+  final withImage = fullRecipe.withImageUrl(
+    'https://www.nigella.com/assets/uploads/recipes/public-thumbnail/p.jpg',
+  );
+
+  Future<void> importWithSuggestion(
+    WidgetTester tester, {
+    required Future<void> Function(ParsedRecipe recipe, Uint8List? image)
+    onSave,
+    Completer<Uint8List?>? imageLoad,
+    RecipePicturePicker? pickPicture,
+    List<String>? requested,
+  }) async {
+    await pumpSheet(
+      tester,
+      size: const Size(390, 844),
+      importPage: (url) async => withImage,
+      loadSuggestedImage: (url) {
+        requested?.add(url);
+        return imageLoad?.future ?? Future.value(suggested);
+      },
+      pickPicture: pickPicture,
+      onSave: onSave,
+    );
+    await tester.enterText(
+      find.byKey(RecipeLinkImportSheet.urlFieldKey),
+      imported.sourceUrl!,
+    );
+    await tester.tap(find.byKey(RecipeLinkImportSheet.importButtonKey));
+    await tester.pump();
+    await tester.pump();
+  }
+
+  testWidgets('keeps the suggested picture by default', (tester) async {
+    Uint8List? savedImage;
+    final requested = <String>[];
+    await importWithSuggestion(
+      tester,
+      requested: requested,
+      onSave: (recipe, image) async => savedImage = image,
+    );
+    expect(requested, [withImage.imageUrl]);
+    expect(find.textContaining('Picture from nigella.com'), findsOneWidget);
+    await tester.tap(find.byKey(RecipeLinkImportSheet.saveButtonKey));
+    await tester.pumpAndSettle();
+    expect(savedImage, suggested);
+  });
+
+  testWidgets(
+    'removing the suggestion saves no picture, and it can come back',
+    (tester) async {
+      var calls = 0;
+      Uint8List? savedImage = Uint8List(1);
+      await importWithSuggestion(
+        tester,
+        onSave: (recipe, image) async {
+          calls++;
+          savedImage = image;
+        },
+      );
+      await tester.ensureVisible(find.byKey(RecipePictureEditor.removeKey));
+      await tester.tap(find.byKey(RecipePictureEditor.removeKey));
+      await tester.pump();
+      expect(find.byKey(RecipePictureEditor.useSuggestionKey), findsOneWidget);
+      await tester.tap(find.byKey(RecipeLinkImportSheet.saveButtonKey));
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      expect(savedImage, isNull);
+    },
+  );
+
+  testWidgets('my own picture replaces the suggestion', (tester) async {
+    Uint8List? savedImage;
+    ImageSource? asked;
+    await importWithSuggestion(
+      tester,
+      pickPicture: (source) async {
+        asked = source;
+        return mine;
+      },
+      onSave: (recipe, image) async => savedImage = image,
+    );
+    await tester.ensureVisible(find.byKey(RecipePictureEditor.galleryKey));
+    await tester.tap(find.byKey(RecipePictureEditor.galleryKey));
+    await tester.pump();
+    await tester.pump();
+    expect(asked, ImageSource.gallery);
+    expect(find.textContaining('Picture from'), findsNothing);
+    await tester.tap(find.byKey(RecipeLinkImportSheet.saveButtonKey));
+    await tester.pumpAndSettle();
+    expect(savedImage, mine);
+  });
+
+  testWidgets('Save waits while the suggested picture loads', (tester) async {
+    final load = Completer<Uint8List?>();
+    var calls = 0;
+    await importWithSuggestion(
+      tester,
+      imageLoad: load,
+      onSave: (recipe, image) async => calls++,
+    );
+    final button = tester.widget<FilledButton>(
+      find.byKey(RecipeLinkImportSheet.saveButtonKey),
+    );
+    expect(button.onPressed, isNull);
+    load.complete(suggested);
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(RecipeLinkImportSheet.saveButtonKey));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+  });
+
+  testWidgets('a picture that fails to load does not block saving', (
+    tester,
+  ) async {
+    final load = Completer<Uint8List?>();
+    Uint8List? savedImage = Uint8List(1);
+    await importWithSuggestion(
+      tester,
+      imageLoad: load,
+      onSave: (recipe, image) async => savedImage = image,
+    );
+    load.completeError(Exception('HTTP 403'));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.text("Couldn't load the picture from that page."),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(RecipeLinkImportSheet.saveButtonKey));
+    await tester.pumpAndSettle();
+    expect(savedImage, isNull);
   });
 }

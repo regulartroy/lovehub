@@ -14,6 +14,7 @@ class ParsedRecipe {
     this.sourceUrl,
     this.source = 'json-ld',
     this.notes = const [],
+    this.imageUrl,
   });
 
   final String title;
@@ -28,6 +29,19 @@ class ParsedRecipe {
 
   /// Gaps the cook should fill in before saving. Saving is still allowed.
   final List<String> notes;
+
+  /// Suggested picture found on the page (absolute http(s) URL), if any.
+  final String? imageUrl;
+
+  ParsedRecipe withImageUrl(String? url) => ParsedRecipe(
+    title: title,
+    ingredients: ingredients,
+    method: method,
+    sourceUrl: sourceUrl,
+    source: source,
+    notes: notes,
+    imageUrl: url,
+  );
 }
 
 class RecipePageParse {

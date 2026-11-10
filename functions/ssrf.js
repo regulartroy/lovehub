@@ -10,6 +10,7 @@ const net = require('net');
 const zlib = require('zlib');
 
 const MAX_BYTES = 1_500_000;
+const MAX_IMAGE_BYTES = 5_000_000;
 const MAX_REDIRECTS = 4;
 const REQUEST_TIMEOUT_MS = 8000;
 const OVERALL_MS = 20000;
@@ -307,7 +308,11 @@ function decodeBody(body) {
   return bytes.toString('utf8');
 }
 
-function defaultRequest({ url, address, family }) {
+const PAGE_ACCEPT =
+  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8';
+const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif;q=0.9,*/*;q=0.5';
+
+function defaultRequest({ url, address, family, maxBytes = MAX_BYTES, accept = PAGE_ACCEPT }) {
   return new Promise((resolve, reject) => {
     const lib = url.protocol === 'https:' ? https : http;
     const req = lib.request(
@@ -321,8 +326,7 @@ function defaultRequest({ url, address, family }) {
           Host: url.host,
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept:
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          Accept: accept,
           'Accept-Encoding': 'gzip, deflate, br',
           'Accept-Language': 'en-GB,en;q=0.9',
         },
@@ -334,7 +338,7 @@ function defaultRequest({ url, address, family }) {
         const chunks = [];
         let received = 0;
         const length = Number(res.headers['content-length'] || 0);
-        if (length > MAX_BYTES) {
+        if (length > maxBytes) {
           res.resume();
           req.destroy();
           reject(
@@ -347,7 +351,7 @@ function defaultRequest({ url, address, family }) {
         }
         res.on('data', (chunk) => {
           received += chunk.length;
-          if (received > MAX_BYTES) {
+          if (received > maxBytes) {
             res.resume();
             req.destroy();
             reject(
@@ -415,7 +419,7 @@ function isRedirect(status) {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
 
-async function fetchPublicPage(rawUrl, deps = {}) {
+async function fetchPublic(rawUrl, deps, kind) {
   const resolve = deps.resolve || defaultResolve;
   const request = deps.request || defaultRequest;
   const now = deps.now || Date.now;
@@ -437,6 +441,8 @@ async function fetchPublicPage(rawUrl, deps = {}) {
         url,
         address: records[0].address,
         family: records[0].family,
+        maxBytes: kind.maxBytes,
+        accept: kind.accept,
       });
     } catch (error) {
       if (error instanceof RecipeFetchError) throw error;
@@ -471,12 +477,10 @@ async function fetchPublicPage(rawUrl, deps = {}) {
       );
     }
     const body = response.body || Buffer.alloc(0);
-    if (body.length > MAX_BYTES) {
-      throw new RecipeFetchError('resource-exhausted', 'That page is too large to import.');
+    if (body.length > kind.maxBytes) {
+      throw new RecipeFetchError('resource-exhausted', kind.tooLarge);
     }
-    const inflated = inflateBody(body, header(response.headers, 'content-encoding'));
-    assertContentType(header(response.headers, 'content-type'), inflated);
-    return { finalUrl: url.toString(), html: decodeBody(inflated) };
+    return kind.finish(url, response, body);
   }
   throw new RecipeFetchError(
     'failed-precondition',
@@ -484,12 +488,74 @@ async function fetchPublicPage(rawUrl, deps = {}) {
   );
 }
 
+const PAGE_KIND = {
+  maxBytes: MAX_BYTES,
+  accept: PAGE_ACCEPT,
+  tooLarge: 'That page is too large to import.',
+  finish(url, response, body) {
+    const inflated = inflateBody(body, header(response.headers, 'content-encoding'));
+    assertContentType(header(response.headers, 'content-type'), inflated);
+    return { finalUrl: url.toString(), html: decodeBody(inflated) };
+  },
+};
+
+const IMAGE_TYPES = {
+  'image/jpeg': (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/png': (b) =>
+    b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  'image/gif': (b) => b.length > 6 && b.subarray(0, 4).toString('latin1') === 'GIF8',
+  'image/webp': (b) =>
+    b.length > 12 &&
+    b.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    b.subarray(8, 12).toString('latin1') === 'WEBP',
+};
+
+function notAnImage() {
+  return new RecipeFetchError('failed-precondition', "That link isn't a picture we can use.");
+}
+
+/// Content type from the bytes themselves. The header must also say image/*.
+function sniffImageType(contentType, bytes) {
+  const declared = (contentType || '').toLowerCase().split(';')[0].trim();
+  if (!declared.startsWith('image/')) throw notAnImage();
+  for (const [type, test] of Object.entries(IMAGE_TYPES)) {
+    if (test(bytes)) return type;
+  }
+  throw notAnImage();
+}
+
+const IMAGE_KIND = {
+  maxBytes: MAX_IMAGE_BYTES,
+  accept: IMAGE_ACCEPT,
+  tooLarge: 'That picture is too large (over 5 MB).',
+  finish(url, response, body) {
+    // Images are not sent compressed in practice, but honour it if they are.
+    const bytes = inflateBody(body, header(response.headers, 'content-encoding'));
+    if (bytes.length > MAX_IMAGE_BYTES) {
+      throw new RecipeFetchError('resource-exhausted', 'That picture is too large (over 5 MB).');
+    }
+    const contentType = sniffImageType(header(response.headers, 'content-type'), bytes);
+    return { finalUrl: url.toString(), contentType, bytes };
+  },
+};
+
+function fetchPublicPage(rawUrl, deps = {}) {
+  return fetchPublic(rawUrl, deps, PAGE_KIND);
+}
+
+function fetchPublicImage(rawUrl, deps = {}) {
+  return fetchPublic(rawUrl, deps, IMAGE_KIND);
+}
+
 module.exports = {
   BLOCKED_MESSAGE,
   MAX_BYTES,
+  MAX_IMAGE_BYTES,
   RecipeFetchError,
   assertPublicHttpUrl,
+  fetchPublicImage,
   fetchPublicPage,
+  sniffImageType,
   inflateBody,
   isPrivateAddress,
   pinnedLookup,
