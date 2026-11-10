@@ -492,7 +492,7 @@ String _cleanIngredient(String raw) {
 }
 
 String _cleanStep(String raw) {
-  var text = _collapse(_plain(raw), 1200);
+  var text = _collapse(_plain(raw), 4000);
   text = text.replaceFirst(
     RegExp(r'^step\s+\d+\s*[:.\-–)]?\s*', caseSensitive: false),
     '',
@@ -513,8 +513,26 @@ String _collapse(String raw, int max) {
       .replaceAll(RegExp(r'[\u200b\u200c\u200d\ufeff]'), '')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
-  if (text.length > max) text = text.substring(0, max).trim();
-  return text;
+  return shortenAtBoundary(text, max);
+}
+
+/// Returns [text] unchanged when it fits in [max] characters. Otherwise cuts
+/// it at the last sentence end that fits, or failing that the last whole
+/// word (with an ellipsis). Never cuts inside a word.
+String shortenAtBoundary(String text, int max) {
+  if (text.length <= max) return text;
+  final window = text.substring(0, max + 1);
+  final sentenceEnd = RegExp(r'[.!?][)"\u201d\u2019]?(?=\s)');
+  var cut = -1;
+  for (final match in sentenceEnd.allMatches(window)) {
+    if (match.end <= max) cut = match.end;
+  }
+  if (cut >= max ~/ 2) return text.substring(0, cut).trim();
+  final space = window.lastIndexOf(RegExp(r'\s'));
+  if (space > 0) return '${text.substring(0, space).trimRight()}\u2026';
+  // A single word longer than [max]: keep it whole rather than split it.
+  final next = text.indexOf(RegExp(r'\s'), max);
+  return next < 0 ? text : '${text.substring(0, next)}\u2026';
 }
 
 bool _isType(dynamic type, String want) {
