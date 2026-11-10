@@ -38,9 +38,11 @@ Default is dry-run (nothing written). --apply confirms or deletes.
 HUB_ID can replace --hub.
 
 Only imported documents are in scope: source c2-rota and id c2-rota:{externalId}.
-Tentative + tom=working + status=on is confirmed.
-Tentative + cancelled, or tentative + tom=not_working, is deleted.
+Tentative + tom=working + status=on is confirmed (including past dates).
+Tentative + cancelled/postponed, or tentative + tom=not_working, is deleted
+only for today and future Europe/London dates. Past history is left alone.
 Undecided stays tentative. Confirmed documents are never changed or deleted.
+Empty show rows and unknown statuses are skipped with a warning.
 A show is matched on its own, not by date alone. Missing, empty, stale, or
 invalid feeds write nothing. Ambiguous matches are skipped.
 

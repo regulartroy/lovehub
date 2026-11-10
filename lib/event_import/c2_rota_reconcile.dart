@@ -154,10 +154,17 @@ class C2FeedDay {
 }
 
 class C2RotaFeed {
-  const C2RotaFeed({required this.generatedAt, required this.days});
+  const C2RotaFeed({
+    required this.generatedAt,
+    required this.days,
+    this.warnings = const [],
+  });
 
   final DateTime generatedAt;
   final List<C2FeedDay> days;
+
+  /// Rows skipped while parsing (empty off-days, unknown status). Not fatal.
+  final List<String> warnings;
 }
 
 /// One hub event as read for reconciliation. Personal events are included
@@ -452,6 +459,9 @@ bool c2CommitConflict(int statusCode, String body) {
 /// Parses the live feed. Structural problems throw and must abort the run
 /// before any event is matched. An empty day list is unusable: absence of
 /// shows is not treated as a cancellation.
+///
+/// Empty `show` rows (off-days) and unknown `status` values are skipped with
+/// a warning. `postponed` is treated like `cancelled`.
 C2RotaFeed parseC2RotaFeed(Object? payload) {
   if (payload is! Map) {
     throw C2RotaFeedException(
@@ -487,9 +497,15 @@ C2RotaFeed parseC2RotaFeed(Object? payload) {
   }
 
   final days = <C2FeedDay>[];
+  final warnings = <String>[];
   final seen = <String>{};
   for (var i = 0; i < daysRaw.length; i++) {
-    final day = _parseFeedDay(daysRaw[i], i);
+    final parsed = _parseFeedDay(daysRaw[i], i);
+    if (parsed.warning != null) {
+      warnings.add(parsed.warning!);
+    }
+    final day = parsed.day;
+    if (day == null) continue;
     final key = '${day.date.ymd}|${c2CanonicalShowSlug(c2ShowSlug(day.show))}';
     if (!seen.add(key)) {
       throw C2RotaFeedException(
@@ -498,10 +514,27 @@ C2RotaFeed parseC2RotaFeed(Object? payload) {
     }
     days.add(day);
   }
-  return C2RotaFeed(generatedAt: generatedAt, days: days);
+  if (days.isEmpty) {
+    throw C2RotaFeedException(
+      'Feed days is empty after skipping off-days and unknown statuses. '
+      'Refusing to treat that as cancellations.',
+    );
+  }
+  return C2RotaFeed(
+    generatedAt: generatedAt,
+    days: days,
+    warnings: List.unmodifiable(warnings),
+  );
 }
 
-C2FeedDay _parseFeedDay(Object? raw, int index) {
+class _ParsedFeedDay {
+  const _ParsedFeedDay({this.day, this.warning});
+
+  final C2FeedDay? day;
+  final String? warning;
+}
+
+_ParsedFeedDay _parseFeedDay(Object? raw, int index) {
   if (raw is! Map) {
     throw C2RotaFeedException('days[$index] must be an object.');
   }
@@ -515,41 +548,59 @@ C2FeedDay _parseFeedDay(Object? raw, int index) {
     throw C2RotaFeedException('days[$index].date must be YYYY-MM-DD.');
   }
   final showRaw = map['show'];
-  if (showRaw is! String ||
-      showRaw.trim().isEmpty ||
-      showRaw.trim().length > 200) {
+  if (showRaw is! String) {
+    throw C2RotaFeedException('days[$index].show must be a string.');
+  }
+  if (showRaw.trim().isEmpty) {
+    return _ParsedFeedDay(
+      warning: 'days[$index] ${date.ymd}: empty show skipped (off-day)',
+    );
+  }
+  if (showRaw.trim().length > 200) {
     throw C2RotaFeedException('days[$index].show must be a non-empty name.');
   }
   final show = showRaw.trim();
   if (c2ShowSlug(show).isEmpty) {
     throw C2RotaFeedException('days[$index].show has no matchable name.');
   }
-  return C2FeedDay(
-    date: date,
-    show: show,
-    showStatus: _parseShowStatus(map['status'], index),
-    tom: _parseTom(map['tom'], index),
-    role: _optionalText(map['role'], 'days[$index].role'),
-    loadIn: _optionalText(map['loadIn'], 'days[$index].loadIn'),
-    finish: _optionalText(map['finish'], 'days[$index].finish'),
+  final status = _parseShowStatus(map['status'], index);
+  if (status == null) {
+    final rawStatus = map['status'];
+    final label = rawStatus is String ? rawStatus.trim() : '$rawStatus';
+    return _ParsedFeedDay(
+      warning:
+          'days[$index] ${date.ymd} "$show": unknown status "$label"; skipped',
+    );
+  }
+  return _ParsedFeedDay(
+    day: C2FeedDay(
+      date: date,
+      show: show,
+      showStatus: status,
+      tom: _parseTom(map['tom'], index),
+      role: _optionalText(map['role'], 'days[$index].role'),
+      loadIn: _optionalText(map['loadIn'], 'days[$index].loadIn'),
+      finish: _optionalText(map['finish'], 'days[$index].finish'),
+    ),
   );
 }
 
-C2ShowStatus _parseShowStatus(Object? raw, int index) {
+/// `on`, `cancelled`, and `postponed` (treated as cancelled). Unknown strings
+/// return null so the row can be skipped with a warning.
+C2ShowStatus? _parseShowStatus(Object? raw, int index) {
   if (raw is! String) {
     throw C2RotaFeedException(
-      'days[$index].status must be "on" or "cancelled".',
+      'days[$index].status must be a string.',
     );
   }
   switch (raw.trim().toLowerCase()) {
     case 'on':
       return C2ShowStatus.on;
     case 'cancelled':
+    case 'postponed':
       return C2ShowStatus.cancelled;
     default:
-      throw C2RotaFeedException(
-        'days[$index].status must be "on" or "cancelled".',
-      );
+      return null;
   }
 }
 
@@ -697,6 +748,12 @@ C2RotaPlan planC2RotaReconcile({
     }
   }
 
+  final today = londonCivilDate(now);
+  final actions = <C2RotaAction>[
+    for (final warning in feed.warnings)
+      C2RotaAction(kind: C2RotaActionKind.skip, reason: warning),
+  ];
+
   if (imported.length > c2RotaMaxScopedEvents) {
     return C2RotaPlan(
       generatedAt: feed.generatedAt,
@@ -714,7 +771,6 @@ C2RotaPlan planC2RotaReconcile({
   }
 
   final ready = <_Scoped>[];
-  final actions = <C2RotaAction>[];
   for (final event in imported) {
     final scoped = _scope(event);
     if (scoped.identity == null) {
@@ -827,7 +883,7 @@ C2RotaPlan planC2RotaReconcile({
     }
     final scoped = rowHits.single;
     matchedIds.add(scoped.event.docId);
-    actions.add(_decision(day, scoped.event));
+    actions.add(_decision(day, scoped.event, today: today));
   }
 
   for (final scoped in ready) {
@@ -866,7 +922,11 @@ C2RotaPlan planC2RotaReconcile({
   );
 }
 
-C2RotaAction _decision(C2FeedDay day, C2StoredEvent event) {
+C2RotaAction _decision(
+  C2FeedDay day,
+  C2StoredEvent event, {
+  required LondonDate today,
+}) {
   final tentative = c2IsTentativeStatus(event.status);
   final remove =
       day.showStatus == C2ShowStatus.cancelled ||
@@ -885,6 +945,22 @@ C2RotaAction _decision(C2FeedDay day, C2StoredEvent event) {
   );
   if (remove) {
     if (tentative) {
+      // Past history stays as stored. Deletes apply only to today and future
+      // Europe/London dates. Confirming a past worked show is still allowed.
+      if (day.date < today) {
+        return C2RotaAction(
+          kind: C2RotaActionKind.keepTentative,
+          reason: 'before today; not deleted',
+          docId: base.docId,
+          summary: base.summary,
+          date: base.date,
+          show: base.show,
+          tom: base.tom,
+          feedStatus: base.feedStatus,
+          event: event,
+          day: day,
+        );
+      }
       final why = day.showStatus == C2ShowStatus.cancelled
           ? 'show cancelled'
           : 'tom=not_working';
