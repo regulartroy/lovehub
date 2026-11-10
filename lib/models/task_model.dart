@@ -53,6 +53,7 @@ class Task {
       'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,
       'createdBy': createdBy,
       'createdAt': FieldValue.serverTimestamp(),
+      if (sortIndex != null) 'sortIndex': sortIndex,
     };
   }
 }

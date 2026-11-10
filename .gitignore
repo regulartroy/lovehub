@@ -44,6 +44,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Cloud Functions
+node_modules/
+functions/node_modules/
+
 # Credentials. The event importer reads tokens from the environment only.
 .env
 .env.*
