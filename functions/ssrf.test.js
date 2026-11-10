@@ -8,6 +8,7 @@ const {
   RecipeFetchError,
   assertPublicHttpUrl,
   fetchPublicPage,
+  inflateBody,
   isPrivateAddress,
   pinnedLookup,
 } = require('./ssrf');
@@ -251,4 +252,34 @@ test('gives up when the overall budget is spent', async () => {
       }),
     (error) => error instanceof RecipeFetchError && error.code === 'deadline-exceeded',
   );
+});
+
+test('inflateBody decodes gzip and rejects unknown encodings', () => {
+  const zlib = require('zlib');
+  const plain = Buffer.from('<html>ok</html>');
+  const gzipped = zlib.gzipSync(plain);
+  assert.equal(inflateBody(gzipped, 'gzip').toString('utf8'), '<html>ok</html>');
+  assert.equal(inflateBody(plain, 'identity').toString('utf8'), '<html>ok</html>');
+  assert.equal(inflateBody(plain, '').toString('utf8'), '<html>ok</html>');
+  assert.throws(
+    () => inflateBody(plain, 'xz'),
+    (error) => error instanceof RecipeFetchError,
+  );
+});
+
+test('fetchPublicPage gunzips a compressed HTML body', async () => {
+  const zlib = require('zlib');
+  const html = '<html><title>Gzipped</title></html>';
+  const page = await fetchPublicPage('https://recipes.example/gz', {
+    resolve: publicResolve(),
+    request: async () => ({
+      status: 200,
+      headers: {
+        'content-type': 'text/html; charset=UTF-8',
+        'content-encoding': 'gzip',
+      },
+      body: zlib.gzipSync(Buffer.from(html)),
+    }),
+  });
+  assert.match(page.html, /Gzipped/);
 });

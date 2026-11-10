@@ -1,0 +1,64 @@
+[
+  {
+    "id": "c2-rota:2026-11-09",
+    "source": "c2-rota",
+    "externalId": "2026-11-09",
+    "summary": "C2 — Cardinals",
+    "start": "2026-11-09T19:00:00Z",
+    "status": "tentative"
+  },
+  {
+    "id": "c2-rota:2026-11-10",
+    "source": "c2-rota",
+    "externalId": "2026-11-10",
+    "summary": "C2 — Mykki Blanco",
+    "start": "2026-11-10T19:00:00Z",
+    "status": "tentative"
+  },
+  {
+    "id": "c2-rota:2026-11-12",
+    "source": "c2-rota",
+    "externalId": "2026-11-12",
+    "summary": "C2 — Allergies",
+    "start": "2026-11-12T19:00:00Z",
+    "status": "tentative"
+  },
+  {
+    "id": "c2-rota:2026-11-13",
+    "source": "c2-rota",
+    "externalId": "2026-11-13",
+    "summary": "C2 — John Digweed",
+    "start": "2026-11-13T19:00:00Z",
+    "status": "tentative"
+  },
+  {
+    "id": "c2-rota:2026-11-13-junebabies-bar",
+    "source": "c2-rota",
+    "externalId": "2026-11-13-junebabies-bar",
+    "summary": "C2 — Junebabies (Bar)",
+    "start": "2026-11-13T20:00:00Z",
+    "status": "tentative"
+  },
+  {
+    "id": "c2-rota:2026-11-15",
+    "source": "c2-rota",
+    "externalId": "2026-11-15",
+    "summary": "C2 — MNEK",
+    "start": "2026-11-15T19:00:00Z",
+    "status": "tentative"
+  },
+  {
+    "id": "dinner-2026-11-09",
+    "summary": "Dinner with friends",
+    "start": "2026-11-09T19:00:00Z",
+    "status": "confirmed"
+  },
+  {
+    "id": "seb:2026-11-09-london",
+    "source": "seb",
+    "externalId": "2026-11-09-london",
+    "summary": "Sophie Ellis-Bextor — London",
+    "start": "2026-11-09T19:00:00Z",
+    "status": "tentative"
+  }
+]

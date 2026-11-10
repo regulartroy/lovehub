@@ -13,9 +13,13 @@ const {
 
 const assertRate = createRateLimiter();
 
+// firebase-functions initializes a named app ("__FIREBASE_FUNCTIONS_SDK__"),
+// not the default. getFirestore() without an app always wants the default, so
+// pick any already-initialized app (or create the default when none exists).
 function firestore() {
-  if (getApps().length === 0) initializeApp();
-  return getFirestore();
+  const apps = getApps();
+  const app = apps.length > 0 ? apps[0] : initializeApp();
+  return getFirestore(app);
 }
 
 function asHttpsError(error) {
@@ -24,6 +28,17 @@ function asHttpsError(error) {
     return new HttpsError(error.code, error.message);
   }
   return new HttpsError('internal', "Couldn't fetch that recipe.");
+}
+
+function logUnexpected(error) {
+  const name = error && error.name ? String(error.name) : typeof error;
+  const code = error && error.code != null ? String(error.code) : '';
+  const message = error && error.message ? String(error.message) : '';
+  // No request URLs, tokens, hub ids, or user data — reason only.
+  console.error(
+    'importRecipePage failed',
+    JSON.stringify({ name, code, message: message.slice(0, 200) }),
+  );
 }
 
 // App Check is not enforced on LoveHub. Leave enforceAppCheck off.
@@ -49,7 +64,7 @@ exports.importRecipePage = onCall(
       if (!(error instanceof HttpsError) &&
           !(error instanceof RecipeFetchError) &&
           !(error instanceof MembershipError)) {
-        console.error('importRecipePage failed');
+        logUnexpected(error);
       }
       throw asHttpsError(error);
     }

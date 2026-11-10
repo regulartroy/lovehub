@@ -55,3 +55,5 @@ dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-20
 Tom can also confirm a tentative shift in the app: tap the muted **?** chip on Calendar, or open that day in LOOK AHEAD and tap **Confirm I'm working this**. That sets the same `status: confirmed` field.
 
 The reverse is in the app too. On create or edit, the **Tentative** switch writes `status: tentative` when on and `status: confirmed` when off. To flip a booked plan back, tap its chip on Calendar or in a LOOK AHEAD day, then **Mark tentative**. That sets only `status: tentative`, and the chip goes pale with **?**. **Keep confirmed** dismisses without writing.
+
+Imported `c2-rota` shifts can also be reconciled from the Concorde feed. The job confirms a tentative show when Tom is working it, leaves undecided shows tentative, and removes only a tentative imported show that is cancelled or marked not working. It does not create events and it does not touch confirmed or hand-made ones. Activation, the 15-minute run, and rollback are in [docs/c2-rota-reconcile.md](docs/c2-rota-reconcile.md).
