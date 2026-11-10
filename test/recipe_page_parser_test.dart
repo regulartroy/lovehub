@@ -57,27 +57,89 @@ void main() {
       RegExp(r'^\d+\. ', multiLine: true).allMatches(recipe.method).length,
       5,
     );
-  });
-
-  test('reads the same Nigella recipe from JSON-LD, including HowToSections', () {
-    final recipe = parseRecipePage(nigellaJsonLd).recipe!;
-
-    expect(recipe.source, 'json-ld');
-    expect(recipe.title, 'Persian-Style Saffron Chicken Rice');
-    expect(recipe.ingredients, nigellaIngredients);
-    expect(recipe.method, startsWith('For the marinade\n1. Preheat the oven'));
-    expect(recipe.method, isNot(contains('Step 1')));
-    expect(recipe.method, isNot(contains('Step 2:')));
-    expect(recipe.method, isNot(contains('\nInstructions\n')));
+    // The whole method, through the last word of the last step.
     expect(
       recipe.method,
-      contains('\n\n3. Transfer half the saffron paste'),
+      endsWith(
+        '5. Garnish with the barberries or pomegranate seeds, pistachios and '
+        'coriander leaves and serve immediately with yoghurt.',
+      ),
     );
     expect(
-      RegExp(r'^\d+\. ', multiLine: true).allMatches(recipe.method).length,
-      5,
+      recipe.method,
+      contains(
+        'Remove the foil and return to the oven for 20 to 25 minutes or until '
+        'the chicken is golden and cooked through and the rice crispy on the top.',
+      ),
     );
   });
+
+  test('keeps a long method step whole', () {
+    final sentence =
+        'Stir the onions over a low heat until they are soft and golden. ';
+    final longStep = (sentence * 30).trim(); // ~1,900 characters
+    final html =
+        '<script type="application/ld+json">{"@type":"Recipe","name":"Onions",'
+        '"recipeIngredient":["3 onions"],"recipeInstructions":['
+        '{"@type":"HowToStep","text":"$longStep"},'
+        '{"@type":"HowToStep","text":"Serve hot."}]}</script>';
+    final recipe = parseRecipePage(html).recipe!;
+    expect(recipe.method, '1. $longStep\n2. Serve hot.');
+  });
+
+  group('shortenAtBoundary', () {
+    test('leaves text that fits alone', () {
+      expect(shortenAtBoundary('Short step.', 50), 'Short step.');
+    });
+
+    test('cuts at the last full sentence that fits', () {
+      const text = 'First sentence here. Second one is here. Third goes past.';
+      expect(
+        shortenAtBoundary(text, 45),
+        'First sentence here. Second one is here.',
+      );
+    });
+
+    test('falls back to a whole word, never mid-word', () {
+      const text = 'one two three four five six seven eight nine ten';
+      final cut = shortenAtBoundary(text, 22);
+      expect(cut, 'one two three four\u2026');
+      final words = text.split(' ');
+      for (final word in cut.replaceAll('\u2026', '').split(' ')) {
+        expect(words, contains(word));
+      }
+    });
+
+    test('does not split one very long word', () {
+      expect(
+        shortenAtBoundary('supercalifragilistic', 5),
+        'supercalifragilistic',
+      );
+    });
+  });
+
+  test(
+    'reads the same Nigella recipe from JSON-LD, including HowToSections',
+    () {
+      final recipe = parseRecipePage(nigellaJsonLd).recipe!;
+
+      expect(recipe.source, 'json-ld');
+      expect(recipe.title, 'Persian-Style Saffron Chicken Rice');
+      expect(recipe.ingredients, nigellaIngredients);
+      expect(
+        recipe.method,
+        startsWith('For the marinade\n1. Preheat the oven'),
+      );
+      expect(recipe.method, isNot(contains('Step 1')));
+      expect(recipe.method, isNot(contains('Step 2:')));
+      expect(recipe.method, isNot(contains('\nInstructions\n')));
+      expect(recipe.method, contains('\n\n3. Transfer half the saffron paste'));
+      expect(
+        RegExp(r'^\d+\. ', multiLine: true).allMatches(recipe.method).length,
+        5,
+      );
+    },
+  );
 
   test('prefers a useful JSON-LD recipe over microdata', () {
     const html = '''
@@ -148,7 +210,12 @@ void main() {
 </script>
 ''';
     final recipe = parseRecipePage(html).recipe!;
-    expect(recipe.ingredients, ['1 tsp salt', '2 lemons', '200 g flour', '1 tsp salt']);
+    expect(recipe.ingredients, [
+      '1 tsp salt',
+      '2 lemons',
+      '200 g flour',
+      '1 tsp salt',
+    ]);
     expect(recipe.method, '1. Boil the rice.\n2. Rest for 5 minutes.');
   });
 
@@ -204,7 +271,9 @@ void main() {
 
   test('reports a page with no recipe, and an empty recipe shell', () {
     expect(
-      parseRecipePage('<html><body><h1>No recipe here</h1></body></html>').error,
+      parseRecipePage(
+        '<html><body><h1>No recipe here</h1></body></html>',
+      ).error,
       contains("doesn't publish a recipe"),
     );
     expect(

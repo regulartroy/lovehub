@@ -628,7 +628,7 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
             const SizedBox(height: 12),
             TextField(
               controller: _ingCtrl,
-              maxLines: 5,
+              maxLines: null,
               minLines: 3,
               decoration: InputDecoration(
                 labelText: "Ingredients (one per line)",
@@ -643,7 +643,7 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
             const SizedBox(height: 12),
             TextField(
               controller: _methodCtrl,
-              maxLines: 8,
+              maxLines: null,
               minLines: 3,
               decoration: InputDecoration(
                 labelText: "Method / Instructions (Optional)",
