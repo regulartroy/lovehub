@@ -65,7 +65,10 @@ class MemberAvatar extends StatelessWidget {
     return Container(
       width: radius * 2,
       height: radius * 2,
-      decoration: BoxDecoration(shape: BoxShape.circle, border: border),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: border,
+      ),
       clipBehavior: Clip.antiAlias,
       child: child,
     );

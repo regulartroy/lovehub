@@ -19,10 +19,7 @@ void main() {
       validateRecipeImportUrl('https://example.com/a?x=1#b'),
       'https://example.com/a?x=1',
     );
-    expect(
-      validateRecipeImportUrl('http://8.8.8.8/recipe'),
-      'http://8.8.8.8/recipe',
-    );
+    expect(validateRecipeImportUrl('http://8.8.8.8/recipe'), 'http://8.8.8.8/recipe');
     expect(
       validateRecipeImportUrl('http://[2606:4700:4700::1111]/recipe'),
       'http://[2606:4700:4700::1111]/recipe',
@@ -30,13 +27,7 @@ void main() {
   });
 
   test('rejects non-http schemes and blank links', () {
-    for (final input in [
-      '',
-      '   ',
-      'file:///etc/passwd',
-      'javascript:alert(1)',
-      'ftp://example.com/recipe',
-    ]) {
+    for (final input in ['', '   ', 'file:///etc/passwd', 'javascript:alert(1)', 'ftp://example.com/recipe']) {
       expect(
         () => validateRecipeImportUrl(input),
         throwsA(

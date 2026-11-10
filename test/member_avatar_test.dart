@@ -6,7 +6,9 @@ void main() {
   testWidgets('shows an initial when no photo URL is present', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(body: MemberAvatar(name: 'Maria', radius: 24)),
+        home: Scaffold(
+          body: MemberAvatar(name: 'Maria', radius: 24),
+        ),
       ),
     );
 
@@ -20,7 +22,11 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: MemberAvatar(name: 'Maria', radius: 24, icon: Icons.person),
+          body: MemberAvatar(
+            name: 'Maria',
+            radius: 24,
+            icon: Icons.person,
+          ),
         ),
       ),
     );

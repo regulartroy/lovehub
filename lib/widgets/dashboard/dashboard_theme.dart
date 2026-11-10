@@ -25,8 +25,7 @@ class DashboardTheme {
   static const double radiusMd = 18;
   static const double radiusSm = 12;
 
-  static Color fade(Color color, double alpha) =>
-      color.withValues(alpha: alpha);
+  static Color fade(Color color, double alpha) => color.withValues(alpha: alpha);
 
   static LinearGradient slideGradient(Color tint) {
     return LinearGradient(
@@ -36,10 +35,7 @@ class DashboardTheme {
     );
   }
 
-  static BoxDecoration glassCard({
-    required Color tint,
-    bool emphasized = false,
-  }) {
+  static BoxDecoration glassCard({required Color tint, bool emphasized = false}) {
     return BoxDecoration(
       gradient: LinearGradient(
         begin: Alignment.topLeft,
@@ -79,13 +75,16 @@ class DashboardMetrics {
   double get slidePadTop => isCompact ? 118 : 148;
   double get slidePadBottom => isCompact ? 28 : 40;
 
-  EdgeInsets get slidePadding =>
-      EdgeInsets.fromLTRB(slidePadH, slidePadTop, slidePadH, slidePadBottom);
+  EdgeInsets get slidePadding => EdgeInsets.fromLTRB(
+        slidePadH,
+        slidePadTop,
+        slidePadH,
+        slidePadBottom,
+      );
 
   double get clockSize => isCompact ? 36 : 54;
   double get secondsSize => isCompact ? 16 : 24;
   double get dateSize => isCompact ? 11 : 14;
-
   /// Slide titles (SCHEDULE, LOOK AHEAD, TASKS, …). Kept small on purpose:
   /// the slides are self-explanatory, and a short header leaves room for
   /// the content. Still heavier than body copy via weight and tracking.
@@ -94,7 +93,6 @@ class DashboardMetrics {
   double get quoteSize => isCompact ? 26 : (isWide ? 42 : 34);
   double get headerPadH => isCompact ? 20 : 36;
   double get headerPadTop => isCompact ? 12 : 28;
-
   /// Matches [titleSize] so the header icon does not tower over the label
   /// and eat the vertical space the smaller title is meant to free.
   double get iconSize => isCompact ? 18 : 20;
