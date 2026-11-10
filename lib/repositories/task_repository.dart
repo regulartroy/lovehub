@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/task_model.dart';
+import '../services/shopping_list_items.dart';
 
 class TaskRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -35,17 +36,7 @@ class TaskRepository {
     String hubId,
     List<String> ingredients,
   ) async {
-    final tasks = ingredients
-        .map(
-          (item) => Task(
-            id: '',
-            text: item,
-            listName: 'Shopping',
-            assignedTo: 'shared',
-          ),
-        )
-        .toList();
-    await addTasks(hubId, tasks);
+    await addTasks(hubId, shoppingTasksForIngredients(ingredients));
   }
 
   // Toggle completion

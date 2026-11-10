@@ -9,8 +9,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_vertexai/firebase_vertexai.dart';
 
 import '../models/recipe_model.dart';
+import '../recipe_import/recipe_import_client.dart';
+import '../recipe_import/recipe_url.dart';
 import '../repositories/recipe_repository.dart';
 import '../repositories/task_repository.dart';
+import '../widgets/recipe_link_import_sheet.dart';
 import 'tasks_screen.dart'; // (if you still have this here)
 
 class FoodScreen extends StatefulWidget {
@@ -111,6 +114,28 @@ class _RecipesTab extends StatelessWidget {
     );
   }
 
+  void _showImportRecipe(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.green.shade50,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => RecipeLinkImportSheet(
+        importPage: (url) =>
+            RecipeImportClient().importUrl(hubId: hubId, url: url),
+        onSave: (recipe) => RecipeRepository().createRecipe(
+          hubId,
+          title: recipe.title,
+          ingredients: recipe.ingredients,
+          method: recipe.method,
+          sourceUrl: recipe.sourceUrl,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -119,14 +144,33 @@ class _RecipesTab extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddRecipe(context),
-        backgroundColor: Colors.green.shade600,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          "New Recipe",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'recipes-import',
+            onPressed: () => _showImportRecipe(context),
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.green.shade800,
+            icon: const Icon(Icons.link),
+            label: const Text(
+              "Import link",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'recipes-new',
+            onPressed: () => _showAddRecipe(context),
+            backgroundColor: Colors.green.shade600,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text(
+              "New Recipe",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
       body: StreamBuilder<List<Recipe>>(
         stream: _recipeRepo.streamRecipes(hubId),
@@ -149,7 +193,7 @@ class _RecipesTab extends StatelessWidget {
                   Icon(Icons.menu_book, size: 60, color: Colors.green.shade200),
                   const SizedBox(height: 12),
                   const Text(
-                    "No recipes yet. Add your House Standards!",
+                    "No recipes yet. Add one, or import a link.",
                     style: TextStyle(color: Colors.grey),
                   ),
                 ],
@@ -158,7 +202,7 @@ class _RecipesTab extends StatelessWidget {
           }
 
           return GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 180),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               crossAxisSpacing: 16,
@@ -282,13 +326,25 @@ class _RecipeDetailSheet extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Text(
-                  recipe.title,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade900,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      recipe.title,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade900,
+                      ),
+                    ),
+                    if (recipe.sourceUrl != null &&
+                        recipe.sourceUrl!.trim().isNotEmpty)
+                      Text(
+                        'From ${recipeSourceLabel(recipe.sourceUrl!)}',
+                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                  ],
                 ),
               ),
               // --- NEW: DELETE RECIPE BUTTON ---
@@ -507,17 +563,12 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
               'method': _methodCtrl.text.trim(),
             });
       } else {
-        // DIRECT CREATE NEW (Bypasses repo to prevent errors)
-        await FirebaseFirestore.instance
-            .collection('hubs')
-            .doc(widget.hubId)
-            .collection('recipes')
-            .add({
-              'title': _titleCtrl.text.trim(),
-              'ingredients': ingredients,
-              'method': _methodCtrl.text.trim(),
-              'createdAt': FieldValue.serverTimestamp(),
-            });
+        await RecipeRepository().createRecipe(
+          widget.hubId,
+          title: _titleCtrl.text.trim(),
+          ingredients: ingredients,
+          method: _methodCtrl.text.trim(),
+        );
       }
 
       if (mounted) Navigator.pop(context); // Close sheet safely!

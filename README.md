@@ -26,6 +26,19 @@ guards are in [docs/web-deploy.md](docs/web-deploy.md).
 tool/deploy_hosting.sh
 ```
 
+## Recipe link import
+
+Kitchen → Recipes → **Import link** reads a schema.org recipe (JSON-LD, then
+microdata) through the `importRecipePage` function. Nigella's pages are
+microdata. Deploy and the Blaze-plan note are in
+[docs/recipe-import.md](docs/recipe-import.md).
+
+```bash
+cd functions && npm ci && cd ..
+firebase deploy --only functions:importRecipePage --project lovehub-26107
+tool/deploy_hosting.sh
+```
+
 ## Work calendar import
 
 Roger can upsert C2 rota, Sophie Ellis-Bextor, and ROT90s events without the

@@ -5,12 +5,14 @@ class Recipe {
   final String title;
   final List<String> ingredients;
   final String? method; // Optional method field
+  final String? sourceUrl;
 
   Recipe({
     required this.id,
     required this.title,
     required this.ingredients,
     this.method,
+    this.sourceUrl,
   });
 
   // This is the missing method the repository was looking for!
@@ -21,6 +23,10 @@ class Recipe {
       title: data['title'] ?? '',
       ingredients: List<String>.from(data['ingredients'] ?? []),
       method: data['method'], // Loads the method from the database
+      sourceUrl: data['sourceUrl'] is String &&
+              (data['sourceUrl'] as String).trim().isNotEmpty
+          ? data['sourceUrl'] as String
+          : null,
     );
   }
 
@@ -29,6 +35,8 @@ class Recipe {
       'title': title,
       'ingredients': ingredients,
       'method': method, // Saves the method to the database
+      if (sourceUrl != null && sourceUrl!.trim().isNotEmpty)
+        'sourceUrl': sourceUrl,
     };
   }
 }
