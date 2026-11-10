@@ -369,8 +369,15 @@ Future<void> _commit(
         exitCode: 3,
       );
     }
+    var detail = '';
+    try {
+      final err = jsonDecode(response.body);
+      if (err is Map && err['error'] is Map) {
+        detail = ': ${(err['error'] as Map)['message']}';
+      }
+    } catch (_) {}
     throw C2RotaWriteException(
-      'Firestore commit failed (${response.statusCode}). Nothing was written.',
+      'Firestore commit failed (${response.statusCode})$detail. Nothing was written.',
       exitCode: 1,
     );
   }

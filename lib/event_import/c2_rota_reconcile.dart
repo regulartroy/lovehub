@@ -1274,7 +1274,7 @@ Map<String, dynamic> _mutationWrite(
   if (action.kind == C2RotaActionKind.delete) {
     return {
       'delete': name,
-      'currentDocument': {'exists': true, 'updateTime': updateTime},
+      'currentDocument': {'updateTime': updateTime},
     };
   }
   return {
@@ -1287,7 +1287,7 @@ Map<String, dynamic> _mutationWrite(
     'updateMask': {
       'fieldPaths': ['status'],
     },
-    'currentDocument': {'exists': true, 'updateTime': updateTime},
+    'currentDocument': {'updateTime': updateTime},
   };
 }
 
@@ -1728,7 +1728,7 @@ List<Map<String, dynamic>> c2RollbackCommitWrites({
         'updateMask': {
           'fieldPaths': ['status'],
         },
-        'currentDocument': {'exists': true, 'updateTime': action.updateTime},
+        'currentDocument': {'updateTime': action.updateTime},
       });
     }
   }

@@ -794,7 +794,6 @@ void main() {
           'status': {'stringValue': 'confirmed'},
         });
         expect(confirm['currentDocument'], {
-          'exists': true,
           'updateTime': '2026-11-08T10:00:00.000000Z',
         });
         expect(
