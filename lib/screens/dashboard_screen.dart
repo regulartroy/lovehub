@@ -74,6 +74,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   HubMemberDirectory? _memberDirectory;
   List<Map<String, dynamic>> _rawEvents = [];
   List<Map<String, dynamic>> _eventsAll = [];
+
+  /// recipeId -> imageUrl for cookbook pictures on the meal strip.
+  Map<String, String> _recipeImageUrls = {};
   List<Map<String, dynamic>> _birthdays = [];
   List<QueryDocumentSnapshot> _allTasks = [];
   Map<String, dynamic>? _rotaConfig;
@@ -308,6 +311,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
               snap.docs.map((d) => {'id': d.id, ...d.data()}),
             );
             _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
+            _rebuildSlides(_widthOrDefault);
+          }, onError: (_) {}),
+    );
+
+    _subs.add(
+      FirebaseFirestore.instance
+          .collection('hubs')
+          .doc(hubId)
+          .collection('recipes')
+          .snapshots()
+          .listen((snap) {
+            if (!mounted) return;
+            final urls = <String, String>{};
+            for (final doc in snap.docs) {
+              final url = _nonEmptyImageUrl(doc.data()['imageUrl']);
+              if (url != null) urls[doc.id] = url;
+            }
+            _recipeImageUrls = urls;
             _rebuildSlides(_widthOrDefault);
           }, onError: (_) {}),
     );
@@ -735,9 +756,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           1;
       if (totalDays < 2) return title;
       final currentDayNum =
-          (DateUtils.dateOnly(currentDate)
-                      .difference(DateUtils.dateOnly(start))
-                      .inDays +
+          (DateUtils.dateOnly(
+                    currentDate,
+                  ).difference(DateUtils.dateOnly(start)).inDays +
                   1)
               .clamp(1, totalDays);
       return '$title (Day $currentDayNum/$totalDays)';
@@ -1036,6 +1057,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   DashboardDayItem _dayItem(Map<String, dynamic> data, DateTime checkDate) {
     final category = data['category'] ?? 'general';
+    final isMeal = category == 'meal';
     final dayStart = DateUtils.dateOnly(checkDate);
     final nextDay = calendarDayOffset(dayStart, 1);
     final start = dashboardEventDateTime(data['start']);
@@ -1048,14 +1070,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return DashboardDayItem(
       style: CalendarColors.fromMap(data, palette: _memberPalette),
       title: _formatMultiDayTitle(data, checkDate),
-      timeLabel: dashboardEventTimeRangeLabel(data),
+      timeLabel: isMeal ? '' : dashboardEventTimeRangeLabel(data),
       start: start == null || start.isBefore(dayStart) ? dayStart : start,
-      allDay: data['allDay'] == true || coversDay,
+      allDay: !isMeal && (data['allDay'] == true || coversDay),
       birthday: category == 'birthday',
-      avatar: _memberAvatar(data['assignedTo'] ?? 'shared', radius: 13),
-      icon: category == 'meal' ? Icons.restaurant : null,
+      meal: isMeal,
+      mealLabel: isMeal ? dashboardMealLabel(checkDate) : null,
+      imageUrl: isMeal ? _recipeImageUrl(data) : null,
+      avatar: isMeal
+          ? null
+          : _memberAvatar(data['assignedTo'] ?? 'shared', radius: 13),
+      icon: isMeal ? Icons.restaurant_menu : null,
     );
   }
+
+  String? _recipeImageUrl(Map<String, dynamic> data) {
+    final id = data['recipeId'];
+    if (id is! String || id.trim().isEmpty) return null;
+    return _recipeImageUrls[id.trim()];
+  }
+
+  static String? _nonEmptyImageUrl(dynamic value) =>
+      value is String && value.trim().isNotEmpty ? value.trim() : null;
 
   Widget _eventRow(Map<String, dynamic> data, DateTime checkDate, bool large) {
     final isMeal = data['category'] == 'meal';
@@ -1068,7 +1104,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return CalendarSplitPill(
       style: style,
       title: _formatMultiDayTitle(data, checkDate),
-      subtitle: timeStr,
+      subtitle: isMeal ? null : timeStr,
       fitSubtitle: true,
       tentativeMarkInline: true,
       density: large
@@ -1343,17 +1379,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     final anchorDate = (_rotaConfig!['anchorDate'] as Timestamp).toDate();
-    final daysSince = DateUtils.dateOnly(DateTime.now())
-        .difference(DateUtils.dateOnly(anchorDate))
-        .inDays;
+    final daysSince = DateUtils.dateOnly(
+      DateTime.now(),
+    ).difference(DateUtils.dateOnly(anchorDate)).inDays;
     if (daysSince < 0) {
       return _rotaEmptySlide(metrics, 'This week’s rota has not started yet.');
     }
 
     final absoluteWeekNum = (daysSince ~/ 7) + 1;
     final currentCycleWeek = ((daysSince ~/ 7) % 8) + 1;
-    final startOfWeek = DateUtils.dateOnly(anchorDate)
-        .add(Duration(days: (absoluteWeekNum - 1) * 7));
+    final startOfWeek = DateUtils.dateOnly(
+      anchorDate,
+    ).add(Duration(days: (absoluteWeekNum - 1) * 7));
     final weekId = DateFormat('yyyy-MM-dd').format(startOfWeek);
     final blueprint = _rotaConfig!['blueprint'] as Map<String, dynamic>? ?? {};
     final weekChores = List<Map<String, dynamic>>.from(
@@ -2343,7 +2380,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: DashboardEmptyState(
           icon: Icons.favorite_outline_rounded,
           title: 'No hub selected',
-          message: 'Open a shared hub from settings, then come back to this wall view.',
+          message:
+              'Open a shared hub from settings, then come back to this wall view.',
           action: FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: DashboardTheme.accent,

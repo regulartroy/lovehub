@@ -60,10 +60,13 @@ class RecipeImage extends StatelessWidget {
     if (url == null || url.isEmpty) {
       return RecipePicturePlaceholder(size: iconSize);
     }
+    // Prefer an HTML <img> on Flutter web so a Storage download URL still
+    // paints if the bucket has no CORS headers (CanvasKit's XHR path 403s).
     return Image.network(
       url,
       fit: BoxFit.cover,
       gaplessPlayback: true,
+      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
       loadingBuilder: (context, child, progress) =>
           progress == null ? child : RecipePicturePlaceholder(size: iconSize),
       errorBuilder: (context, error, stack) =>
