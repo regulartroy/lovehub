@@ -7,6 +7,7 @@ const dns = require('dns');
 const http = require('http');
 const https = require('https');
 const net = require('net');
+const zlib = require('zlib');
 
 const MAX_BYTES = 1_500_000;
 const MAX_REDIRECTS = 4;
@@ -268,6 +269,31 @@ function assertContentType(contentType, body) {
   }
 }
 
+function inflateBody(body, contentEncoding) {
+  const encoding = (contentEncoding || '').toLowerCase().trim();
+  if (!encoding || encoding === 'identity') return body;
+  try {
+    if (encoding === 'gzip' || encoding === 'x-gzip') {
+      return zlib.gunzipSync(body);
+    }
+    if (encoding === 'deflate') {
+      return zlib.inflateSync(body);
+    }
+    if (encoding === 'br') {
+      return zlib.brotliDecompressSync(body);
+    }
+  } catch (_) {
+    throw new RecipeFetchError(
+      'failed-precondition',
+      "That page isn't a recipe page we can read.",
+    );
+  }
+  throw new RecipeFetchError(
+    'failed-precondition',
+    "That page isn't a recipe page we can read.",
+  );
+}
+
 function decodeBody(body) {
   let bytes = body;
   if (
@@ -294,10 +320,11 @@ function defaultRequest({ url, address, family }) {
         headers: {
           Host: url.host,
           'User-Agent':
-            'Mozilla/5.0 (compatible; LoveHubRecipeImport/1.0; +https://love-hub.web.app)',
-          Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-          'Accept-Encoding': 'identity',
-          'Accept-Language': 'en',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Accept-Language': 'en-GB,en;q=0.9',
         },
         lookup: pinnedLookup(address, family),
         servername: url.hostname,
@@ -447,8 +474,9 @@ async function fetchPublicPage(rawUrl, deps = {}) {
     if (body.length > MAX_BYTES) {
       throw new RecipeFetchError('resource-exhausted', 'That page is too large to import.');
     }
-    assertContentType(header(response.headers, 'content-type'), body);
-    return { finalUrl: url.toString(), html: decodeBody(body) };
+    const inflated = inflateBody(body, header(response.headers, 'content-encoding'));
+    assertContentType(header(response.headers, 'content-type'), inflated);
+    return { finalUrl: url.toString(), html: decodeBody(inflated) };
   }
   throw new RecipeFetchError(
     'failed-precondition',
@@ -462,6 +490,7 @@ module.exports = {
   RecipeFetchError,
   assertPublicHttpUrl,
   fetchPublicPage,
+  inflateBody,
   isPrivateAddress,
   pinnedLookup,
 };
