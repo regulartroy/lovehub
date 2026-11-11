@@ -16,9 +16,9 @@ class MembershipError extends Error {
   }
 }
 
-async function assertHubMember(uid, hubId, db) {
+async function assertHubMember(uid, hubId, db, action = 'import a recipe') {
   if (!uid || typeof uid !== 'string') {
-    throw new MembershipError('unauthenticated', 'Sign in to import a recipe.');
+    throw new MembershipError('unauthenticated', `Sign in to ${action}.`);
   }
   if (!validHubId(hubId)) {
     throw new MembershipError('invalid-argument', 'Missing hub.');
@@ -33,11 +33,16 @@ async function assertHubMember(uid, hubId, db) {
   if (Array.isArray(members) && members.includes(uid)) return;
   throw new MembershipError(
     'permission-denied',
-    'You need to be a member of this hub to import a recipe.',
+    `You need to be a member of this hub to ${action}.`,
   );
 }
 
-function createRateLimiter({ max = 20, windowMs = 60_000, now = Date.now } = {}) {
+function createRateLimiter({
+  max = 20,
+  windowMs = 60_000,
+  now = Date.now,
+  message = 'Too many imports. Wait a minute and try again.',
+} = {}) {
   const hits = new Map();
   return function assertRate(uid) {
     const time = now();
@@ -45,7 +50,7 @@ function createRateLimiter({ max = 20, windowMs = 60_000, now = Date.now } = {})
     if (recent.length >= max) {
       throw new MembershipError(
         'resource-exhausted',
-        'Too many imports. Wait a minute and try again.',
+        message,
       );
     }
     recent.push(time);

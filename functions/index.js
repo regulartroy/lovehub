@@ -11,9 +11,18 @@ const {
   createRateLimiter,
   MembershipError,
 } = require('./membership');
+const {
+  generateSortIndexes,
+  parseSortItems,
+  SmartSortError,
+} = require('./smart_sort');
 
 const assertRate = createRateLimiter();
 const assertImageRate = createRateLimiter({ max: 30 });
+const assertSortRate = createRateLimiter({
+  max: 20,
+  message: 'Too many sorts. Wait a minute and try again.',
+});
 
 // firebase-functions initializes a named app ("__FIREBASE_FUNCTIONS_SDK__"),
 // not the default. getFirestore() without an app always wants the default, so
@@ -24,12 +33,16 @@ function firestore() {
   return getFirestore(app);
 }
 
-function asHttpsError(error) {
+function asHttpsError(error, fallbackMessage = "Couldn't fetch that recipe.") {
   if (error instanceof HttpsError) return error;
-  if (error instanceof RecipeFetchError || error instanceof MembershipError) {
+  if (
+    error instanceof RecipeFetchError ||
+    error instanceof MembershipError ||
+    error instanceof SmartSortError
+  ) {
     return new HttpsError(error.code, error.message);
   }
-  return new HttpsError('internal', "Couldn't fetch that recipe.");
+  return new HttpsError('internal', fallbackMessage);
 }
 
 function logUnexpected(error, label = 'importRecipePage') {
@@ -112,6 +125,48 @@ exports.fetchRecipeImage = onCall(
         logUnexpected(error, 'fetchRecipeImage');
       }
       throw asHttpsError(error);
+    }
+  },
+);
+
+// Sorts shopping-list items by supermarket aisle using Gemini on Vertex AI.
+// Runs on the function's service account so the app does not need Firebase
+// AI Logic / App Check, which is blocked on this project for client calls.
+// Returns sort indexes only; the app writes them. Offline fallback lives
+// in the app if this function fails.
+exports.smartSortShopping = onCall(
+  {
+    region: 'europe-west2',
+    timeoutSeconds: 60,
+    memory: '512MiB',
+    maxInstances: 5,
+    cors: true,
+    enforceAppCheck: false,
+  },
+  async (request) => {
+    try {
+      if (!request.auth?.uid) {
+        throw new HttpsError('unauthenticated', 'Sign in to sort the shopping list.');
+      }
+      assertSortRate(request.auth.uid);
+      await assertHubMember(
+        request.auth.uid,
+        request.data?.hubId,
+        firestore(),
+        'sort the shopping list',
+      );
+      const items = parseSortItems(request.data);
+      const sortIndexes = await generateSortIndexes(items);
+      return { sortIndexes };
+    } catch (error) {
+      if (
+        !(error instanceof HttpsError) &&
+        !(error instanceof MembershipError) &&
+        !(error instanceof SmartSortError)
+      ) {
+        logUnexpected(error, 'smartSortShopping');
+      }
+      throw asHttpsError(error, "Couldn't sort the shopping list.");
     }
   },
 );

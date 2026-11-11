@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,9 +8,8 @@ import 'package:intl/intl.dart';
 import '../models/task_model.dart';
 import '../repositories/task_repository.dart';
 import '../services/shopping_aisle_sort.dart';
-import 'dart:convert';
+import '../services/shopping_smart_sort_client.dart';
 import '../widgets/undo_snackbar.dart';
-import 'package:firebase_vertexai/firebase_vertexai.dart';
 
 class TasksScreen extends StatefulWidget {
   final User user;
@@ -82,9 +82,12 @@ class _TasksScreenState extends State<TasksScreen> {
     setState(() => _isSortingAI = true);
 
     try {
-      final result = await smartSortShoppingIndexes([
-        for (final t in items) (t.id, t.text),
-      ], aiSort: () => _geminiSortIndexes(items));
+      final pairs = [for (final t in items) (t.id, t.text)];
+      final result = await smartSortShoppingIndexes(
+        pairs,
+        aiSort: () => callSmartSortShopping(hubId: hubId, items: pairs),
+        timeout: const Duration(seconds: 25),
+      );
 
       // Batch update Firestore (only touches the sortIndex number).
       final batch = FirebaseFirestore.instance.batch();
@@ -103,8 +106,8 @@ class _TasksScreenState extends State<TasksScreen> {
           SnackBar(
             content: Text(
               result.usedFallback
-                  ? '🛒 Sorted by aisle (offline sort)'
-                  : '✨ Shopping list smartly sorted!',
+                  ? "🛒 Sorted by aisle (offline sort — AI unavailable)"
+                  : "✨ Sorted by aisle (AI sort)",
             ),
             backgroundColor: result.usedFallback
                 ? Colors.green.shade700
@@ -124,40 +127,6 @@ class _TasksScreenState extends State<TasksScreen> {
     } finally {
       if (mounted) setState(() => _isSortingAI = false);
     }
-  }
-
-  Future<Map<String, int>> _geminiSortIndexes(List<Task> items) async {
-    final model = FirebaseVertexAI.instance.generativeModel(
-      model: 'gemini-2.5-flash',
-      generationConfig: GenerationConfig(responseMimeType: 'application/json'),
-    );
-    final payload = items.map((t) => {'id': t.id, 'text': t.text}).toList();
-    final prompt =
-        """You are a supermarket layout expert. Look at this JSON list of shopping items.
-      Assign each item a 'sortIndex' based on the typical path through a supermarket:
-      10: Produce (Fruit/Vegetables)
-      20: Bakery
-      30: Meat/Seafood
-      40: Dairy/Eggs
-      50: Pantry/Dry Goods
-      60: Frozen Foods
-      70: Household/Toiletries
-      80: Other
-
-      Return ONLY a JSON array of objects. Each object MUST have the 'id' (exactly as provided) and the 'sortIndex' (integer).
-      Do NOT omit any IDs.
-      Items: ${jsonEncode(payload)}""";
-    final response = await model.generateContent([Content.text(prompt)]);
-    var rawText = response.text ?? '[]';
-    rawText = rawText.replaceAll('```json', '').replaceAll('```', '').trim();
-    final parsed = jsonDecode(rawText) as List<dynamic>;
-    final out = <String, int>{};
-    for (final item in parsed) {
-      if (item is Map && item['id'] is String && item['sortIndex'] is num) {
-        out[item['id'] as String] = (item['sortIndex'] as num).toInt();
-      }
-    }
-    return out;
   }
 
   Future<void> _fetchHubMembers() async {
