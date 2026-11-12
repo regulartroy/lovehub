@@ -4,27 +4,48 @@ import 'package:lovehub/models/friend_model.dart';
 import 'package:lovehub/repositories/friend_repository.dart';
 
 void main() {
-  group('FriendModel', () {
-    test('defaults all share toggles to off', () {
-      final friend = FriendModel.fromMap({}, id: 'abc');
-      expect(friend.shareWork, isFalse);
-      expect(friend.sharePersonal, isFalse);
-      expect(friend.shareBirthdays, isFalse);
-      expect(friend.label, 'Friend');
+  group('Friendship', () {
+    test('defaults sharing to off and names the other person', () {
+      final friendship = Friendship.fromMap({
+        'members': ['tom-uid', 'paddy-uid'],
+        'memberProfiles': {
+          'tom-uid': {'displayName': 'Tom Burch', 'email': 'tom@example.com'},
+          'paddy-uid': {'displayName': 'Paddy', 'email': 'paddy@example.com'},
+        },
+      }, id: 'paddy-uid_tom-uid');
+      expect(friendship.otherUid('tom-uid'), 'paddy-uid');
+      expect(friendship.otherProfile('tom-uid').label, 'Paddy');
+      expect(friendship.mySharing('tom-uid').shareWork, isFalse);
+      expect(friendship.mySharing('tom-uid').sharePersonal, isFalse);
+      expect(friendship.mySharing('tom-uid').shareBirthdays, isFalse);
     });
 
-    test('reads each share toggle independently', () {
-      final friend = FriendModel.fromMap({
-        'displayName': 'Paddy',
-        'email': 'paddy@example.com',
-        'shareWork': true,
-        'sharePersonal': false,
-        'shareBirthdays': true,
-      }, id: 'paddy');
-      expect(friend.shareWork, isTrue);
-      expect(friend.sharePersonal, isFalse);
-      expect(friend.shareBirthdays, isTrue);
-      expect(friend.label, 'Paddy');
+    test('reads each person\'s share toggles independently', () {
+      final friendship = Friendship.fromMap({
+        'members': ['tom-uid', 'maria-uid'],
+        'sharing': {
+          'tom-uid': {
+            'shareWork': true,
+            'sharePersonal': true,
+            'shareBirthdays': false,
+          },
+          'maria-uid': {
+            'shareWork': true,
+            'sharePersonal': false,
+            'shareBirthdays': true,
+          },
+        },
+      }, id: 'maria-uid_tom-uid');
+      expect(friendship.mySharing('tom-uid').shareWork, isTrue);
+      expect(friendship.mySharing('tom-uid').sharePersonal, isTrue);
+      expect(friendship.mySharing('tom-uid').shareBirthdays, isFalse);
+      expect(friendship.mySharing('maria-uid').sharePersonal, isFalse);
+      expect(friendship.mySharing('maria-uid').shareBirthdays, isTrue);
+    });
+
+    test('builds a stable mutual friendship id', () {
+      expect(friendshipIdFor('s5vu', '5ok7'), friendshipIdFor('5ok7', 's5vu'));
+      expect(friendshipIdFor('s5vu', '5ok7'), '5ok7_s5vu');
     });
   });
 
@@ -34,6 +55,7 @@ void main() {
 
     const tom = 'tom-uid';
     const paddy = 'paddy-uid';
+    const maria = 'maria-uid';
 
     setUp(() async {
       db = FakeFirebaseFirestore();
@@ -47,36 +69,35 @@ void main() {
         'displayName': 'Paddy',
         'photoURL': 'https://example.com/p.png',
       });
+      await db.collection('users').doc(maria).set({
+        'email': 'maria@example.com',
+        'displayName': 'Maria',
+      });
     });
 
-    test('adds a friend by email with all toggles off', () async {
-      final friend = await repo.addFriend(
+    test('adds a mutual friendship by email with both shares off', () async {
+      final friendship = await repo.addFriend(
         ownerUid: tom,
         query: 'paddy@example.com',
         ownerEmail: 'tom@example.com',
+        ownerDisplayName: 'Tom Burch',
       );
-      expect(friend.id, paddy);
-      expect(friend.displayName, 'Paddy');
-      expect(friend.shareWork, isFalse);
-      expect(friend.sharePersonal, isFalse);
-      expect(friend.shareBirthdays, isFalse);
+      expect(friendship.id, friendshipIdFor(tom, paddy));
+      expect(friendship.members, [paddy, tom]..sort());
+      expect(friendship.otherProfile(tom).label, 'Paddy');
 
-      final snap = await db
-          .collection('users')
-          .doc(tom)
-          .collection('friends')
-          .doc(paddy)
-          .get();
+      final snap = await db.collection('friends').doc(friendship.id).get();
       expect(snap.exists, isTrue);
-      expect(snap.data()!['shareWork'], isFalse);
-      expect(snap.data()!['sharePersonal'], isFalse);
-      expect(snap.data()!['shareBirthdays'], isFalse);
+      final sharing = snap.data()!['sharing'] as Map;
+      expect(sharing[tom]['shareWork'], isFalse);
+      expect(sharing[tom]['sharePersonal'], isFalse);
+      expect(sharing[tom]['shareBirthdays'], isFalse);
+      expect(sharing[paddy]['shareWork'], isFalse);
     });
 
     test('adds a friend by user id', () async {
-      final friend = await repo.addFriend(ownerUid: tom, query: paddy);
-      expect(friend.id, paddy);
-      expect(friend.email, 'paddy@example.com');
+      final friendship = await repo.addFriend(ownerUid: tom, query: paddy);
+      expect(friendship.otherUid(tom), paddy);
     });
 
     test('rejects adding yourself by email or id', () async {
@@ -106,34 +127,41 @@ void main() {
       );
     });
 
-    test('updates one share toggle without changing the others', () async {
+    test(
+      'updates one person\'s toggle without changing the other\'s',
+      () async {
+        final friendship = await repo.addFriend(ownerUid: tom, query: paddy);
+        await repo.setShare(
+          friendshipId: friendship.id,
+          ownerUid: tom,
+          kind: FriendShareKind.work,
+          value: true,
+        );
+        final snap = await db.collection('friends').doc(friendship.id).get();
+        final sharing = snap.data()!['sharing'] as Map;
+        expect(sharing[tom]['shareWork'], isTrue);
+        expect(sharing[tom]['sharePersonal'], isFalse);
+        expect(sharing[paddy]['shareWork'], isFalse);
+      },
+    );
+
+    test('watch lists only friendships that include the user', () async {
       await repo.addFriend(ownerUid: tom, query: paddy);
-      await repo.setShare(
-        ownerUid: tom,
-        friendUid: paddy,
-        kind: FriendShareKind.work,
-        value: true,
-      );
-      final snap = await db
-          .collection('users')
-          .doc(tom)
-          .collection('friends')
-          .doc(paddy)
-          .get();
-      expect(snap.data()!['shareWork'], isTrue);
-      expect(snap.data()!['sharePersonal'], isFalse);
-      expect(snap.data()!['shareBirthdays'], isFalse);
+      await repo.addFriend(ownerUid: tom, query: maria);
+      await repo.addFriend(ownerUid: paddy, query: maria);
+
+      final toms = await repo.watch(tom).first;
+      expect(toms.map((f) => f.otherUid(tom)), containsAll([paddy, maria]));
+      expect(toms, hasLength(2));
+
+      final paddys = await repo.watch(paddy).first;
+      expect(paddys, hasLength(2));
     });
 
-    test('removes a friend', () async {
-      await repo.addFriend(ownerUid: tom, query: paddy);
-      await repo.removeFriend(ownerUid: tom, friendUid: paddy);
-      final snap = await db
-          .collection('users')
-          .doc(tom)
-          .collection('friends')
-          .doc(paddy)
-          .get();
+    test('removes a mutual friendship', () async {
+      final friendship = await repo.addFriend(ownerUid: tom, query: paddy);
+      await repo.removeFriend(friendship.id);
+      final snap = await db.collection('friends').doc(friendship.id).get();
       expect(snap.exists, isFalse);
     });
   });

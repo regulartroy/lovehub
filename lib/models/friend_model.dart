@@ -1,46 +1,112 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// A person on the signed-in user's friends list.
+/// Mutual friendship stored at `friends/{uidA_uidB}`.
 ///
-/// Stored at `users/{uid}/friends/{friendUid}`. The document id is the
-/// friend's Firebase Auth uid. Share toggles are what *you* share with them
-/// and are independent of hubs.
-class FriendModel {
-  const FriendModel({
+/// The document id is the two Firebase Auth uids in lexicographic order,
+/// joined with an underscore. [members] is those same two uids, sorted.
+/// [sharing] is keyed by uid and holds what that person shares with the other.
+class Friendship {
+  const Friendship({
     required this.id,
-    this.displayName = '',
-    this.email,
-    this.photoURL,
-    this.shareWork = false,
-    this.sharePersonal = false,
-    this.shareBirthdays = false,
+    required this.members,
+    this.memberProfiles = const {},
+    this.sharing = const {},
     this.createdAt,
   });
 
-  /// The friend's user uid (and the Firestore document id).
+  final String id;
+  final List<String> members;
+  final Map<String, FriendProfile> memberProfiles;
+  final Map<String, FriendSharing> sharing;
+  final DateTime? createdAt;
+
+  factory Friendship.fromMap(Map<String, dynamic> data, {required String id}) {
+    final members = ((data['members'] as List?) ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    return Friendship(
+      id: id,
+      members: members,
+      memberProfiles: _profiles(data['memberProfiles']),
+      sharing: _sharing(data['sharing']),
+      createdAt: _readDate(data['createdAt']),
+    );
+  }
+
+  String? otherUid(String myUid) {
+    for (final uid in members) {
+      if (uid != myUid) return uid;
+    }
+    return null;
+  }
+
+  FriendProfile otherProfile(String myUid) {
+    final uid = otherUid(myUid);
+    if (uid == null) return const FriendProfile();
+    return memberProfiles[uid] ?? FriendProfile(id: uid);
+  }
+
+  FriendSharing mySharing(String myUid) {
+    return sharing[myUid] ?? const FriendSharing();
+  }
+
+  static Map<String, FriendProfile> _profiles(Object? raw) {
+    if (raw is! Map) return {};
+    return raw.map((key, value) {
+      final map = value is Map
+          ? Map<String, dynamic>.from(value)
+          : <String, dynamic>{};
+      return MapEntry(
+        key.toString(),
+        FriendProfile.fromMap(map, id: key.toString()),
+      );
+    });
+  }
+
+  static Map<String, FriendSharing> _sharing(Object? raw) {
+    if (raw is! Map) return {};
+    return raw.map((key, value) {
+      final map = value is Map
+          ? Map<String, dynamic>.from(value)
+          : <String, dynamic>{};
+      return MapEntry(key.toString(), FriendSharing.fromMap(map));
+    });
+  }
+
+  static DateTime? _readDate(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+}
+
+class FriendProfile {
+  const FriendProfile({
+    this.id = '',
+    this.displayName = '',
+    this.email,
+    this.photoURL,
+  });
+
   final String id;
   final String displayName;
   final String? email;
   final String? photoURL;
-  final bool shareWork;
-  final bool sharePersonal;
-  final bool shareBirthdays;
-  final DateTime? createdAt;
 
-  factory FriendModel.fromMap(Map<String, dynamic> data, {required String id}) {
-    final created = data['createdAt'];
-    return FriendModel(
+  factory FriendProfile.fromMap(Map<String, dynamic> data, {String id = ''}) {
+    return FriendProfile(
       id: id,
       displayName: (data['displayName'] as String?)?.trim() ?? '',
       email: (data['email'] as String?)?.trim(),
       photoURL: data['photoURL'] as String?,
-      shareWork: data['shareWork'] == true,
-      sharePersonal: data['sharePersonal'] == true,
-      shareBirthdays: data['shareBirthdays'] == true,
-      createdAt: created is Timestamp
-          ? created.toDate()
-          : (created is DateTime ? created : null),
     );
+  }
+
+  String get label {
+    if (displayName.isNotEmpty) return displayName;
+    if (email != null && email!.isNotEmpty) return email!;
+    return 'Friend';
   }
 
   Map<String, dynamic> toMap() {
@@ -48,17 +114,36 @@ class FriendModel {
       'displayName': displayName,
       if (email != null && email!.isNotEmpty) 'email': email,
       if (photoURL != null && photoURL!.isNotEmpty) 'photoURL': photoURL,
+    };
+  }
+}
+
+/// What one person shares with the other in a friendship. All off by default.
+class FriendSharing {
+  const FriendSharing({
+    this.shareWork = false,
+    this.sharePersonal = false,
+    this.shareBirthdays = false,
+  });
+
+  final bool shareWork;
+  final bool sharePersonal;
+  final bool shareBirthdays;
+
+  factory FriendSharing.fromMap(Map<String, dynamic> data) {
+    return FriendSharing(
+      shareWork: data['shareWork'] == true,
+      sharePersonal: data['sharePersonal'] == true,
+      shareBirthdays: data['shareBirthdays'] == true,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
       'shareWork': shareWork,
       'sharePersonal': sharePersonal,
       'shareBirthdays': shareBirthdays,
-      if (createdAt != null) 'createdAt': createdAt,
     };
-  }
-
-  String get label {
-    if (displayName.isNotEmpty) return displayName;
-    if (email != null && email!.isNotEmpty) return email!;
-    return 'Friend';
   }
 }
 
@@ -73,4 +158,10 @@ String friendShareField(FriendShareKind kind) {
     case FriendShareKind.birthdays:
       return 'shareBirthdays';
   }
+}
+
+/// Deterministic id for a two-person friendship: sorted uids joined by `_`.
+String friendshipIdFor(String uidA, String uidB) {
+  final sorted = [uidA, uidB]..sort();
+  return '${sorted[0]}_${sorted[1]}';
 }

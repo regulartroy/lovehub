@@ -4,7 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../screens/manage_hub_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/invite_screen.dart';
-import '../screens/friends_screen.dart';
+import '../screens/sharing_screen.dart';
+import '../screens/add_friend_screen.dart';
 import '../services/member_profile.dart';
 import 'build_version_footer.dart';
 import 'member_avatar.dart';
@@ -253,16 +254,27 @@ class AppDrawer extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.people_alt, color: Colors.pink),
-            title: const Text('Friends'),
+            title: const Text('Sharing'),
             subtitle: const Text(
-              'Share work, personal, or birthdays',
+              'Friends and what you share',
               style: TextStyle(fontSize: 11),
             ),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => FriendsScreen(user: user)),
+                MaterialPageRoute(builder: (_) => SharingScreen(user: user)),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_add_alt_1, color: Colors.pink),
+            title: const Text('Add friends'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => AddFriendScreen(user: user)),
               );
             },
           ),

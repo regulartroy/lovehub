@@ -5,84 +5,38 @@ import '../models/friend_model.dart';
 import '../repositories/friend_repository.dart';
 import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
+import 'add_friend_screen.dart';
 
-/// Alternative sharing: a friends list with per-friend work / personal /
-/// birthday toggles. This sits alongside hubs; it does not replace them.
-class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key, required this.user, this.repository});
+/// Per-friend sharing toggles for the friends-based model.
+class SharingScreen extends StatefulWidget {
+  const SharingScreen({super.key, required this.user, this.repository});
 
   final User user;
   final FriendRepository? repository;
 
   @override
-  State<FriendsScreen> createState() => _FriendsScreenState();
+  State<SharingScreen> createState() => _SharingScreenState();
 }
 
-class _FriendsScreenState extends State<FriendsScreen> {
+class _SharingScreenState extends State<SharingScreen> {
   late final FriendRepository _repo = widget.repository ?? FriendRepository();
 
-  Future<void> _addFriend() async {
-    final controller = TextEditingController();
-    final query = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add a friend'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(
-            labelText: 'Email or user id',
-            hintText: 'friend@example.com',
-          ),
-          onSubmitted: (value) => Navigator.pop(ctx, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Add'),
-          ),
-        ],
+  void _openAddFriend() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddFriendScreen(user: widget.user, repository: _repo),
       ),
     );
-    if (query == null || query.trim().isEmpty) return;
-
-    try {
-      await _repo.addFriend(
-        ownerUid: widget.user.uid,
-        query: query,
-        ownerEmail: widget.user.email,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Friend added. Sharing starts off.')),
-      );
-    } on FriendLookupException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not add friend: $e')));
-    }
   }
 
-  Future<void> _removeFriend(FriendModel friend) async {
+  Future<void> _removeFriend(Friendship friendship) async {
+    final other = friendship.otherProfile(widget.user.uid);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remove friend?'),
-        content: Text(
-          'Remove ${friend.label} from your friends list? '
-          'This does not change any hubs.',
-        ),
+        content: Text('Remove ${other.label} from your friends list?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -96,17 +50,17 @@ class _FriendsScreenState extends State<FriendsScreen> {
       ),
     );
     if (confirm != true) return;
-    await _repo.removeFriend(ownerUid: widget.user.uid, friendUid: friend.id);
+    await _repo.removeFriend(friendship.id);
   }
 
   Future<void> _setShare(
-    FriendModel friend,
+    Friendship friendship,
     FriendShareKind kind,
     bool value,
   ) async {
     await _repo.setShare(
+      friendshipId: friendship.id,
       ownerUid: widget.user.uid,
-      friendUid: friend.id,
       kind: kind,
       value: value,
     );
@@ -116,17 +70,24 @@ class _FriendsScreenState extends State<FriendsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Friends'),
+        title: const Text('Sharing'),
         backgroundColor: Colors.pink.shade400,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Add a friend',
+            onPressed: _openAddFriend,
+            icon: const Icon(Icons.person_add_alt_1),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _addFriend,
+        onPressed: _openAddFriend,
         backgroundColor: Colors.pink.shade400,
         tooltip: 'Add a friend',
         child: const Icon(Icons.person_add_alt_1),
       ),
-      body: StreamBuilder<List<FriendModel>>(
+      body: StreamBuilder<List<Friendship>>(
         stream: _repo.watch(widget.user.uid),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -139,14 +100,27 @@ class _FriendsScreenState extends State<FriendsScreen> {
           }
           final friends = snapshot.data!;
           if (friends.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(32),
+            return Padding(
+              padding: const EdgeInsets.all(32),
               child: Center(
-                child: Text(
-                  'Add a friend by email, then choose what you share '
-                  'with them: work, personal, or birthdays. '
-                  'This sits alongside your hubs and does not replace them.',
-                  textAlign: TextAlign.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Add a friend, then choose what you share with them: '
+                      'work, personal, or birthdays.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _openAddFriend,
+                      icon: const Icon(Icons.person_add_alt_1),
+                      label: const Text('Add a friend'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.pink.shade400,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -154,11 +128,15 @@ class _FriendsScreenState extends State<FriendsScreen> {
           return ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
             itemCount: friends.length,
-            itemBuilder: (context, index) => _FriendCard(
-              friend: friends[index],
-              onShareChanged: _setShare,
-              onRemove: _removeFriend,
-            ),
+            itemBuilder: (context, index) {
+              final friendship = friends[index];
+              return _FriendShareCard(
+                friendship: friendship,
+                myUid: widget.user.uid,
+                onShareChanged: _setShare,
+                onRemove: _removeFriend,
+              );
+            },
           );
         },
       ),
@@ -166,20 +144,23 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 }
 
-class _FriendCard extends StatelessWidget {
-  const _FriendCard({
-    required this.friend,
+class _FriendShareCard extends StatelessWidget {
+  const _FriendShareCard({
+    required this.friendship,
+    required this.myUid,
     required this.onShareChanged,
     required this.onRemove,
   });
 
-  final FriendModel friend;
-  final Future<void> Function(FriendModel, FriendShareKind, bool)
-  onShareChanged;
-  final Future<void> Function(FriendModel) onRemove;
+  final Friendship friendship;
+  final String myUid;
+  final Future<void> Function(Friendship, FriendShareKind, bool) onShareChanged;
+  final Future<void> Function(Friendship) onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final other = friendship.otherProfile(myUid);
+    final mine = friendship.mySharing(myUid);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -190,24 +171,24 @@ class _FriendCard extends StatelessWidget {
             ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               leading: MemberAvatar(
-                photoURL: friend.photoURL,
-                name: friend.label,
+                photoURL: other.photoURL,
+                name: other.label,
                 radius: 22,
                 backgroundColor: Colors.pink.shade100,
                 foregroundColor: Colors.pink.shade800,
-                icon: isUsablePhotoUrl(friend.photoURL) ? null : Icons.person,
+                icon: isUsablePhotoUrl(other.photoURL) ? null : Icons.person,
               ),
               title: Text(
-                friend.label,
+                other.label,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              subtitle: friend.email != null && friend.email!.isNotEmpty
-                  ? Text(friend.email!)
+              subtitle: other.email != null && other.email!.isNotEmpty
+                  ? Text(other.email!)
                   : null,
               trailing: IconButton(
                 tooltip: 'Remove friend',
                 icon: const Icon(Icons.close, size: 20, color: Colors.grey),
-                onPressed: () => onRemove(friend),
+                onPressed: () => onRemove(friendship),
               ),
             ),
             const Padding(
@@ -220,25 +201,26 @@ class _FriendCard extends StatelessWidget {
             SwitchListTile(
               dense: true,
               title: const Text('Work'),
-              value: friend.shareWork,
+              value: mine.shareWork,
               activeThumbColor: Colors.pink.shade400,
-              onChanged: (v) => onShareChanged(friend, FriendShareKind.work, v),
+              onChanged: (v) =>
+                  onShareChanged(friendship, FriendShareKind.work, v),
             ),
             SwitchListTile(
               dense: true,
               title: const Text('Personal'),
-              value: friend.sharePersonal,
+              value: mine.sharePersonal,
               activeThumbColor: Colors.pink.shade400,
               onChanged: (v) =>
-                  onShareChanged(friend, FriendShareKind.personal, v),
+                  onShareChanged(friendship, FriendShareKind.personal, v),
             ),
             SwitchListTile(
               dense: true,
               title: const Text('Birthdays'),
-              value: friend.shareBirthdays,
+              value: mine.shareBirthdays,
               activeThumbColor: Colors.pink.shade400,
               onChanged: (v) =>
-                  onShareChanged(friend, FriendShareKind.birthdays, v),
+                  onShareChanged(friendship, FriendShareKind.birthdays, v),
             ),
           ],
         ),

@@ -10,34 +10,40 @@ class FriendLookupException implements Exception {
   String toString() => message;
 }
 
-/// Friends list for one user: `users/{uid}/friends/{friendUid}`.
+/// Mutual friends at `friends/{uidA_uidB}`, with per-person sharing maps.
 class FriendRepository {
   FriendRepository({FirebaseFirestore? firestore})
     : _db = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _db;
 
-  CollectionReference<Map<String, dynamic>> _friends(String uid) =>
-      _db.collection('users').doc(uid).collection('friends');
+  CollectionReference<Map<String, dynamic>> get _friends =>
+      _db.collection('friends');
 
-  Stream<List<FriendModel>> watch(String uid) {
-    return _friends(uid).snapshots().map((snap) {
-      final friends = snap.docs
-          .map((doc) => FriendModel.fromMap(doc.data(), id: doc.id))
+  Stream<List<Friendship>> watch(String uid) {
+    return _friends.where('members', arrayContains: uid).snapshots().map((
+      snap,
+    ) {
+      final list = snap.docs
+          .map((doc) => Friendship.fromMap(doc.data(), id: doc.id))
           .toList();
-      friends.sort(
-        (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
-      );
-      return friends;
+      list.sort((a, b) {
+        final left = a.otherProfile(uid).label.toLowerCase();
+        final right = b.otherProfile(uid).label.toLowerCase();
+        return left.compareTo(right);
+      });
+      return list;
     });
   }
 
-  /// Adds [query] (an email or a user uid) to [ownerUid]'s friends list.
-  /// Toggles start off. Does not change hubs.
-  Future<FriendModel> addFriend({
+  /// Creates a mutual friendship between [ownerUid] and the user matching
+  /// [query] (email or user uid). Both sharing maps start off.
+  Future<Friendship> addFriend({
     required String ownerUid,
     required String query,
     String? ownerEmail,
+    String? ownerDisplayName,
+    String? ownerPhotoURL,
   }) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
@@ -59,43 +65,58 @@ class FriendRepository {
       throw FriendLookupException("You can't add yourself.");
     }
 
-    final existing = await _friends(ownerUid).doc(friendUid).get();
+    final id = friendshipIdFor(ownerUid, friendUid);
+    final existing = await _friends.doc(id).get();
     if (existing.exists) {
       throw FriendLookupException('Already on your friends list.');
     }
 
-    final friend = FriendModel(
+    final ownerProfile = FriendProfile(
+      id: ownerUid,
+      displayName: ownerDisplayName?.trim() ?? '',
+      email: ownerEmail?.trim(),
+      photoURL: ownerPhotoURL,
+    );
+    final friendProfile = FriendProfile(
       id: friendUid,
       displayName: (profile['displayName'] as String?)?.trim() ?? '',
       email: email,
       photoURL: profile['photoURL'] as String?,
-      shareWork: false,
-      sharePersonal: false,
-      shareBirthdays: false,
     );
-    await _friends(ownerUid).doc(friendUid).set({
-      ...friend.toMap(),
+    final members = [ownerUid, friendUid]..sort();
+    const off = FriendSharing();
+    final data = {
+      'members': members,
+      'memberProfiles': {
+        ownerUid: ownerProfile.toMap(),
+        friendUid: friendProfile.toMap(),
+      },
+      'sharing': {ownerUid: off.toMap(), friendUid: off.toMap()},
+      'createdBy': ownerUid,
       'createdAt': FieldValue.serverTimestamp(),
-    });
-    return friend;
+    };
+    await _friends.doc(id).set(data);
+    return Friendship(
+      id: id,
+      members: members,
+      memberProfiles: {ownerUid: ownerProfile, friendUid: friendProfile},
+      sharing: {ownerUid: off, friendUid: off},
+    );
   }
 
   Future<void> setShare({
+    required String friendshipId,
     required String ownerUid,
-    required String friendUid,
     required FriendShareKind kind,
     required bool value,
   }) async {
-    await _friends(
-      ownerUid,
-    ).doc(friendUid).update({friendShareField(kind): value});
+    await _friends.doc(friendshipId).update({
+      'sharing.$ownerUid.${friendShareField(kind)}': value,
+    });
   }
 
-  Future<void> removeFriend({
-    required String ownerUid,
-    required String friendUid,
-  }) async {
-    await _friends(ownerUid).doc(friendUid).delete();
+  Future<void> removeFriend(String friendshipId) async {
+    await _friends.doc(friendshipId).delete();
   }
 
   Future<Map<String, dynamic>> _lookupUser(String query) async {
@@ -117,8 +138,7 @@ class FriendRepository {
       if (docs.isEmpty) {
         throw FriendLookupException('No LoveHub user found with that email.');
       }
-      final data = docs.first.data();
-      return {'uid': docs.first.id, ...data};
+      return {'uid': docs.first.id, ...docs.first.data()};
     }
 
     final snap = await _db.collection('users').doc(query).get();
