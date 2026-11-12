@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../screens/manage_hub_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/invite_screen.dart';
+import '../screens/friends_screen.dart';
 import '../services/member_profile.dart';
 import 'build_version_footer.dart';
 import 'member_avatar.dart';
@@ -248,6 +249,21 @@ class AppDrawer extends StatelessWidget {
             onTap: () {
               Navigator.pop(context);
               onJoinHub();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.people_alt, color: Colors.pink),
+            title: const Text('Friends'),
+            subtitle: const Text(
+              'Share work, personal, or birthdays',
+              style: TextStyle(fontSize: 11),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => FriendsScreen(user: user)),
+              );
             },
           ),
           ListTile(
