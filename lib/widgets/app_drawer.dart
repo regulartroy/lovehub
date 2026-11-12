@@ -6,6 +6,7 @@ import '../screens/dashboard_screen.dart';
 import '../screens/invite_screen.dart';
 import '../screens/sharing_screen.dart';
 import '../screens/add_friend_screen.dart';
+import '../screens/shared_hub_preview_screen.dart';
 import '../services/member_profile.dart';
 import 'build_version_footer.dart';
 import 'member_avatar.dart';
@@ -275,6 +276,23 @@ class AppDrawer extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => AddFriendScreen(user: user)),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.preview, color: Colors.pink),
+            title: const Text('Burroni (new data)'),
+            subtitle: const Text(
+              'Events from the new database',
+              style: TextStyle(fontSize: 11),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SharedHubPreviewScreen(user: user),
+                ),
               );
             },
           ),

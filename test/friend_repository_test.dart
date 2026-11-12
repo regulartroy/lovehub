@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/models/friend_model.dart';
@@ -163,6 +164,46 @@ void main() {
       await repo.removeFriend(friendship.id);
       final snap = await db.collection('friends').doc(friendship.id).get();
       expect(snap.exists, isFalse);
+    });
+    test('suggests hub co-members who are not already friends', () async {
+      await db.collection('users').doc(tom).set({
+        'email': 'tom@example.com',
+        'displayName': 'Tom Burch',
+        'joinedHubs': {
+          'burroni': {'name': 'Burroni Hub', 'role': 'admin'},
+          'concorde': {'name': 'Concorde 2', 'role': 'admin'},
+        },
+      }, SetOptions(merge: true));
+      await db.collection('hubs').doc('burroni').set({
+        'name': 'Burroni Hub',
+        'members': [tom, maria],
+        'memberProfiles': {
+          tom: {'displayName': 'Tom Burch'},
+          maria: {'displayName': 'Maria', 'email': 'maria@example.com'},
+        },
+      });
+      await db.collection('hubs').doc('concorde').set({
+        'name': 'Concorde 2',
+        'members': [tom, 'dan-uid'],
+        'memberProfiles': {
+          tom: {'displayName': 'Tom Burch'},
+          'dan-uid': {'displayName': 'Dan Brown'},
+        },
+      });
+      await db.collection('users').doc('dan-uid').set({
+        'email': 'dan@example.com',
+        'displayName': 'Dan Brown',
+      });
+      await repo.addFriend(ownerUid: tom, query: maria);
+
+      final suggestions = await repo.suggestionsFromExistingHubs(
+        ownerUid: tom,
+        alreadyFriendUids: {maria},
+      );
+      expect(suggestions, hasLength(1));
+      expect(suggestions.first.uid, 'dan-uid');
+      expect(suggestions.first.label, 'Dan Brown');
+      expect(suggestions.first.sharedHubNames, ['Concorde 2']);
     });
   });
 }

@@ -165,3 +165,34 @@ String friendshipIdFor(String uidA, String uidB) {
   final sorted = [uidA, uidB]..sort();
   return '${sorted[0]}_${sorted[1]}';
 }
+
+/// Someone the user already shares an existing hub with, but is not yet a friend.
+class HubFriendSuggestion {
+  const HubFriendSuggestion({
+    required this.uid,
+    required this.displayName,
+    this.email,
+    this.photoURL,
+    this.sharedHubNames = const [],
+  });
+
+  final String uid;
+  final String displayName;
+  final String? email;
+  final String? photoURL;
+  final List<String> sharedHubNames;
+
+  String get label {
+    if (displayName.isNotEmpty) return displayName;
+    if (email != null && email!.isNotEmpty) return email!;
+    return 'Friend';
+  }
+
+  String get hubSummary {
+    if (sharedHubNames.isEmpty) return 'Shares a hub with you';
+    if (sharedHubNames.length == 1) {
+      return 'Shares ${sharedHubNames.first} with you';
+    }
+    return 'Shares ${sharedHubNames.join(', ')} with you';
+  }
+}
