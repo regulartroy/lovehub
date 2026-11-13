@@ -72,9 +72,9 @@ Tradeoffs:
 The function is callable only. It requires a signed-in Firebase user who is a
 member of the hub (`users/{uid}.joinedHubs.{hubId}`, or members on the configured hubs collection).
 The callable itself does not write recipe documents; the app writes them
-to `{kHubsCollection}/{hubId}/recipes`. Deployed functions still default to
-reading membership from `hubs`, with a `sharedHubs` fallback, until
-`functions/hubs_collection.js` is switched and deployed at go-live.
+to `{kHubsCollection}/{hubId}/recipes`. Since the 13 Nov 2026 cutover, deployed functions
+read membership from `sharedHubs` (`functions/hubs_collection.js`), with a
+fallback to the old `hubs` backup for phones still on an older build.
 Storage paths stay `hubs/{hubId}/recipes/…`.
 App Check is left off, matching the rest of LoveHub.
 

@@ -83,8 +83,16 @@ test('allows a member listed only on sharedHubs during dual-running', async () =
   await assertHubMember('dan', 'preview', db);
 });
 
+test('still allows a member listed only on the old hubs backup', async () => {
+  const db = fakeDb({
+    'users/ann': {},
+    'hubs/legacy': { members: ['ann'] },
+  });
+  await assertHubMember('ann', 'legacy', db);
+});
+
 const { HUBS_COLLECTION } = require('./hubs_collection');
 
-test('functions stay on live hubs until the cutover env switch', () => {
-  assert.equal(HUBS_COLLECTION, 'hubs');
+test('functions read sharedHubs after the live cutover', () => {
+  assert.equal(HUBS_COLLECTION, 'sharedHubs');
 });

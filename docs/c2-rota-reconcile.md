@@ -2,12 +2,12 @@
 
 LoveHub already stores imported Concorde shifts as `{kHubsCollection}/{hubId}/events/c2-rota:{externalId}`. This job keeps those documents aligned with Tom's rota. It does not create events.
 
-On the `feat/friends-sharing` preview cutover, this tool reads and writes
+Since the live cutover (13 Nov 2026), this tool reads and writes
 `sharedHubs/{hubId}/…` (the `kHubsCollection` constant in
-`lib/services/hub_collection.dart`). Document ids are unchanged. Flip that
-constant to `'hubs'` only to target the live collection. Deployed Cloud
-Functions use a separate switch in `functions/hubs_collection.js` and stay
-on `hubs` until go-live is approved and those functions are deployed.
+`lib/services/hub_collection.dart`). Document ids are unchanged. The old
+`hubs` collection is kept as a read-only backup; do not write to it. Cloud
+Functions use the matching switch in `functions/hubs_collection.js`, which
+now defaults to `sharedHubs`.
 
 | Feed row | Imported event is `tentative` | Imported event is confirmed, or has no status |
 | --- | --- | --- |
