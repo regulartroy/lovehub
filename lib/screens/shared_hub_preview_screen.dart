@@ -3,11 +3,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/quote_model.dart';
 import '../services/event_sanity.dart';
 import '../services/member_profile.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
+import '../widgets/hub_memory_image.dart';
 import '../widgets/member_avatar.dart';
+import '../widgets/recipe_picture.dart';
 
 const String kSharedHubsCollection = 'sharedHubs';
 
@@ -26,13 +29,18 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
     with SingleTickerProviderStateMixin {
   late final FirebaseFirestore _db =
       widget.firestore ?? FirebaseFirestore.instance;
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  late final TabController _tabs = TabController(length: 7, vsync: this);
 
   List<_SharedHubInfo> _hubs = [];
   String? _selectedId;
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _quotes = [];
+  List<Map<String, dynamic>> _recipes = [];
+  List<Map<String, dynamic>> _birthdays = [];
+  List<Map<String, dynamic>> _expenses = [];
+  List<Map<String, dynamic>> _photos = [];
 
   @override
   void initState() {
@@ -86,7 +94,7 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
         _selectedId = hubs.length == 1 ? hubs.first.id : _selectedId;
         _loading = false;
       });
-      if (_selectedId != null) await _loadEvents(_selectedId!);
+      if (_selectedId != null) await _loadHubData(_selectedId!);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -96,18 +104,35 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
     }
   }
 
-  Future<void> _loadEvents(String hubId) async {
-    final snap = await _db
-        .collection(kSharedHubsCollection)
-        .doc(hubId)
-        .collection('events')
-        .orderBy('start')
-        .get();
-    final events = sanitizeEventMaps(
-      snap.docs.map((d) => {'id': d.id, ...d.data()}),
-    );
+  Future<void> _loadHubData(String hubId) async {
+    final hub = _db.collection(kSharedHubsCollection).doc(hubId);
+    final results = await Future.wait([
+      hub.collection('events').orderBy('start').get(),
+      hub.collection('quotes').get(),
+      hub.collection('recipes').get(),
+      hub.collection('birthdays').get(),
+      hub.collection('expenses').get(),
+      hub.collection('photos').get(),
+    ]);
+    List<Map<String, dynamic>> maps(QuerySnapshot<Map<String, dynamic>> snap) {
+      return snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    }
+
+    final events = sanitizeEventMaps(maps(results[0]));
+    final quotes = maps(results[1]);
+    final recipes = maps(results[2]);
+    final birthdays = maps(results[3]);
+    final expenses = maps(results[4]);
+    final photos = maps(results[5]);
     if (!mounted) return;
-    setState(() => _events = events);
+    setState(() {
+      _events = events;
+      _quotes = quotes;
+      _recipes = recipes;
+      _birthdays = birthdays;
+      _expenses = expenses;
+      _photos = photos;
+    });
   }
 
   _SharedHubInfo? get _selected {
@@ -128,12 +153,19 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
             ? null
             : TabBar(
                 controller: _tabs,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 labelColor: Colors.white,
                 unselectedLabelColor: Colors.white70,
                 indicatorColor: Colors.white,
                 tabs: const [
                   Tab(text: 'LOOK AHEAD'),
                   Tab(text: 'Events'),
+                  Tab(text: 'Quotes'),
+                  Tab(text: 'Recipes'),
+                  Tab(text: 'Birthdays'),
+                  Tab(text: 'Expenses'),
+                  Tab(text: 'Photos'),
                 ],
               ),
       ),
@@ -174,7 +206,7 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
                 ),
                 onTap: () async {
                   setState(() => _selectedId = hub.id);
-                  await _loadEvents(hub.id);
+                  await _loadHubData(hub.id);
                 },
               ),
             ),
@@ -184,13 +216,26 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _HubHeader(hub: _selected!, eventCount: _events.length),
+        _HubHeader(
+          hub: _selected!,
+          eventCount: _events.length,
+          quoteCount: _quotes.length,
+          recipeCount: _recipes.length,
+          birthdayCount: _birthdays.length,
+          expenseCount: _expenses.length,
+          photoCount: _photos.length,
+        ),
         Expanded(
           child: TabBarView(
             controller: _tabs,
             children: [
               _LookAheadPane(events: _events, members: _selected!.memberMaps),
               _EventsList(events: _events),
+              _QuotesList(quotes: _quotes),
+              _RecipesList(recipes: _recipes),
+              _BirthdaysList(birthdays: _birthdays),
+              _ExpensesList(expenses: _expenses, nameFor: _selected!.nameFor),
+              _PhotosGrid(photos: _photos),
             ],
           ),
         ),
@@ -200,10 +245,23 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
 }
 
 class _HubHeader extends StatelessWidget {
-  const _HubHeader({required this.hub, required this.eventCount});
+  const _HubHeader({
+    required this.hub,
+    required this.eventCount,
+    required this.quoteCount,
+    required this.recipeCount,
+    required this.birthdayCount,
+    required this.expenseCount,
+    required this.photoCount,
+  });
 
   final _SharedHubInfo hub;
   final int eventCount;
+  final int quoteCount;
+  final int recipeCount;
+  final int birthdayCount;
+  final int expenseCount;
+  final int photoCount;
 
   @override
   Widget build(BuildContext context) {
@@ -242,8 +300,9 @@ class _HubHeader extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '$eventCount events from the new database. '
-            'Quotes, recipes, and photos were not copied across yet.',
+            '$eventCount events, $quoteCount quotes, $recipeCount recipes, '
+            '$birthdayCount birthdays, $expenseCount expenses, $photoCount '
+            'photos from the new database.',
             style: const TextStyle(fontSize: 13, color: Colors.black54),
           ),
         ],
@@ -336,6 +395,433 @@ class _EventsList extends StatelessWidget {
   }
 }
 
+class _QuotesList extends StatelessWidget {
+  const _QuotesList({required this.quotes});
+
+  final List<Map<String, dynamic>> quotes;
+
+  @override
+  Widget build(BuildContext context) {
+    final models = sortQuotesNewestFirst(
+      quotes.map((q) => QuoteModel.fromMap(q, id: q['id'] as String? ?? '')),
+    );
+    if (models.isEmpty) {
+      return const Center(child: Text('No quotes in the new copy.'));
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      itemCount: models.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final quote = models[index];
+        return Card(
+          elevation: 0,
+          color: Colors.pink.shade50,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '“${quote.text}”',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    height: 1.35,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '— ${quote.author}',
+                  style: TextStyle(
+                    color: Colors.pink.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RecipesList extends StatelessWidget {
+  const _RecipesList({required this.recipes});
+
+  final List<Map<String, dynamic>> recipes;
+
+  @override
+  Widget build(BuildContext context) {
+    if (recipes.isEmpty) {
+      return const Center(child: Text('No recipes in the new copy.'));
+    }
+    final sorted = [...recipes]
+      ..sort((a, b) {
+        final at = ((a['title'] as String?) ?? '').toLowerCase();
+        final bt = ((b['title'] as String?) ?? '').toLowerCase();
+        return at.compareTo(bt);
+      });
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      itemCount: sorted.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final recipe = sorted[index];
+        final title = ((recipe['title'] as String?) ?? '').trim().isNotEmpty
+            ? (recipe['title'] as String).trim()
+            : 'Recipe';
+        final ingredients = _stringList(recipe['ingredients']);
+        final imageUrl = (recipe['imageUrl'] as String?)?.trim();
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _showRecipe(context, recipe),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 72,
+                      height: 72,
+                      child: RecipeImage(imageUrl: imageUrl, iconSize: 32),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          ingredients.isEmpty
+                              ? 'No ingredients listed'
+                              : ingredients.take(4).join(', ') +
+                                    (ingredients.length > 4 ? '…' : ''),
+                          style: const TextStyle(
+                            color: Colors.black54,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.black38),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showRecipe(BuildContext context, Map<String, dynamic> recipe) {
+    final title = ((recipe['title'] as String?) ?? '').trim().isNotEmpty
+        ? (recipe['title'] as String).trim()
+        : 'Recipe';
+    final ingredients = _stringList(recipe['ingredients']);
+    final method = ((recipe['method'] as String?) ?? '').trim();
+    final sourceUrl = ((recipe['sourceUrl'] as String?) ?? '').trim();
+    final imageUrl = (recipe['imageUrl'] as String?)?.trim();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (context, controller) {
+            return ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+              children: [
+                if (imageUrl != null && imageUrl.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: RecipeImage(imageUrl: imageUrl, iconSize: 48),
+                      ),
+                    ),
+                  ),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (sourceUrl.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    sourceUrl,
+                    style: const TextStyle(color: Colors.black54, fontSize: 13),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                const Text(
+                  'Ingredients',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                if (ingredients.isEmpty)
+                  const Text('None listed.')
+                else
+                  for (final item in ingredients)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('• $item'),
+                    ),
+                if (method.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Method',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(method, style: const TextStyle(height: 1.4)),
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _BirthdaysList extends StatelessWidget {
+  const _BirthdaysList({required this.birthdays});
+
+  final List<Map<String, dynamic>> birthdays;
+
+  @override
+  Widget build(BuildContext context) {
+    if (birthdays.isEmpty) {
+      return const Center(child: Text('No birthdays in the new copy.'));
+    }
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final items = [...birthdays]
+      ..sort((a, b) {
+        return _nextBirthday(a, today).compareTo(_nextBirthday(b, today));
+      });
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      itemCount: items.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final row = items[index];
+        final name = ((row['name'] as String?) ?? '').trim().isNotEmpty
+            ? (row['name'] as String).trim()
+            : 'Birthday';
+        final next = _nextBirthday(row, today);
+        final year = _asInt(row['year']);
+        final turning = year == null ? null : next.year - year;
+        final when = DateFormat('EEE d MMMM').format(next);
+        final subtitle = [
+          when,
+          if (turning != null && turning > 0) 'turns $turning',
+        ].join(' · ');
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: CircleAvatar(
+            backgroundColor: Colors.purple.shade50,
+            foregroundColor: Colors.purple.shade700,
+            child: const Icon(Icons.cake_outlined),
+          ),
+          title: Text(name),
+          subtitle: Text(subtitle),
+        );
+      },
+    );
+  }
+}
+
+class _ExpensesList extends StatelessWidget {
+  const _ExpensesList({required this.expenses, required this.nameFor});
+
+  final List<Map<String, dynamic>> expenses;
+  final String Function(String uid) nameFor;
+
+  @override
+  Widget build(BuildContext context) {
+    if (expenses.isEmpty) {
+      return const Center(child: Text('No expenses in the new copy.'));
+    }
+    final sorted = [...expenses]
+      ..sort((a, b) {
+        final ad = _asDate(a['date']);
+        final bd = _asDate(b['date']);
+        if (ad == null && bd == null) return 0;
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        return bd.compareTo(ad);
+      });
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      itemCount: sorted.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final row = sorted[index];
+        final description =
+            ((row['description'] as String?) ?? '').trim().isNotEmpty
+            ? (row['description'] as String).trim()
+            : 'Expense';
+        final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+        final paidBy = nameFor((row['paidBy'] as String?) ?? '');
+        final date = _asDate(row['date']);
+        final dateLabel = date == null
+            ? ''
+            : DateFormat('d MMM y').format(date);
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(description),
+          subtitle: Text(
+            [
+              if (dateLabel.isNotEmpty) dateLabel,
+              if (paidBy.isNotEmpty) 'Paid by $paidBy',
+            ].join(' · '),
+          ),
+          trailing: Text(
+            '£${amount.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PhotosGrid extends StatelessWidget {
+  const _PhotosGrid({required this.photos});
+
+  final List<Map<String, dynamic>> photos;
+
+  @override
+  Widget build(BuildContext context) {
+    if (photos.isEmpty) {
+      return const Center(child: Text('No photos in the new copy.'));
+    }
+    final sorted = [...photos]
+      ..sort((a, b) {
+        final ad = _asDate(a['createdAt']);
+        final bd = _asDate(b['createdAt']);
+        if (ad == null && bd == null) return 0;
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        return bd.compareTo(ad);
+      });
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: sorted.length,
+      itemBuilder: (context, index) {
+        final row = sorted[index];
+        final url = ((row['url'] as String?) ?? '').trim();
+        final id = (row['id'] as String?) ?? '$index';
+        if (url.isEmpty) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.broken_image, color: Colors.grey),
+          );
+        }
+        return GestureDetector(
+          onTap: () => _openPhoto(context, url, id),
+          child: Hero(
+            tag: 'preview-photo-$id',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: HubMemoryImage(
+                url: url,
+                fit: BoxFit.cover,
+                loadingBuilder: (ctx, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    color: Colors.grey.shade200,
+                    child: const Center(
+                      child: Icon(Icons.photo, color: Colors.grey),
+                    ),
+                  );
+                },
+                errorBuilder: (ctx, error, stack) {
+                  return Container(
+                    color: Colors.grey.shade200,
+                    child: const Center(
+                      child: Icon(Icons.broken_image, color: Colors.grey),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openPhoto(BuildContext context, String url, String id) {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: Scaffold(
+            backgroundColor: Colors.black.withValues(alpha: 0.92),
+            body: SafeArea(
+              child: Stack(
+                children: [
+                  Center(
+                    child: Hero(
+                      tag: 'preview-photo-$id',
+                      child: HubMemoryImage(url: url, fit: BoxFit.contain),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.text);
   final String text;
@@ -409,6 +895,16 @@ class _SharedHubInfo {
   final Map<String, dynamic> memberProfiles;
   final int? eventCount;
 
+  String nameFor(String uid) {
+    if (uid.isEmpty) return '';
+    final profile = memberProfiles[uid];
+    if (profile is Map) {
+      final n = (profile['displayName'] as String?)?.trim() ?? '';
+      if (n.isNotEmpty) return n;
+    }
+    return 'Member';
+  }
+
   List<Map<String, dynamic>> get memberMaps {
     return members.map((uid) {
       final profile = memberProfiles[uid] is Map
@@ -432,3 +928,32 @@ DateTime? _asDate(dynamic value) {
 }
 
 DateTime? _startOf(Map<String, dynamic> event) => _asDate(event['start']);
+
+int? _asInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('$value');
+}
+
+int? _monthDay(Map<String, dynamic> row, String key) {
+  final n = _asInt(row[key]);
+  return n;
+}
+
+DateTime _nextBirthday(Map<String, dynamic> row, DateTime today) {
+  final month = _monthDay(row, 'month') ?? 1;
+  final day = _monthDay(row, 'day') ?? 1;
+  var next = DateTime(today.year, month, day);
+  if (next.isBefore(today)) {
+    next = DateTime(today.year + 1, month, day);
+  }
+  return next;
+}
+
+List<String> _stringList(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map((e) => e.toString().trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
+}
