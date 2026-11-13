@@ -18,6 +18,7 @@ import '../repositories/task_repository.dart';
 import '../widgets/recipe_link_import_sheet.dart';
 import '../widgets/recipe_picture.dart';
 import 'tasks_screen.dart'; // (if you still have this here)
+import '../services/hub_collection.dart';
 
 class FoodScreen extends StatefulWidget {
   final User user;
@@ -787,7 +788,7 @@ class _MealPlannerTab extends StatelessWidget {
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('events')
           .where(
@@ -1023,7 +1024,7 @@ class _SmartAddMealSheetState extends State<_SmartAddMealSheet> {
     }
 
     FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(widget.hubId)
         .collection('events')
         .add(eventData);
@@ -1260,7 +1261,7 @@ class _FridgeAITabState extends State<_FridgeAITab> {
   Future<void> _saveRecipeToCookbook(Map<String, dynamic> recipe) async {
     try {
       await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(widget.hubId)
           .collection('recipes')
           .add({

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/recipe_model.dart';
 import '../recipe_import/recipe_picture.dart';
+import '../services/hub_collection.dart';
 
 /// Where recipe pictures live. Swappable in tests.
 abstract class RecipeImageStore {
@@ -47,7 +48,7 @@ class RecipeRepository {
   FirebaseFirestore get _db => _dbOverride ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _recipes(String hubId) =>
-      _db.collection('hubs').doc(hubId).collection('recipes');
+      _db.collection(kHubsCollection).doc(hubId).collection('recipes');
 
   Stream<List<Recipe>> streamRecipes(String hubId) {
     return _recipes(hubId)

@@ -1,5 +1,7 @@
 'use strict';
 
+const { HUBS_COLLECTION, OTHER_HUBS_COLLECTION } = require('./hubs_collection');
+
 function validHubId(hubId) {
   if (typeof hubId !== 'string') return false;
   if (hubId.length < 1 || hubId.length > 128) return false;
@@ -28,13 +30,24 @@ async function assertHubMember(uid, hubId, db, action = 'import a recipe') {
   if (joined && typeof joined === 'object' && Object.prototype.hasOwnProperty.call(joined, hubId)) {
     return;
   }
-  const hubSnap = await db.collection('hubs').doc(hubId).get();
-  const members = hubSnap.get('members');
-  if (Array.isArray(members) && members.includes(uid)) return;
+  if (await membersInclude(db, HUBS_COLLECTION, hubId, uid)) return;
+  if (
+    OTHER_HUBS_COLLECTION &&
+    OTHER_HUBS_COLLECTION !== HUBS_COLLECTION &&
+    (await membersInclude(db, OTHER_HUBS_COLLECTION, hubId, uid))
+  ) {
+    return;
+  }
   throw new MembershipError(
     'permission-denied',
     `You need to be a member of this hub to ${action}.`,
   );
+}
+
+async function membersInclude(db, collection, hubId, uid) {
+  const hubSnap = await db.collection(collection).doc(hubId).get();
+  const members = hubSnap.get('members');
+  return Array.isArray(members) && members.includes(uid);
 }
 
 function createRateLimiter({
@@ -63,4 +76,6 @@ module.exports = {
   assertHubMember,
   createRateLimiter,
   validHubId,
+  HUBS_COLLECTION,
+  OTHER_HUBS_COLLECTION,
 };

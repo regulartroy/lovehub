@@ -1,6 +1,13 @@
 # Concorde rota reconciliation
 
-LoveHub already stores imported Concorde shifts as `hubs/{hubId}/events/c2-rota:{externalId}`. This job keeps those documents aligned with Tom's rota. It does not create events.
+LoveHub already stores imported Concorde shifts as `{kHubsCollection}/{hubId}/events/c2-rota:{externalId}`. This job keeps those documents aligned with Tom's rota. It does not create events.
+
+On the `feat/friends-sharing` preview cutover, this tool reads and writes
+`sharedHubs/{hubId}/…` (the `kHubsCollection` constant in
+`lib/services/hub_collection.dart`). Document ids are unchanged. Flip that
+constant to `'hubs'` only to target the live collection. Deployed Cloud
+Functions use a separate switch in `functions/hubs_collection.js` and stay
+on `hubs` until go-live is approved and those functions are deployed.
 
 | Feed row | Imported event is `tentative` | Imported event is confirmed, or has no status |
 | --- | --- | --- |
@@ -81,7 +88,7 @@ If that has not been done, a live run exits 4 and prints those two commands. It 
 dart run tool/reconcile_c2_rota.dart --hub pobIb3qupVJudoQGMJjl
 ```
 
-This GETs `https://us-central1-concorde2-e8b96.cloudfunctions.net/tomRotaFeed` with the bearer token and queries `hubs/{hubId}/events` where `source == c2-rota`. Redirects are not followed. The token is not printed, not put in the audit, and not sent to Firestore.
+This GETs `https://us-central1-concorde2-e8b96.cloudfunctions.net/tomRotaFeed` with the bearer token and queries `{kHubsCollection}/{hubId}/events` where `source == c2-rota`. Redirects are not followed. The token is not printed, not put in the audit, and not sent to Firestore.
 
 Compare the plan with the calendar before the first apply. If a line is `SKIP` because the title and the id disagree, fix the import rather than raising the caps. Exit code 2 means the run would refuse `--apply` (bad feed, stale feed, or over the cap). Exit code 0 on a dry-run means the plan is allowed.
 
@@ -95,7 +102,7 @@ Apply once, in the foreground, after the dry-run looks right:
 dart run tool/reconcile_c2_rota.dart --hub pobIb3qupVJudoQGMJjl --apply
 ```
 
-A no-op apply writes nothing. A real apply prints `Applied audit hubs/pobIb3qupVJudoQGMJjl/c2RotaSyncAudit/c2sync-…`. Run it again. The second run should report no changes: confirms stay confirmed, deletes are already gone, undecided stays tentative.
+A no-op apply writes nothing. A real apply prints `Applied audit {kHubsCollection}/pobIb3qupVJudoQGMJjl/c2RotaSyncAudit/c2sync-…`. Run it again. The second run should report no changes: confirms stay confirmed, deletes are already gone, undecided stays tentative.
 
 Schedule it only after that. Cron must be the Unix user who ran `gcloud auth application-default login`, so `HOME` is that user's home. Do not wrap this script in another `flock` on the same lock file; the script already holds one.
 
@@ -133,7 +140,7 @@ The Google account from `gcloud auth application-default login` needs Firestore 
 
 This change does not edit `firestore.rules`, indexes, or IAM. A hub member's ID token is not required.
 
-Audit documents live at `hubs/{hubId}/c2RotaSyncAudit/{id}`. Existing rules let any signed-in user read hub data, so members can read show names, statuses, and the event snapshot. They cannot read the feed token; it is not stored there. The calendar listens to `events` only, so audit documents do not show up as shifts.
+Audit documents live at `{kHubsCollection}/{hubId}/c2RotaSyncAudit/{id}`. Existing rules let any signed-in user read hub data, so members can read show names, statuses, and the event snapshot. They cannot read the feed token; it is not stored there. The calendar listens to `events` only, so audit documents do not show up as shifts.
 
 The token file should stay mode `0600`. The process reads it and sends it only on the feed request.
 

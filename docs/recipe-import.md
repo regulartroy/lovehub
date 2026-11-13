@@ -70,7 +70,12 @@ Tradeoffs:
 | Return the HTML to the app | One parser, and the preview/edit step stays in the app. The response is capped at 1.5 MB. |
 
 The function is callable only. It requires a signed-in Firebase user who is a
-member of the hub (`users/{uid}.joinedHubs.{hubId}`, or `hubs/{hubId}.members`).
+member of the hub (`users/{uid}.joinedHubs.{hubId}`, or members on the configured hubs collection).
+The callable itself does not write recipe documents; the app writes them
+to `{kHubsCollection}/{hubId}/recipes`. Deployed functions still default to
+reading membership from `hubs`, with a `sharedHubs` fallback, until
+`functions/hubs_collection.js` is switched and deployed at go-live.
+Storage paths stay `hubs/{hubId}/recipes/…`.
 App Check is left off, matching the rest of LoveHub.
 
 SSRF limits on the function (the browser checks the same obvious cases before

@@ -19,6 +19,7 @@ import '../services/home_feed_logic.dart';
 import '../services/home_feed_weather.dart';
 import '../widgets/undo_snackbar.dart';
 import '../widgets/home_feed/home_feed_view.dart';
+import '../services/hub_collection.dart';
 
 class FeedScreen extends StatefulWidget {
   final User user;
@@ -88,7 +89,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
     if (widget.visibleHubs.isNotEmpty) {
       _birthdaySub = FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(widget.visibleHubs.first.key)
           .collection('birthdays')
           .snapshots()
@@ -269,7 +270,7 @@ class _FeedScreenState extends State<FeedScreen> {
       entry.value.cancel();
       if (widget.visibleHubs.isNotEmpty) {
         FirebaseFirestore.instance
-            .collection('hubs')
+            .collection(kHubsCollection)
             .doc(widget.visibleHubs.first.key)
             .collection('items')
             .doc(entry.key)
@@ -318,7 +319,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _birthdaySub?.cancel();
     if (widget.visibleHubs.isNotEmpty) {
       _birthdaySub = FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(widget.visibleHubs.first.key)
           .collection('birthdays')
           .snapshots()
@@ -418,7 +419,7 @@ class _FeedScreenState extends State<FeedScreen> {
     String weekId,
   ) {
     final docRef = FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('rota_logs')
         .doc('week_$weekId');
@@ -543,7 +544,7 @@ class _FeedScreenState extends State<FeedScreen> {
             stream: _streams.watch(
               'log:$activeHubId:$logDocId',
               () => FirebaseFirestore.instance
-                  .collection('hubs')
+                  .collection(kHubsCollection)
                   .doc(activeHubId)
                   .collection('rota_logs')
                   .doc(logDocId)
@@ -564,7 +565,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 stream: _streams.watch(
                   'notifs:$activeHubId',
                   () => FirebaseFirestore.instance
-                      .collection('hubs')
+                      .collection(kHubsCollection)
                       .doc(activeHubId)
                       .collection('notifications')
                       .where('toUid', isEqualTo: widget.user.uid)
@@ -576,7 +577,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     stream: _streams.watch(
                       'events:$activeHubId:$dayKey',
                       () => FirebaseFirestore.instance
-                          .collection('hubs')
+                          .collection(kHubsCollection)
                           .doc(activeHubId)
                           .collection('events')
                           .where(
@@ -591,7 +592,7 @@ class _FeedScreenState extends State<FeedScreen> {
                         stream: _streams.watch(
                           'items:$activeHubId',
                           () => FirebaseFirestore.instance
-                              .collection('hubs')
+                              .collection(kHubsCollection)
                               .doc(activeHubId)
                               .collection('items')
                               .where('isDone', isEqualTo: false)
@@ -788,7 +789,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                   stream: _streams.watch(
                                     'requests:$activeHubId',
                                     () => FirebaseFirestore.instance
-                                        .collection('hubs')
+                                        .collection(kHubsCollection)
                                         .doc(activeHubId)
                                         .collection('requests')
                                         .snapshots(),

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../event_import/imported_event.dart';
 import '../models/event_model.dart';
+import '../services/hub_collection.dart';
 
 /// Writes event documents by id. Implementations merge so omitted fields
 /// (notably `gcalId`) survive a retry.
@@ -30,7 +31,10 @@ class FirestoreEventBatchWriter implements EventBatchWriter {
     String hubId,
     Map<String, Map<String, dynamic>> docs,
   ) async {
-    final collection = _db.collection('hubs').doc(hubId).collection('events');
+    final collection = _db
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .collection('events');
     final entries = docs.entries.toList();
     for (var i = 0; i < entries.length; i += maxBatch) {
       final end = i + maxBatch > entries.length ? entries.length : i + maxBatch;
@@ -53,7 +57,7 @@ class FirestoreEventBatchWriter implements EventBatchWriter {
     Map<String, dynamic> fields,
   ) async {
     final ref = _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('events')
         .doc(eventId);
@@ -101,7 +105,7 @@ class EventRepository {
   // Stream all events for a hub
   Stream<List<EventModel>> streamEvents(String hubId) {
     return _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('events')
         .snapshots()
@@ -119,7 +123,7 @@ class EventRepository {
     Map<String, dynamic> updates,
   ) async {
     await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('events')
         .doc(eventId)
@@ -129,7 +133,7 @@ class EventRepository {
   // Delete an event
   Future<void> deleteEvent(String hubId, String eventId) async {
     await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('events')
         .doc(eventId)
@@ -141,7 +145,10 @@ class EventRepository {
   // [upsertImportedEvents] instead.
   Future<void> batchAddEvents(String hubId, List<EventModel> events) async {
     final WriteBatch batch = _db.batch();
-    final collection = _db.collection('hubs').doc(hubId).collection('events');
+    final collection = _db
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .collection('events');
 
     for (var event in events) {
       final docRef = collection.doc();

@@ -6,10 +6,10 @@ import '../screens/dashboard_screen.dart';
 import '../screens/invite_screen.dart';
 import '../screens/sharing_screen.dart';
 import '../screens/add_friend_screen.dart';
-import '../screens/shared_hub_preview_screen.dart';
 import '../services/member_profile.dart';
 import 'build_version_footer.dart';
 import 'member_avatar.dart';
+import '../services/hub_collection.dart';
 
 class AppDrawer extends StatelessWidget {
   final User user;
@@ -56,9 +56,12 @@ class AppDrawer extends StatelessWidget {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
         {'joinedHubs.$hubId': FieldValue.delete()},
       );
-      await FirebaseFirestore.instance.collection('hubs').doc(hubId).update({
-        'members': FieldValue.arrayRemove([user.uid]),
-      });
+      await FirebaseFirestore.instance
+          .collection(kHubsCollection)
+          .doc(hubId)
+          .update({
+            'members': FieldValue.arrayRemove([user.uid]),
+          });
     }
   }
 
@@ -276,23 +279,6 @@ class AppDrawer extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => AddFriendScreen(user: user)),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.preview, color: Colors.pink),
-            title: const Text('Burroni (new data)'),
-            subtitle: const Text(
-              'Events from the new database',
-              style: TextStyle(fontSize: 11),
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SharedHubPreviewScreen(user: user),
-                ),
               );
             },
           ),

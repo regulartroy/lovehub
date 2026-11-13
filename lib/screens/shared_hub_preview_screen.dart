@@ -11,8 +11,7 @@ import '../widgets/dashboard/dashboard_theme.dart';
 import '../widgets/hub_memory_image.dart';
 import '../widgets/member_avatar.dart';
 import '../widgets/recipe_picture.dart';
-
-const String kSharedHubsCollection = 'sharedHubs';
+import '../services/hub_collection.dart';
 
 /// Read-only preview of a hub reconstituted in the new `sharedHubs` collection.
 class SharedHubPreviewScreen extends StatefulWidget {
@@ -61,7 +60,7 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
     });
     try {
       final snap = await _db
-          .collection(kSharedHubsCollection)
+          .collection(kHubsCollection)
           .where('members', arrayContains: widget.user.uid)
           .get();
       final hubs =
@@ -105,7 +104,7 @@ class _SharedHubPreviewScreenState extends State<SharedHubPreviewScreen>
   }
 
   Future<void> _loadHubData(String hubId) async {
-    final hub = _db.collection(kSharedHubsCollection).doc(hubId);
+    final hub = _db.collection(kHubsCollection).doc(hubId);
     final results = await Future.wait([
       hub.collection('events').orderBy('start').get(),
       hub.collection('quotes').get(),

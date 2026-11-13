@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/hub_collection.dart';
 
 class ListsScreen extends StatefulWidget {
   final User user;
@@ -66,7 +67,7 @@ class _ListsScreenState extends State<ListsScreen> {
 
                   FutureBuilder<DocumentSnapshot>(
                     future: FirebaseFirestore.instance
-                        .collection('hubs')
+                        .collection(kHubsCollection)
                         .doc(selectedHubId)
                         .get(),
                     builder: (context, snapshot) {

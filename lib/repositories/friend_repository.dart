@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/friend_model.dart';
+import '../services/hub_collection.dart';
 
 class FriendLookupException implements Exception {
   FriendLookupException(this.message);
@@ -159,7 +160,7 @@ class FriendRepository {
     );
     final byUid = <String, HubFriendSuggestion>{};
     for (final hubId in joined.keys) {
-      final hub = await _db.collection('hubs').doc(hubId).get();
+      final hub = await _db.collection(kHubsCollection).doc(hubId).get();
       if (!hub.exists) continue;
       final data = hub.data() ?? {};
       var hubName = (data['name'] as String?)?.trim() ?? '';

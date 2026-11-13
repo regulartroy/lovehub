@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/event_import/imported_event.dart';
 import 'package:lovehub/models/event_model.dart';
 import 'package:lovehub/repositories/event_repository.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 void main() {
   const sample = {
@@ -231,7 +232,7 @@ void main() {
     expect(mask, contains('notes'));
     expect(
       (rest['update'] as Map)['name'],
-      'projects/lovehub-26107/databases/(default)/documents/hubs/hub-1/events/c2-rota:2026-09-20',
+      'projects/lovehub-26107/databases/(default)/documents/$kHubsCollection/hub-1/events/c2-rota:2026-09-20',
     );
   });
 
@@ -563,6 +564,10 @@ void main() {
     );
     expect((rest['updateMask'] as Map)['fieldPaths'], ['status']);
     expect((rest['currentDocument'] as Map)['exists'], isTrue);
+    expect(
+      (rest['update'] as Map)['name'],
+      'projects/lovehub-26107/databases/(default)/documents/$kHubsCollection/hub-1/events/c2-rota:2026-09-20',
+    );
     expect(((rest['update'] as Map)['fields'] as Map)['status'], {
       'stringValue': 'confirmed',
     });

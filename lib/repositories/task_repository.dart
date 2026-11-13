@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/task_model.dart';
 import '../services/shopping_list_items.dart';
+import '../services/hub_collection.dart';
 
 class TaskRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -8,7 +9,7 @@ class TaskRepository {
   // Stream all tasks for a hub
   Stream<List<Task>> streamTasks(String hubId) {
     return _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('items')
         .orderBy('createdAt', descending: true)
@@ -22,7 +23,10 @@ class TaskRepository {
   // Add multiple tasks at once (Batching!)
   Future<void> addTasks(String hubId, List<Task> tasks) async {
     final WriteBatch batch = _db.batch();
-    final collection = _db.collection('hubs').doc(hubId).collection('items');
+    final collection = _db
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .collection('items');
 
     for (var task in tasks) {
       final docRef = collection.doc();
@@ -46,7 +50,7 @@ class TaskRepository {
     bool isDone,
   ) async {
     await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('items')
         .doc(taskId)
@@ -60,7 +64,7 @@ class TaskRepository {
     DateTime newDate,
   ) async {
     await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('items')
         .doc(taskId)
@@ -70,7 +74,7 @@ class TaskRepository {
   // Delete a single task
   Future<void> deleteTask(String hubId, String taskId) async {
     await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('items')
         .doc(taskId)
@@ -80,7 +84,7 @@ class TaskRepository {
   // Delete an entire list
   Future<void> deleteList(String hubId, String listName) async {
     final snap = await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('items')
         .where('listName', isEqualTo: listName)

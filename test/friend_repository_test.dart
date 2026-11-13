@@ -3,6 +3,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/models/friend_model.dart';
 import 'package:lovehub/repositories/friend_repository.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 void main() {
   group('Friendship', () {
@@ -174,7 +175,7 @@ void main() {
           'concorde': {'name': 'Concorde 2', 'role': 'admin'},
         },
       }, SetOptions(merge: true));
-      await db.collection('hubs').doc('burroni').set({
+      await db.collection(kHubsCollection).doc('burroni').set({
         'name': 'Burroni Hub',
         'members': [tom, maria],
         'memberProfiles': {
@@ -182,7 +183,7 @@ void main() {
           maria: {'displayName': 'Maria', 'email': 'maria@example.com'},
         },
       });
-      await db.collection('hubs').doc('concorde').set({
+      await db.collection(kHubsCollection).doc('concorde').set({
         'name': 'Concorde 2',
         'members': [tom, 'dan-uid'],
         'memberProfiles': {

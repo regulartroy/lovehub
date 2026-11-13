@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math; // <-- NEW: For the circular progress ring
+import '../services/hub_collection.dart';
 
 class CycleScreen extends StatefulWidget {
   final User user;
@@ -34,7 +35,7 @@ class _CycleScreenState extends State<CycleScreen> {
 
   void _listenToCycles() {
     FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(_hubId)
         .collection('cycles')
         .orderBy('startDate', descending: true)
@@ -78,7 +79,7 @@ class _CycleScreenState extends State<CycleScreen> {
   // --- DATABASE ACTIONS ---
   Future<void> _logPeriodStart() async {
     await FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(_hubId)
         .collection('cycles')
         .add({
@@ -90,7 +91,7 @@ class _CycleScreenState extends State<CycleScreen> {
 
   Future<void> _logPeriodEnd(String cycleId) async {
     await FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(_hubId)
         .collection('cycles')
         .doc(cycleId)
@@ -99,7 +100,7 @@ class _CycleScreenState extends State<CycleScreen> {
 
   Future<void> _deleteCycle(String cycleId) async {
     await FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(_hubId)
         .collection('cycles')
         .doc(cycleId)
@@ -201,7 +202,7 @@ class _CycleScreenState extends State<CycleScreen> {
     if (endDate != null) {
       // Save both exact dates to the database!
       await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(_hubId)
           .collection('cycles')
           .add({
