@@ -10,6 +10,7 @@ import '../repositories/task_repository.dart';
 import '../services/shopping_aisle_sort.dart';
 import '../services/shopping_smart_sort_client.dart';
 import '../widgets/undo_snackbar.dart';
+import '../services/hub_collection.dart';
 
 class TasksScreen extends StatefulWidget {
   final User user;
@@ -93,7 +94,7 @@ class _TasksScreenState extends State<TasksScreen> {
       final batch = FirebaseFirestore.instance.batch();
       result.sortIndexes.forEach((id, index) {
         final docRef = FirebaseFirestore.instance
-            .collection('hubs')
+            .collection(kHubsCollection)
             .doc(hubId)
             .collection('items')
             .doc(id);
@@ -134,7 +135,7 @@ class _TasksScreenState extends State<TasksScreen> {
     try {
       final hubId = widget.visibleHubs.first.key;
       final hubDoc = await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .get();
       final List members = hubDoc.data()?['members'] ?? [];
@@ -488,7 +489,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           : existingTask.status;
 
                       await FirebaseFirestore.instance
-                          .collection('hubs')
+                          .collection(kHubsCollection)
                           .doc(activeHubId)
                           .collection('items')
                           .doc(existingTask.id)
@@ -508,7 +509,7 @@ class _TasksScreenState extends State<TasksScreen> {
 
                       if (isNomination) {
                         await FirebaseFirestore.instance
-                            .collection('hubs')
+                            .collection(kHubsCollection)
                             .doc(activeHubId)
                             .collection('notifications')
                             .add({
@@ -561,7 +562,7 @@ class _TasksScreenState extends State<TasksScreen> {
 
                       if (isNomination) {
                         await FirebaseFirestore.instance
-                            .collection('hubs')
+                            .collection(kHubsCollection)
                             .doc(activeHubId)
                             .collection('notifications')
                             .add({
@@ -904,7 +905,7 @@ class _TasksScreenState extends State<TasksScreen> {
     final batch = FirebaseFirestore.instance.batch();
     for (var t in completedTasks) {
       final ref = FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('items')
           .doc(t.id);
@@ -1422,7 +1423,7 @@ class _TasksScreenState extends State<TasksScreen> {
                     ),
                   GestureDetector(
                     onTap: () => FirebaseFirestore.instance
-                        .collection('hubs')
+                        .collection(kHubsCollection)
                         .doc(hubId)
                         .collection('items')
                         .doc(task.id)

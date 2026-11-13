@@ -1,4 +1,4 @@
-// Bulk-imports Roger's work-calendar JSON into hubs/{hubId}/events.
+// Bulk-imports Roger's work-calendar JSON into the hubs collection (kHubsCollection).
 //
 //   dart run tool/import_hub_events.dart --hub <hubId> --file events.json
 //   dart run tool/import_hub_events.dart --tentative --file rota.json
@@ -17,6 +17,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:lovehub/event_import/imported_event.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 const _usage = '''
 Import work events into a LoveHub hub (idempotent upsert).
@@ -88,7 +89,7 @@ Future<void> main(List<String> args) async {
       await _commit(client, idToken, writes);
       stdout.writeln(
         'Upserted ${events.length} event${events.length == 1 ? '' : 's'} '
-        'into hubs/$hubId/events',
+        'into $kHubsCollection/$hubId/events',
       );
       for (final event in events) {
         stdout.writeln(
@@ -238,7 +239,7 @@ Future<HubDirectory> _loadDirectory(
   String idToken,
   String hubId,
 ) async {
-  final hub = await _getDocument(client, idToken, 'hubs/$hubId');
+  final hub = await _getDocument(client, idToken, '$kHubsCollection/$hubId');
   if (hub == null) {
     throw EventImportException('Hub $hubId was not found.');
   }

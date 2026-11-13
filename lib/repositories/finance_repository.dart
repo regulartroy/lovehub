@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/expense_model.dart';
+import '../services/hub_collection.dart';
 
 class FinanceRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -7,7 +8,7 @@ class FinanceRepository {
   // Stream all expenses as strongly-typed models
   Stream<List<ExpenseModel>> streamExpenses(String hubId) {
     return _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('expenses')
         .orderBy('date', descending: true)
@@ -25,7 +26,7 @@ class FinanceRepository {
     Map<String, dynamic> expenseData,
   ) async {
     await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('expenses')
         .add(expenseData);

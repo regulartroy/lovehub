@@ -1,4 +1,4 @@
-// Reconcile imported Concorde rota events in hubs/{hubId}/events.
+// Reconcile imported Concorde rota events in the hubs collection (kHubsCollection).
 //
 //   dart run tool/reconcile_c2_rota.dart --hub <hubId> --feed-file feed.json --events-file events.json --now 2026-11-08T12:00:00Z
 //   dart run tool/reconcile_c2_rota.dart --hub <hubId>
@@ -25,6 +25,7 @@ import 'package:googleapis_auth/auth_io.dart';
 import 'package:http/http.dart' as http;
 import 'package:lovehub/event_import/c2_rota_reconcile.dart';
 import 'package:lovehub/event_import/imported_event.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 const _usage = '''
 Reconcile imported c2-rota events with the Concorde rota feed.
@@ -153,7 +154,9 @@ Future<void> _reconcile(C2ReconcileCommand command) async {
     );
     _writePendingAudit(command, auditId, writes);
     await _commit(firestore!, writes);
-    stdout.writeln('Applied audit hubs/$hubId/$c2RotaAuditCollection/$auditId');
+    stdout.writeln(
+      'Applied audit $kHubsCollection/$hubId/$c2RotaAuditCollection/$auditId',
+    );
   } finally {
     firestore?.close();
   }
@@ -166,7 +169,7 @@ Future<void> _rollback(C2ReconcileCommand command) async {
   try {
     final document = await _getDocument(
       firestore,
-      'hubs/${Uri.encodeComponent(hubId)}/$c2RotaAuditCollection/${Uri.encodeComponent(auditId)}',
+      '$kHubsCollection/${Uri.encodeComponent(hubId)}/$c2RotaAuditCollection/${Uri.encodeComponent(auditId)}',
     );
     final audit = parseC2RotaAuditDocument(runId: auditId, document: document);
     if (audit.hubId != hubId) {
@@ -199,7 +202,7 @@ Future<void> _rollback(C2ReconcileCommand command) async {
     );
     await _commit(firestore, writes);
     stdout.writeln(
-      'Applied rollback hubs/$hubId/$c2RotaAuditCollection/$rollbackId',
+      'Applied rollback $kHubsCollection/$hubId/$c2RotaAuditCollection/$rollbackId',
     );
   } finally {
     firestore.close();
@@ -285,7 +288,7 @@ Future<List<C2StoredEvent>> _queryEvents(
 ) async {
   final uri = Uri.parse(
     'https://firestore.googleapis.com/v1/projects/$lovehubFirebaseProjectId'
-    '/databases/(default)/documents/hubs/${Uri.encodeComponent(hubId)}:runQuery',
+    '/databases/(default)/documents/$kHubsCollection/${Uri.encodeComponent(hubId)}:runQuery',
   );
   final response = await client.post(
     uri,

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'dart:async'; // <-- ADD THIS
 import '../widgets/undo_snackbar.dart';
 import '../repositories/rota_repository.dart';
+import '../services/hub_collection.dart';
 
 class CleaningScreen extends StatefulWidget {
   final User user;
@@ -75,7 +76,7 @@ class _CleaningScreenState extends State<CleaningScreen> {
 
     try {
       final hubDoc = await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(_activeHubId)
           .get();
       List<dynamic> memberIds = hubDoc.data()?['members'] ?? [];
@@ -93,7 +94,7 @@ class _CleaningScreenState extends State<CleaningScreen> {
       }
 
       final configDoc = await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(_activeHubId)
           .collection('rota_settings')
           .doc('config')
@@ -171,7 +172,7 @@ class _CleaningScreenState extends State<CleaningScreen> {
     _currentWeekId = DateFormat('yyyy-MM-dd').format(startOfWeek);
 
     FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(_activeHubId)
         .collection('rota_logs')
         .doc('week_$_currentWeekId')
@@ -194,7 +195,7 @@ class _CleaningScreenState extends State<CleaningScreen> {
     if (_currentWeekId.isEmpty || _activeHubId == null) return;
 
     final docRef = FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(_activeHubId)
         .collection('rota_logs')
         .doc('week_$_currentWeekId');

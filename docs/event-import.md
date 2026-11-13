@@ -1,12 +1,20 @@
 # Work event import (Roger)
 
-Roger emits JSON. LoveHub upserts it into `hubs/{hubId}/events`. The same
-`source` + `externalId` always writes the **same document**, so a retry
-updates that shift instead of creating a second one.
+Roger emits JSON. LoveHub upserts it into `{kHubsCollection}/{hubId}/events`.
+
+Since the live cutover (13 Nov 2026), this tool reads and writes
+`sharedHubs/{hubId}/…` (the `kHubsCollection` constant in
+`lib/services/hub_collection.dart`). Document ids are unchanged. The old
+`hubs` collection is kept as a read-only backup; do not write to it. Cloud
+Functions use the matching switch in `functions/hubs_collection.js`, which
+now defaults to `sharedHubs`.
+
+The same `source` + `externalId` always writes the **same document**, so a
+retry updates that shift instead of creating a second one.
 
 There is no public URL. A **hub member** runs the importer with a Firebase
 ID token. The script refuses to write unless that uid is in
-`hubs/{hubId}.members`.
+`{kHubsCollection}/{hubId}.members`.
 
 ## Payload
 
@@ -73,7 +81,7 @@ A copy of the sample array is `tool/event_import_example.json`.
 
 Firestore → `users/{tomUid}` → `activeHubId`.
 
-That value is the `hubs/{hubId}` document id. The same id is in Tom's
+That value is the hub document id (same id in `sharedHubs` and `hubs`). The same id is in Tom's
 `joinedHubs` map. The hub's `members` array must include the uid that runs
 the import.
 
@@ -130,7 +138,7 @@ dart run tool/import_hub_events.dart --confirm c2-rota:2026-09-21 --confirm seb:
 
 Tom can confirm the same way in the app, without the CLI. On the Calendar tab, tap the muted chip (it has a **?**). On the kitchen tablet, open LOOK AHEAD, tap the day, and use **Confirm I'm working this**. **Keep tentative** dismisses the prompt and leaves the event in place.
 
-Either path sets `status` to `confirmed` on `hubs/{hubId}/events/{eventId}` and does not rewrite the rest of the document. For an import that id is `source:externalId` (for example `c2-rota:2026-09-20`). A later import that omits `status` still leaves the confirm alone.
+Either path sets `status` to `confirmed` on `{kHubsCollection}/{hubId}/events/{eventId}` and does not rewrite the rest of the document. For an import that id is `source:externalId` (for example `c2-rota:2026-09-20`). A later import that omits `status` still leaves the confirm alone.
 
 Tom can mark a plan tentative from the app as well. On the Calendar tab, create or edit an event and turn **Tentative** on before saving — that writes `status: tentative` with the rest of the document. Off writes explicit `status: confirmed`. For a plan that is already booked, tap its chip (Calendar, or the day card in LOOK AHEAD) and choose **Mark tentative**. That updates only `status` to `tentative`, the same single-field write as confirm, in the other direction. **Keep confirmed** closes the sheet and leaves the document alone. CLI `--tentative` and `--confirm` are unchanged.
 

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/event_import/c2_rota_reconcile.dart';
 import 'package:lovehub/event_import/imported_event.dart';
 import 'package:lovehub/event_import/london_date.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 void main() {
   final reviewedAt = DateTime.utc(2026, 11, 8, 12);
@@ -639,9 +640,11 @@ void main() {
         hasLength(2),
       );
       expect(
-        plan.actions.singleWhere(
-          (action) => action.kind == C2RotaActionKind.keepTentative,
-        ).docId,
+        plan.actions
+            .singleWhere(
+              (action) => action.kind == C2RotaActionKind.keepTentative,
+            )
+            .docId,
         'c2-rota:2026-11-12',
       );
     });
@@ -918,7 +921,7 @@ void main() {
         {
           'document': {
             'name':
-                'projects/lovehub-26107/databases/(default)/documents/hubs/pobIb3qupVJudoQGMJjl/events/c2-rota:2026-11-13-junebabies-bar',
+                'projects/lovehub-26107/databases/(default)/documents/$kHubsCollection/pobIb3qupVJudoQGMJjl/events/c2-rota:2026-11-13-junebabies-bar',
             'updateTime': '2026-11-08T10:00:00.123456Z',
             'fields': {
               'source': {'stringValue': 'c2-rota'},

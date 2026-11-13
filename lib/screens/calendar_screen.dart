@@ -16,6 +16,7 @@ import '../widgets/event_tentative_field.dart';
 import '../widgets/tentative_event_confirm.dart';
 import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
+import '../services/hub_collection.dart';
 
 // --- TOP LEVEL HELPERS ---
 extension StringExtension on String {
@@ -127,7 +128,7 @@ class _CalendarScreenState extends State<CalendarScreen>
           _memberDirectory?.watch(_activeHubId);
           // Listen to the new birthdays collection
           FirebaseFirestore.instance
-              .collection('hubs')
+              .collection(kHubsCollection)
               .doc(_activeHubId)
               .collection('birthdays')
               .snapshots()
@@ -563,7 +564,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                             if (existingEvent.id.startsWith('bday_')) {
                               String realId = existingEvent.id.split('_')[1];
                               FirebaseFirestore.instance
-                                  .collection('hubs')
+                                  .collection(kHubsCollection)
                                   .doc(_activeHubId)
                                   .collection('birthdays')
                                   .doc(realId)
@@ -920,7 +921,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                               if (category == 'birthday' &&
                                   existingEvent == null) {
                                 await FirebaseFirestore.instance
-                                    .collection('hubs')
+                                    .collection(kHubsCollection)
                                     .doc(_activeHubId!)
                                     .collection('birthdays')
                                     .add({
@@ -948,7 +949,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                     '_',
                                   )[1];
                                   await FirebaseFirestore.instance
-                                      .collection('hubs')
+                                      .collection(kHubsCollection)
                                       .doc(_activeHubId!)
                                       .collection('birthdays')
                                       .doc(realId)

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
+import '../services/hub_collection.dart';
 
 class ManageHubScreen extends StatelessWidget {
   final String hubId;
@@ -42,10 +43,10 @@ class ManageHubScreen extends StatelessWidget {
       ),
     };
 
-    await FirebaseFirestore.instance.collection('hubs').doc(hubId).set(
-      hubUpdates,
-      SetOptions(merge: true),
-    );
+    await FirebaseFirestore.instance
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .set(hubUpdates, SetOptions(merge: true));
 
     final userUpdates = <String, dynamic>{
       'joinedHubs': {
@@ -60,13 +61,13 @@ class ManageHubScreen extends StatelessWidget {
       userUpdates['displayName'] = requestName;
     }
 
-    await FirebaseFirestore.instance.collection('users').doc(newMemberId).set(
-      userUpdates,
-      SetOptions(merge: true),
-    );
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(newMemberId)
+        .set(userUpdates, SetOptions(merge: true));
 
     await FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('requests')
         .doc(newMemberId)
@@ -81,7 +82,7 @@ class ManageHubScreen extends StatelessWidget {
 
   Future<void> _rejectUser(String userId) async {
     await FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('requests')
         .doc(userId)
@@ -120,7 +121,7 @@ class ManageHubScreen extends StatelessWidget {
     if (newName != null && newName.isNotEmpty && newName != hubName) {
       try {
         final hubDoc = await FirebaseFirestore.instance
-            .collection('hubs')
+            .collection(kHubsCollection)
             .doc(hubId)
             .get();
         final List members = hubDoc.data()?['members'] ?? [];
@@ -128,9 +129,10 @@ class ManageHubScreen extends StatelessWidget {
         final batch = FirebaseFirestore.instance.batch();
 
         // 1. Rename the main hub
-        batch.update(FirebaseFirestore.instance.collection('hubs').doc(hubId), {
-          'name': newName,
-        });
+        batch.update(
+          FirebaseFirestore.instance.collection(kHubsCollection).doc(hubId),
+          {'name': newName},
+        );
 
         // 2. Rename it in EVERY member's profile
         for (String uid in members) {
@@ -187,7 +189,7 @@ class ManageHubScreen extends StatelessWidget {
 
     try {
       final hubDoc = await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .get();
       final List members = hubDoc.data()?['members'] ?? [];
@@ -198,7 +200,9 @@ class ManageHubScreen extends StatelessWidget {
         batch.update(userRef, {'joinedHubs.$hubId': FieldValue.delete()});
       }
 
-      final hubRef = FirebaseFirestore.instance.collection('hubs').doc(hubId);
+      final hubRef = FirebaseFirestore.instance
+          .collection(kHubsCollection)
+          .doc(hubId);
       batch.delete(hubRef);
 
       await batch.commit();
@@ -229,7 +233,7 @@ class ManageHubScreen extends StatelessWidget {
             // --- SECTION 1: PENDING REQUESTS ---
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
-                  .collection('hubs')
+                  .collection(kHubsCollection)
                   .doc(hubId)
                   .collection('requests')
                   .snapshots(),
@@ -295,7 +299,7 @@ class ManageHubScreen extends StatelessWidget {
 
             StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
-                  .collection('hubs')
+                  .collection(kHubsCollection)
                   .doc(hubId)
                   .snapshots(),
               builder: (context, snapshot) {
@@ -399,9 +403,12 @@ class MemberTile extends StatelessWidget {
   }
 
   Future<void> _removeUser() async {
-    await FirebaseFirestore.instance.collection('hubs').doc(hubId).update({
-      'members': FieldValue.arrayRemove([userId]),
-    });
+    await FirebaseFirestore.instance
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .update({
+          'members': FieldValue.arrayRemove([userId]),
+        });
     await FirebaseFirestore.instance.collection('users').doc(userId).update({
       'joinedHubs.$hubId': FieldValue.delete(),
     });
@@ -430,7 +437,8 @@ class MemberTile extends StatelessWidget {
             (userData?['displayName'] ?? hubProfile['displayName'] ?? 'Unknown')
                 .toString();
 
-        final hubData = userData?['joinedHubs']?[hubId] as Map<String, dynamic>?;
+        final hubData =
+            userData?['joinedHubs']?[hubId] as Map<String, dynamic>?;
         final role = hubData?['role'] ?? 'member';
         final isAdmin = role == 'admin';
 

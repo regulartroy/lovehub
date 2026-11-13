@@ -36,6 +36,7 @@ import 'dashboard/quotes_screen.dart';
 import '../models/quote_model.dart';
 import '../repositories/quote_repository.dart';
 import 'dashboard/dashboard_weather_icons.dart';
+import '../services/hub_collection.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -253,7 +254,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     try {
       final hubDoc = await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .get();
       if (!hubDoc.exists) {
@@ -282,7 +283,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _subs.add(
       FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('birthdays')
           .snapshots()
@@ -299,7 +300,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final lookBack = DateTime.now().subtract(const Duration(days: 60));
     _subs.add(
       FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('events')
           .where('start', isGreaterThan: Timestamp.fromDate(lookBack))
@@ -317,7 +318,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _subs.add(
       FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('recipes')
           .snapshots()
@@ -335,7 +336,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _subs.add(
       FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('items')
           .where('isDone', isEqualTo: false)
@@ -349,7 +350,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _subs.add(
       FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('rota_settings')
           .doc('config')
@@ -363,7 +364,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _subs.add(
       FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('quotes')
           .snapshots()
@@ -379,7 +380,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _subs.add(
       FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('photos')
           .snapshots()
@@ -1410,7 +1411,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       stream: _streams.watch(
         logKey,
         () => FirebaseFirestore.instance
-            .collection('hubs')
+            .collection(kHubsCollection)
             .doc(hubId)
             .collection('rota_logs')
             .doc('week_$weekId')

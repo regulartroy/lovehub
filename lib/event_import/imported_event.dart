@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../services/hub_collection.dart';
+
 /// Public Firebase web config already shipped in [DefaultFirebaseOptions].
 ///
 /// The API key is a client key, not a service-account secret. Refresh tokens
@@ -580,7 +582,7 @@ Map<String, dynamic> firestoreRestConfirmWrite({
   return {
     'update': {
       'name':
-          'projects/$projectId/databases/(default)/documents/hubs/$hubId/events/${target.docId}',
+          'projects/$projectId/databases/(default)/documents/$kHubsCollection/$hubId/events/${target.docId}',
       'fields': {'status': firestoreRestValue(eventStatusConfirmed)},
     },
     'updateMask': {
@@ -602,7 +604,7 @@ Map<String, dynamic> firestoreRestWrite({
   return {
     'update': {
       'name':
-          'projects/$projectId/databases/(default)/documents/hubs/$hubId/events/${event.docId}',
+          'projects/$projectId/databases/(default)/documents/$kHubsCollection/$hubId/events/${event.docId}',
       'fields': {
         for (final entry in fields.entries)
           entry.key: firestoreRestValue(entry.value),

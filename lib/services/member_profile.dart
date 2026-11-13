@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'hub_collection.dart';
 
 /// Google / Firestore photo URLs are usable when they look like a real http URL.
 bool isUsablePhotoUrl(String? url) {
@@ -169,7 +170,10 @@ Future<void> syncCurrentUserPhotoToHubs({
   final db = firestore ?? FirebaseFirestore.instance;
   for (final hubId in hubIds) {
     if (hubId.isEmpty) continue;
-    await db.collection('hubs').doc(hubId).set(payload, SetOptions(merge: true));
+    await db
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .set(payload, SetOptions(merge: true));
   }
 }
 
@@ -253,7 +257,9 @@ class HubMemberDirectory {
       onChanged(const []);
       return;
     }
-    _hubSub = _db.collection('hubs').doc(hubId).snapshots().listen((hubDoc) {
+    _hubSub = _db.collection(kHubsCollection).doc(hubId).snapshots().listen((
+      hubDoc,
+    ) {
       final ids = List<String>.from(hubDoc.data()?['members'] ?? const []);
       _hubProfiles = Map<String, dynamic>.from(
         hubDoc.data()?['memberProfiles'] ?? const {},
@@ -273,17 +279,22 @@ class HubMemberDirectory {
     }
     for (final uid in ids) {
       if (_userSubs.containsKey(uid)) continue;
-      _userSubs[uid] = _db.collection('users').doc(uid).snapshots().listen((
-        doc,
-      ) {
-        _users[uid] = doc.data() ?? const {};
-        _emit();
-      }, onError: (_) {
-        // Partner user docs must be readable (see firestore.rules). If a
-        // snapshot is denied, keep going on hub membership.
-        _users[uid] = const {};
-        _emit();
-      });
+      _userSubs[uid] = _db
+          .collection('users')
+          .doc(uid)
+          .snapshots()
+          .listen(
+            (doc) {
+              _users[uid] = doc.data() ?? const {};
+              _emit();
+            },
+            onError: (_) {
+              // Partner user docs must be readable (see firestore.rules). If a
+              // snapshot is denied, keep going on hub membership.
+              _users[uid] = const {};
+              _emit();
+            },
+          );
     }
   }
 
@@ -368,7 +379,10 @@ class HubMemberDirectory {
       _persistedPhotos[uid] = photos[uid]!;
     }
     try {
-      await _db.collection('hubs').doc(hubId).set(patch, SetOptions(merge: true));
+      await _db
+          .collection(kHubsCollection)
+          .doc(hubId)
+          .set(patch, SetOptions(merge: true));
     } catch (_) {
       for (final uid in photos.keys) {
         if (_persistedPhotos[uid] == photos[uid]) {

@@ -20,6 +20,7 @@ import 'package:http/http.dart' as http;
 import 'package:lovehub/event_import/c2_rota_reconcile.dart';
 import 'package:lovehub/event_import/imported_event.dart';
 import 'package:lovehub/event_import/schedule_export.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 const _usage = '''
 Export a read-only LoveHub schedule snapshot for other household bots.
@@ -83,7 +84,7 @@ Future<void> _export(ScheduleExportCommand command) async {
   try {
     final hub = await _getDocument(
       client,
-      'hubs/${Uri.encodeComponent(hubId)}',
+      '$kHubsCollection/${Uri.encodeComponent(hubId)}',
     );
     if (hub == null) {
       throw ScheduleExportException('Hub $hubId was not found.');
@@ -91,12 +92,12 @@ Future<void> _export(ScheduleExportCommand command) async {
     final namesByUid = namesByUidFromHubDocument(hub);
     final events = await _listCollection(
       client,
-      'hubs/${Uri.encodeComponent(hubId)}/events',
+      '$kHubsCollection/${Uri.encodeComponent(hubId)}/events',
       storedEventsFromRestList,
     );
     final birthdays = await _listCollection(
       client,
-      'hubs/${Uri.encodeComponent(hubId)}/birthdays',
+      '$kHubsCollection/${Uri.encodeComponent(hubId)}/birthdays',
       storedBirthdaysFromRestList,
     );
     final snapshot = buildScheduleSnapshot(

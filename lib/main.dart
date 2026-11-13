@@ -21,6 +21,7 @@ import 'services/web_update_firestore.dart';
 import 'services/web_update_platform.dart';
 import 'widgets/undo_snackbar.dart';
 import 'widgets/web_update_host.dart';
+import 'services/hub_collection.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -341,7 +342,7 @@ class _MainScreenState extends State<MainScreen>
   Future<void> _createPersonalHub() async {
     // 1. Create the hub
     final docRef = await FirebaseFirestore.instance
-        .collection('hubs')
+        .collection(kHubsCollection)
         .add(
           newHubDocument(
             name: 'My Lovehub',
@@ -399,14 +400,14 @@ class _MainScreenState extends State<MainScreen>
               try {
                 // Check if hub exists
                 final hubDoc = await FirebaseFirestore.instance
-                    .collection('hubs')
+                    .collection(kHubsCollection)
                     .doc(hubId)
                     .get();
                 if (!hubDoc.exists) throw Exception("Hub not found");
 
                 // 1. Write to Hub Requests collection
                 await FirebaseFirestore.instance
-                    .collection('hubs')
+                    .collection(kHubsCollection)
                     .doc(hubId)
                     .collection('requests')
                     .doc(_user!.uid)
@@ -470,7 +471,7 @@ class _MainScreenState extends State<MainScreen>
             onPressed: () async {
               if (nameCtrl.text.isNotEmpty) {
                 final docRef = await FirebaseFirestore.instance
-                    .collection('hubs')
+                    .collection(kHubsCollection)
                     .add(
                       newHubDocument(
                         name: nameCtrl.text,

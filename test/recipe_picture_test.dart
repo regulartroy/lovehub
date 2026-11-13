@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 import 'package:lovehub/models/recipe_model.dart';
 import 'package:lovehub/recipe_import/recipe_picture.dart';
 import 'package:lovehub/repositories/recipe_repository.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 class FakeImageStore implements RecipeImageStore {
   final objects = <String, Uint8List>{};
@@ -108,7 +109,7 @@ void main() {
     });
 
     Future<Recipe> only() async {
-      final docs = await db.collection('hubs/test-hub/recipes').get();
+      final docs = await db.collection('$kHubsCollection/test-hub/recipes').get();
       expect(docs.docs, hasLength(1));
       return Recipe.fromFirestore(docs.docs.single);
     }
@@ -158,7 +159,7 @@ void main() {
         ),
         throwsException,
       );
-      final docs = await db.collection('hubs/test-hub/recipes').get();
+      final docs = await db.collection('$kHubsCollection/test-hub/recipes').get();
       expect(docs.docs, isEmpty);
     });
 
@@ -243,14 +244,14 @@ void main() {
       );
       final recipe = await only();
       await repo.deleteRecipe('test-hub', recipe);
-      final docs = await db.collection('hubs/test-hub/recipes').get();
+      final docs = await db.collection('$kHubsCollection/test-hub/recipes').get();
       expect(docs.docs, isEmpty);
       expect(store.deleted, [recipe.imagePath]);
       expect(store.objects, isEmpty);
     });
 
     test('never deletes a path outside recipe pictures', () async {
-      await db.collection('hubs/test-hub/recipes').doc('x').set({
+      await db.collection('$kHubsCollection/test-hub/recipes').doc('x').set({
         'title': 'Odd',
         'ingredients': <String>[],
         'imagePath': 'hubs/test-hub/photos/gallery.jpg',

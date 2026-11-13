@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lovehub/event_import/london_date.dart';
 import 'package:lovehub/event_import/schedule_export.dart';
+import 'package:lovehub/services/hub_collection.dart';
 
 void main() {
   const window = LondonWindow(
@@ -264,7 +265,7 @@ void main() {
         'documents': [
           {
             'name':
-                'projects/lovehub-26107/databases/(default)/documents/hubs/h/events/c2-rota%3Ashow',
+                'projects/lovehub-26107/databases/(default)/documents/$kHubsCollection/h/events/c2-rota%3Ashow',
             'fields': {
               'summary': {'stringValue': 'Show'},
               'start': {'timestampValue': '2026-11-12T19:00:00Z'},
@@ -280,7 +281,8 @@ void main() {
       });
       expect(events.single.id, 'c2-rota:show');
       final names = namesByUidFromHubDocument({
-        'name': 'projects/lovehub-26107/databases/(default)/documents/hubs/h',
+        'name':
+            'projects/lovehub-26107/databases/(default)/documents/$kHubsCollection/h',
         'fields': {
           'memberProfiles': {
             'mapValue': {

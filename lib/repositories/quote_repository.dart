@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/quote_model.dart';
+import '../services/hub_collection.dart';
 
 /// Reads and adds the hub's custom quotes.
 abstract class QuoteRepository {
@@ -33,7 +34,7 @@ class FirestoreQuoteRepository implements QuoteRepository {
   final FirebaseFirestore _db;
 
   CollectionReference<Map<String, dynamic>> _quotes(String hubId) =>
-      _db.collection('hubs').doc(hubId).collection('quotes');
+      _db.collection(kHubsCollection).doc(hubId).collection('quotes');
 
   @override
   Stream<List<QuoteModel>> watch(String hubId) {

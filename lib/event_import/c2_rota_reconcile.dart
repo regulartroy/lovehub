@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'imported_event.dart';
 import 'london_date.dart';
+import '../services/hub_collection.dart';
 
 /// Live Concorde rota feed. GET with `Authorization: Bearer`.
 const c2RotaFeedUrl =
@@ -589,9 +590,7 @@ _ParsedFeedDay _parseFeedDay(Object? raw, int index) {
 /// return null so the row can be skipped with a warning.
 C2ShowStatus? _parseShowStatus(Object? raw, int index) {
   if (raw is! String) {
-    throw C2RotaFeedException(
-      'days[$index].status must be a string.',
-    );
+    throw C2RotaFeedException('days[$index].status must be a string.');
   }
   switch (raw.trim().toLowerCase()) {
     case 'on':
@@ -1341,12 +1340,12 @@ List<Map<String, Object?>> _changeRecords(List<C2RotaAction> mutations) {
 
 String _eventName(String projectId, String hubId, String docId) {
   return 'projects/$projectId/databases/(default)/documents/'
-      'hubs/$hubId/events/$docId';
+      '$kHubsCollection/$hubId/events/$docId';
 }
 
 String _auditName(String projectId, String hubId, String auditId) {
   return 'projects/$projectId/databases/(default)/documents/'
-      'hubs/$hubId/$c2RotaAuditCollection/$auditId';
+      '$kHubsCollection/$hubId/$c2RotaAuditCollection/$auditId';
 }
 
 class C2AuditChange {

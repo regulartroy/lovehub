@@ -74,3 +74,25 @@ test('rate limiter allows a short burst and then stops', () => {
   clock += 1001;
   assertRate('tom');
 });
+
+test('allows a member listed only on sharedHubs during dual-running', async () => {
+  const db = fakeDb({
+    'users/dan': {},
+    'sharedHubs/preview': { members: ['dan'] },
+  });
+  await assertHubMember('dan', 'preview', db);
+});
+
+test('still allows a member listed only on the old hubs backup', async () => {
+  const db = fakeDb({
+    'users/ann': {},
+    'hubs/legacy': { members: ['ann'] },
+  });
+  await assertHubMember('ann', 'legacy', db);
+});
+
+const { HUBS_COLLECTION } = require('./hubs_collection');
+
+test('functions read sharedHubs after the live cutover', () => {
+  assert.equal(HUBS_COLLECTION, 'sharedHubs');
+});

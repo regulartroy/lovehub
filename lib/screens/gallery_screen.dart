@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../widgets/hub_memory_image.dart';
+import '../services/hub_collection.dart';
 
 class GalleryScreen extends StatefulWidget {
   final User user;
@@ -37,7 +38,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
       // 2. Check the 50-photo limit BEFORE uploading
       final snap = await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('photos')
           .count()
@@ -92,7 +93,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
         // 4. Save the URL to Firestore
         await FirebaseFirestore.instance
-            .collection('hubs')
+            .collection(kHubsCollection)
             .doc(hubId)
             .collection('photos')
             .add({
@@ -104,12 +105,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
       }
 
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("Upload complete!")));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Upload complete!")));
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Upload Error: $e")));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Upload Error: $e")));
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -147,15 +150,16 @@ class _GalleryScreenState extends State<GalleryScreen> {
       await FirebaseStorage.instance.ref().child(storagePath).delete();
       // 2. Delete from Firestore
       await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .collection('photos')
           .doc(docId)
           .delete();
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Delete Error: $e")));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Delete Error: $e")));
     }
   }
 
@@ -196,7 +200,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
-            .collection('hubs')
+            .collection(kHubsCollection)
             .doc(activeHubId)
             .collection('photos')
             .orderBy('createdAt', descending: true)
@@ -269,7 +273,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
                                         secondaryAnimation,
                                       ) => FullScreenImageViewer(
                                         imageUrl: url,
-                                        heroTag: doc.id, // The unique ID ties the two screens together
+                                        heroTag: doc
+                                            .id, // The unique ID ties the two screens together
                                       ),
                                   transitionsBuilder:
                                       (
@@ -287,7 +292,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
                               );
                             },
                             child: Hero(
-                              tag: doc.id, // The unique ID ties the two screens together
+                              tag: doc
+                                  .id, // The unique ID ties the two screens together
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: HubMemoryImage(

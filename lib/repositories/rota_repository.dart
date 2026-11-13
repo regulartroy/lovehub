@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/hub_collection.dart';
 
 class RotaRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -143,7 +144,7 @@ class RotaRepository {
     }
 
     await _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('rota_settings')
         .doc('config')
@@ -157,7 +158,7 @@ class RotaRepository {
 
   Stream<Map<String, dynamic>?> streamRotaConfig(String hubId) {
     return _db
-        .collection('hubs')
+        .collection(kHubsCollection)
         .doc(hubId)
         .collection('rota_settings')
         .doc('config')

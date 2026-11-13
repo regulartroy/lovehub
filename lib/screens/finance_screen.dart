@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../models/expense_model.dart';
 import '../repositories/finance_repository.dart';
+import '../services/hub_collection.dart';
 
 class FinanceScreen extends StatefulWidget {
   final User user;
@@ -86,7 +87,7 @@ class _FinanceScreenState extends State<FinanceScreen>
     Map<String, String> selectablePartners = {};
     try {
       final hubDoc = await FirebaseFirestore.instance
-          .collection('hubs')
+          .collection(kHubsCollection)
           .doc(hubId)
           .get();
       final List members = hubDoc.data()?['members'] ?? [];
