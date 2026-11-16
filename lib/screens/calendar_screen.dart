@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -32,10 +34,16 @@ class CalendarScreen extends StatefulWidget {
   final User user;
   final Function(bool) onSyncRequest;
 
+  /// The active hub. Passed in by the shell so the calendar always follows
+  /// the hub picked in the drawer (it used to read users/{uid}.activeHubId
+  /// once at start-up and never noticed a switch).
+  final String? hubId;
+
   const CalendarScreen({
     super.key,
     required this.user,
     required this.onSyncRequest,
+    this.hubId,
   });
 
   @override
@@ -62,6 +70,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   List<Map<String, dynamic>> _hubMembers = [];
   String? _activeHubId;
   HubMemberDirectory? _memberDirectory;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _birthdaySub;
 
   // FILTER STATE
   String? _selectedMemberFilter;
@@ -108,39 +117,65 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   @override
+  void didUpdateWidget(covariant CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The shell keys this screen on the hub, so a switch normally builds a
+    // new State. Belt and braces in case it is ever reused: drop everything
+    // from the old hub and resubscribe.
+    if (oldWidget.hubId != widget.hubId) {
+      _activeHubId = widget.hubId;
+      _allEvents = [];
+      _birthdays = [];
+      _hubMembers = [];
+      _locallyConfirmed.clear();
+      _locallyTentative.clear();
+      _selectedMemberFilter = null;
+      _selectedDay = null;
+      _initHubData();
+    }
+  }
+
+  @override
   void dispose() {
+    _birthdaySub?.cancel();
     _memberDirectory?.dispose();
     _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _initHubData() async {
+    _birthdaySub?.cancel();
+    _birthdaySub = null;
     try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.user.uid)
-          .get();
-      if (userDoc.exists) {
-        final data = userDoc.data()!;
-        _activeHubId = data['activeHubId'];
+      String? hubId = widget.hubId;
+      if (hubId != null) {
+        _activeHubId = hubId;
+      } else {
+        // Fallback for callers that don't pass a hub.
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.user.uid)
+            .get();
+        hubId = userDoc.data()?['activeHubId'] as String?;
+        if (!mounted || widget.hubId != null) return;
+        setState(() => _activeHubId = hubId);
+      }
 
-        if (_activeHubId != null) {
-          _memberDirectory?.watch(_activeHubId);
-          // Listen to the new birthdays collection
-          FirebaseFirestore.instance
-              .collection(kHubsCollection)
-              .doc(_activeHubId)
-              .collection('birthdays')
-              .snapshots()
-              .listen((snap) {
-                if (mounted)
-                  setState(
-                    () => _birthdays = snap.docs
-                        .map((d) => {'id': d.id, ...d.data()})
-                        .toList(),
-                  );
-              });
-        }
+      if (hubId != null) {
+        _memberDirectory?.watch(hubId);
+        _birthdaySub = FirebaseFirestore.instance
+            .collection(kHubsCollection)
+            .doc(hubId)
+            .collection('birthdays')
+            .snapshots()
+            .listen((snap) {
+              if (mounted && _activeHubId == hubId)
+                setState(
+                  () => _birthdays = snap.docs
+                      .map((d) => {'id': d.id, ...d.data()})
+                      .toList(),
+                );
+            });
       }
     } catch (e) {
       if (mounted)
