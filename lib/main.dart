@@ -22,6 +22,7 @@ import 'services/web_update_platform.dart';
 import 'widgets/undo_snackbar.dart';
 import 'widgets/web_update_host.dart';
 import 'services/hub_collection.dart';
+import 'services/hub_scope.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -332,8 +333,16 @@ class _MainScreenState extends State<MainScreen>
   }
 
   // --- REPLACE _toggleHubVisibility WITH THIS ---
+  /// The hub every tab is showing (null while loading / no hubs).
+  String? get _activeHubId =>
+      _visibleHubs.isNotEmpty ? _visibleHubs.first.key : null;
+
   void _selectHub(String hubId) {
-    // Instantly switch the active workspace in the database
+    // Switch the UI straight away (every tab rebuilds for the new hub), then
+    // persist it; the user-doc listener confirms the same value.
+    if (_joinedHubs.containsKey(hubId) && hubId != _activeHubId) {
+      setState(() => _visibleHubs = [MapEntry(hubId, _joinedHubs[hubId])]);
+    }
     FirebaseFirestore.instance.collection('users').doc(_user!.uid).update({
       'activeHubId': hubId,
     });
@@ -531,9 +540,7 @@ class _MainScreenState extends State<MainScreen>
         user: _user!,
         joinedHubs: _joinedHubs,
         pendingHubs: _pendingHubs,
-        activeHubId: _visibleHubs.isNotEmpty
-            ? _visibleHubs.first.key
-            : null, // NEW
+        activeHubId: _activeHubId,
         onSelectHub: _selectHub, // NEW
         onCreateHub: _createHubDialog,
         onJoinHub: _showJoinHubDialog,
@@ -610,24 +617,68 @@ class _MainScreenState extends State<MainScreen>
               controller: _tabController,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                // We pass _joinedHubs and _pendingHubs into FeedScreen now!
-                FeedScreen(
-                  onOpenTab: (i) => _tabController.animateTo(i),
-                  user: _user!,
-                  visibleHubs: _visibleHubs,
-                  joinedHubs: _joinedHubs,
-                  pendingHubs: _pendingHubs,
+                // Every tab is keyed on the active hub, so switching hubs
+                // throws away each section's state and subscriptions and
+                // rebuilds it fresh for the new hub (no stale data).
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'feed',
+                  child: FeedScreen(
+                    onOpenTab: (i) => _tabController.animateTo(i),
+                    user: _user!,
+                    visibleHubs: _visibleHubs,
+                    joinedHubs: _joinedHubs,
+                    pendingHubs: _pendingHubs,
+                  ),
                 ),
-                CalendarScreen(user: _user!, onSyncRequest: (i) async {}),
-                TasksScreen(user: _user!, visibleHubs: _visibleHubs),
-                FoodScreen(user: _user!, visibleHubs: _visibleHubs),
-                CleaningScreen(user: _user!, visibleHubs: _visibleHubs),
-                FinanceScreen(user: _user!, visibleHubs: _visibleHubs),
-                GalleryScreen(
-                  user: _user!,
-                  visibleHubs: _visibleHubs,
-                ), // <-- NEW!
-                CycleScreen(user: _user!, visibleHubs: _visibleHubs),
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'calendar',
+                  child: CalendarScreen(
+                    user: _user!,
+                    hubId: _activeHubId,
+                    onSyncRequest: (i) async {},
+                  ),
+                ),
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'tasks',
+                  child: TasksScreen(user: _user!, visibleHubs: _visibleHubs),
+                ),
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'food',
+                  child: FoodScreen(user: _user!, visibleHubs: _visibleHubs),
+                ),
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'rota',
+                  child: CleaningScreen(
+                    user: _user!,
+                    visibleHubs: _visibleHubs,
+                  ),
+                ),
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'finance',
+                  child: FinanceScreen(
+                    user: _user!,
+                    visibleHubs: _visibleHubs,
+                  ),
+                ),
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'gallery',
+                  child: GalleryScreen(
+                    user: _user!,
+                    visibleHubs: _visibleHubs,
+                  ),
+                ),
+                HubScoped(
+                  hubId: _activeHubId,
+                  section: 'cycle',
+                  child: CycleScreen(user: _user!, visibleHubs: _visibleHubs),
+                ),
               ],
             ),
       bottomNavigationBar: Container(
