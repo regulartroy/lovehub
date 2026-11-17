@@ -17,6 +17,10 @@ import 'package:intl/intl.dart';
 
 import '../repositories/event_repository.dart';
 import '../services/dashboard_speech.dart';
+import '../services/dashboard_today_intent.dart';
+import '../services/shopping_voice.dart';
+import '../repositories/task_repository.dart';
+import '../widgets/dashboard/shopping_voice_confirm.dart';
 import '../services/web_resume.dart';
 import '../widgets/dashboard/dashboard_birthday_timeline.dart';
 import '../widgets/dashboard/dashboard_calendar_overview.dart';
@@ -2108,7 +2112,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Keep play–pause visible (and auto-advance paused) while a LOOK AHEAD
     // day card or the voice answer is open, so the same tap both inspects
     // a day and shows controls.
-    if (_lookAheadDayDetailOpen || _voice.holdsControls) return;
+    if (_lookAheadDayDetailOpen ||
+        _voice.holdsControls ||
+        _shoppingConfirmOpen) {
+      return;
+    }
     _controlsHideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _showControls = false);
     });
@@ -2164,6 +2172,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (!mounted || token != _listenToken) return;
     if (capture.message == 'cancelled') return;
 
+    if (capture.outcome == DashboardSpeechOutcome.transcript &&
+        _maybeHandleShopping(capture.transcript)) {
+      return;
+    }
+
     final next = _voice.applyCapture(
       capture,
       _eventsToday(),
@@ -2178,7 +2191,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _showControlsOverlay();
   }
 
+  /// Shopping command heard on the mic or typed in the prompt.
+  ///
+  /// "add milk and eggs to my shopping list" always counts. Looser forms
+  /// ("we need milk", "buy eggs") only count when they are not a calendar
+  /// question, so date asks keep working as before.
+  ShoppingVoiceCommand? _shoppingCommand(String text) {
+    final command = parseShoppingVoiceCommand(text);
+    if (command == null) return null;
+    if (!command.explicit &&
+        dashboardVoiceQuestion(text, today: _currentDay).matched) {
+      return null;
+    }
+    return command;
+  }
+
+  bool _maybeHandleShopping(String text) {
+    final command = _shoppingCommand(text);
+    if (command == null) return false;
+    _listenToken++;
+    _voiceQueryController.clear();
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _voice = const DashboardVoiceState());
+    _showControlsOverlay();
+    unawaited(_confirmShopping(command.items, heard: text));
+    return true;
+  }
+
+  TaskRepository? _taskRepo;
+  bool _shoppingConfirmOpen = false;
+
+  Future<void> _confirmShopping(
+    List<String> items, {
+    required String heard,
+  }) async {
+    // Keep the slideshow still while the confirm box is up.
+    _shoppingConfirmOpen = true;
+    _showControlsOverlay();
+    final confirmed = await ShoppingVoiceConfirmDialog.show(
+      context,
+      items: items,
+      heard: heard,
+    );
+    _shoppingConfirmOpen = false;
+    if (!mounted) return;
+    _showControlsOverlay();
+    if (confirmed == null || confirmed.isEmpty) return;
+    if (widget.visibleHubs.isEmpty) return;
+    final hubId = widget.visibleHubs.first.key;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final repo = _taskRepo ??= TaskRepository();
+      final result = await repo.addShoppingItems(
+        hubId,
+        confirmed,
+        createdBy: FirebaseAuth.instance.currentUser?.uid,
+      );
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green.shade700,
+          content: Text(
+            shoppingAddedMessage(result.added, result.alreadyThere),
+            style: const TextStyle(fontSize: 20),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent,
+          content: Text(
+            "Couldn't add to the shopping list. Try again.",
+            style: TextStyle(fontSize: 20),
+          ),
+        ),
+      );
+    }
+  }
+
   void _submitVoiceQuery(String raw) {
+    if (_maybeHandleShopping(raw)) return;
     final next = _voice.answerQuestion(
       raw,
       today: _currentDay,

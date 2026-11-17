@@ -95,7 +95,7 @@ class DashboardVoiceState {
   static const emptyNotice =
       'Didn’t catch that. Try “what’s on today”, “23 October”, “the week of 23 October”, or “20 to 25 October”.';
   static const unrecognizedNotice =
-      'I can answer “what’s on today”, a date like “23 October”, “the week of 23 October”, or a stretch like “20 to 25 October” (up to 31 days).';
+      'I can answer “what’s on today”, a date like “23 October”, “the week of 23 October”, or a stretch like “20 to 25 October” (up to 31 days). I can also “add milk and eggs to the shopping list”.';
   static const rangeTooLongNotice =
       'That’s longer than 31 days. Try a shorter stretch.';
 
