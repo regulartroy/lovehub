@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/task_model.dart';
 import '../services/shopping_list_items.dart';
 import '../services/hub_collection.dart';
+import '../services/shopping_aisle_sort.dart';
+import '../services/shopping_voice.dart';
 
 class TaskRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -41,6 +43,44 @@ class TaskRepository {
     List<String> ingredients,
   ) async {
     await addTasks(hubId, shoppingTasksForIngredients(ingredients));
+  }
+
+  /// Adds [items] to the hub's Shopping list, skipping any that are already
+  /// on it and unticked. New rows get the aisle `sortIndex`, like recipe
+  /// ingredients, so they land in shop order straight away.
+  Future<({List<String> added, List<String> alreadyThere})> addShoppingItems(
+    String hubId,
+    List<String> items, {
+    String? createdBy,
+  }) async {
+    final snap = await _db
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .collection('items')
+        .where('listName', isEqualTo: 'Shopping')
+        .get();
+    final unticked = <String>[];
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      if (data['isDone'] == true) continue;
+      final text = data['text'];
+      if (text is String) unticked.add(text);
+    }
+    final split = splitNewShoppingItems(items, unticked);
+    if (split.toAdd.isNotEmpty) {
+      await addTasks(hubId, [
+        for (final text in split.toAdd)
+          Task(
+            id: '',
+            text: text,
+            listName: 'Shopping',
+            assignedTo: 'shared',
+            createdBy: createdBy,
+            sortIndex: categoriseShoppingItem(text).sortIndex,
+          ),
+      ]);
+    }
+    return (added: split.toAdd, alreadyThere: split.alreadyThere);
   }
 
   // Toggle completion
