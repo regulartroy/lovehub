@@ -1341,6 +1341,8 @@ class DashboardGalleryPage extends StatelessWidget {
 List<DashboardBirthday> galleryBirthdays(DateTime today) {
   DateTime inDays(int d) => DateTime(today.year, today.month, today.day + d);
   return [
+    // Earlier this week, so the past-day greying has a cake to show.
+    DashboardBirthday(id: 'tom', name: 'Tom', date: inDays(-2), turning: 48),
     DashboardBirthday(id: 'maria', name: 'Maria', date: inDays(2), turning: 34),
     DashboardBirthday(id: 'nan', name: 'Nan', date: inDays(9), turning: 81),
     DashboardBirthday(id: 'jake', name: 'Jake', date: inDays(12)),
@@ -1350,15 +1352,10 @@ List<DashboardBirthday> galleryBirthdays(DateTime today) {
       date: inDays(23),
       turning: 30,
     ),
-    DashboardBirthday(id: 'dad', name: 'Dad', date: inDays(37), turning: 66),
-    DashboardBirthday(id: 'ellie', name: 'Ellie', date: inDays(51), turning: 7),
-    DashboardBirthday(id: 'sam', name: 'Sam', date: inDays(64)),
-    DashboardBirthday(
-      id: 'priya',
-      name: 'Priya',
-      date: inDays(83),
-      turning: 41,
-    ),
+    // Two people on the same day, to check stacked cakes.
+    DashboardBirthday(id: 'dad', name: 'Dad', date: inDays(23), turning: 66),
+    DashboardBirthday(id: 'ellie', name: 'Ellie', date: inDays(18), turning: 7),
+    DashboardBirthday(id: 'sam', name: 'Sam', date: inDays(20)),
   ];
 }
 

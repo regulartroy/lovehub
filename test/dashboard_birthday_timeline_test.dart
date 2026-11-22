@@ -4,17 +4,20 @@ import 'package:lovehub/widgets/dashboard/dashboard_birthday_timeline.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_calendar_overview.dart';
 import 'package:lovehub/widgets/dashboard/dashboard_theme.dart';
 
-final _today = DateTime(2026, 10, 1);
+final _today = DateTime(2026, 10, 1); // Thursday
 DateTime _in(int d) => DateTime(_today.year, _today.month, _today.day + d);
 
-List<DashboardBirthday> _sample(int n) => [
-  for (var i = 0; i < n; i++)
-    DashboardBirthday(
-      id: 'b$i',
-      name: 'Person $i',
-      date: _in([2, 9, 12, 23, 37, 51, 64, 83][i % 8]),
-      turning: 30 + i,
-    ),
+List<DashboardBirthday> _sample() => [
+  DashboardBirthday(id: 'tom', name: 'Tom', date: _in(-2), turning: 48),
+  DashboardBirthday(id: 'maria', name: 'Maria', date: _in(2), turning: 34),
+  DashboardBirthday(id: 'nan', name: 'Nan', date: _in(9), turning: 81),
+  DashboardBirthday(id: 'jake', name: 'Jake', date: _in(12)),
+  DashboardBirthday(
+    id: 'sophie',
+    name: 'Sophie Carter',
+    date: _in(23),
+    turning: 30,
+  ),
 ];
 
 Map<String, dynamic> _event(String summary, DateTime start, {String? id}) => {
@@ -86,64 +89,84 @@ void main() {
     });
   });
 
-  group('timeline layout', () {
-    for (final compact in [false, true]) {
-      final size = compact ? const Size(350, 640) : const Size(1200, 560);
-      test('${compact ? 'phone' : 'tablet'}: next birthday is the big front '
-          'tile, later ones step up, right, and smaller', () {
-        final layout = BirthdayTimelineLayout.compute(
-          size: size,
-          birthdays: _sample(8),
-          today: _today,
-          compact: compact,
-        );
-        final front = layout.tiles.reversed.toList();
-        expect(front.first.birthday.id, 'b0');
-        for (var i = 1; i < front.length; i++) {
-          final prev = front[i - 1];
-          final cur = front[i];
-          expect(cur.scale, lessThan(prev.scale));
-          expect(cur.center.dx, greaterThan(prev.center.dx));
-          final prevTop = prev.center.dy - layout.baseTile * prev.scale / 2;
-          final curTop = cur.center.dy - layout.baseTile * cur.scale / 2;
-          expect(
-            curTop,
-            lessThan(prevTop),
-            reason: 'top edge ${cur.birthday.id}',
-          );
-        }
-        for (final p in layout.tiles) {
-          final half = layout.baseTile * p.scale / 2;
-          expect(p.center.dx - half, greaterThanOrEqualTo(-1));
-          expect(p.center.dx + half, lessThanOrEqualTo(size.width + 1));
-          expect(p.center.dy + half, lessThanOrEqualTo(size.height + 1));
-          expect(p.center.dy - half, greaterThanOrEqualTo(0));
-        }
-      });
-    }
-
-    test('weekly ticks for a short range, fortnightly for a long one', () {
-      final short = BirthdayTimelineLayout.compute(
-        size: const Size(1200, 560),
-        birthdays: _sample(3),
-        today: _today,
-        compact: false,
+  group('four-week look-ahead window', () {
+    test('is the current week plus the next three, Monday to Sunday', () {
+      final weeks = dashboardLookAheadWeeks(
+        _today,
+        weekCount: dashboardBirthdayLookAheadWeekCount,
       );
-      expect(short.tickDays, 7);
-      final long = BirthdayTimelineLayout.compute(
-        size: const Size(1200, 560),
-        birthdays: _sample(8),
-        today: _today,
-        compact: false,
-      );
-      expect(long.tickDays, 14);
-      expect(long.ticks.first.label, 'TODAY');
-      expect(long.ticks.where((t) => t.label == 'NOV'), hasLength(1));
+      expect(weeks, hasLength(4));
+      expect(weeks.first.first, DateTime(2026, 9, 28));
+      expect(weeks.last.last, DateTime(2026, 10, 25));
+      expect(weeks.first.every((d) => d.weekday >= DateTime.monday), isTrue);
     });
+
+    test('includes earlier this week and drops dates after the board', () {
+      final list = dashboardBirthdaysInLookAhead([
+        _event('Tom (48)', _in(-2)), // Tue 29 Sep, still on the board
+        _event('Too early', _in(-5)), // Fri 26 Sep, previous week
+        _event('Maria (34)', _in(2)),
+        _event('Late', _in(30)), // after 25 Oct
+        {..._event('Dentist', _in(3)), 'category': 'general'},
+        _event('Maria (34)', _in(2), id: 'google-copy'),
+      ], now: _today.add(const Duration(hours: 9)));
+      expect(list.map((b) => b.name), ['Tom', 'Maria']);
+      expect(list.first.daysFrom(_today), -2);
+    });
+
+    test('yearly recurrence: January birthdays appear from mid-December', () {
+      final now = DateTime(2026, 12, 16); // Wednesday; board ends 10 Jan 2027
+      final list = dashboardBirthdaysInLookAhead([
+        _event('New Year baby (1)', DateTime(2027, 1, 3)),
+        _event('Too late', DateTime(2027, 1, 20)),
+      ], now: now);
+      expect(list.map((b) => b.name), ['New Year baby']);
+      expect(list.single.date, DateTime(2027, 1, 3));
+      expect(list.single.turning, 1);
+    });
+
+    test('29 Feb is shown on 29 Feb in a leap year, and 1 March otherwise', () {
+      // Dart (and the hub projector) overflow 29 Feb in a common year to 1 Mar.
+      expect(DateTime(2028, 2, 29), DateTime(2028, 2, 29));
+      expect(DateTime(2027, 2, 29), DateTime(2027, 3, 1));
+
+      final leap = dashboardBirthdaysInLookAhead([
+        _event('Leap (8)', DateTime(2028, 2, 29)),
+      ], now: DateTime(2028, 2, 26));
+      expect(leap, hasLength(1));
+      expect(leap.single.date, DateTime(2028, 2, 29));
+
+      final common = dashboardBirthdaysInLookAhead([
+        _event('Leap (9)', DateTime(2027, 2, 29)),
+      ], now: DateTime(2027, 2, 26));
+      expect(common, hasLength(1));
+      expect(common.single.date, DateTime(2027, 3, 1));
+      expect(common.single.turning, 9);
+    });
+
+    test(
+      'month sections label October when the first week starts in September',
+      () {
+        final weeks = dashboardLookAheadWeeks(
+          _today,
+          weekCount: dashboardBirthdayLookAheadWeekCount,
+        );
+        final sections = dashboardLookAheadMonthSections(weeks, now: _today);
+        // Today is 1 Oct, so the first header stays on October even though
+        // the row still holds 28–30 Sep.
+        expect(sections.first.label, 'OCTOBER');
+        expect(sections, hasLength(1));
+      },
+    );
   });
 
-  group('timeline widget', () {
-    Future<void> pump(WidgetTester tester, Size size, int count) async {
+  group('birthday look-ahead widget', () {
+    Future<void> pump(
+      WidgetTester tester,
+      Size size, {
+      List<DashboardBirthday>? birthdays,
+      DateTime? today,
+    }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -153,45 +176,128 @@ void main() {
           home: Scaffold(
             body: DashboardBirthdaysSlide(
               metrics: DashboardMetrics(size),
-              birthdays: _sample(count),
-              today: _today,
+              birthdays: birthdays ?? _sample(),
+              today: today ?? _today,
             ),
           ),
         ),
       );
     }
 
-    testWidgets('tablet shows glass tiles with name, countdown and age', (
+    testWidgets('tablet shows a four-week grid with cakes, names and ages', (
       tester,
     ) async {
-      await pump(tester, const Size(1280, 800), 8);
-      expect(find.byKey(const ValueKey('birthday-timeline')), findsOneWidget);
+      await pump(tester, const Size(1280, 800));
+      expect(find.byKey(const ValueKey('birthday-lookahead')), findsOneWidget);
       expect(find.text('BIRTHDAYS'), findsOneWidget);
-      expect(find.text('Person 0'), findsOneWidget);
-      expect(find.text('IN 2 DAYS'), findsOneWidget);
-      expect(find.text('Sat 3 Oct  ·  Turns 30'), findsOneWidget);
-      expect(find.byType(BirthdayGlassTile), findsNWidgets(8));
-      // Only the nearest tiles pay for a backdrop blur.
-      expect(find.byType(BackdropFilter), findsNWidgets(3));
+      expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+      expect(find.text('TODAY'), findsOneWidget);
+      expect(find.text('OCTOBER'), findsOneWidget);
+      expect(find.byType(BirthdayCakeMarker), findsNWidgets(5));
+      expect(find.text('Maria'), findsOneWidget);
+      expect(find.text('Turns 34'), findsOneWidget);
+      expect(find.text('Sophie'), findsOneWidget);
+      expect(find.text('Jake'), findsOneWidget);
+      // Age unknown: name only, no Turns label beside Jake.
+      expect(find.text('Turns 30'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey(dashboardBirthdayDayKey(_today))),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('birthday-week-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('birthday-week-3')), findsOneWidget);
+      // Earlier this week is still on the board, greyed.
+      expect(
+        find.byKey(ValueKey(dashboardBirthdayPastDimKey(_in(-2)))),
+        findsOneWidget,
+      );
+      expect(find.text('Tom'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('phone with one birthday, and an empty state', (tester) async {
-      await pump(tester, const Size(390, 844), 1);
-      expect(find.byType(BirthdayGlassTile), findsOneWidget);
-      expect(tester.takeException(), isNull);
-
-      await pump(tester, const Size(390, 844), 0);
+    testWidgets('phone keeps cakes readable and past days greyed', (
+      tester,
+    ) async {
+      await pump(tester, const Size(390, 844));
+      expect(find.byType(BirthdayCakeMarker), findsNWidgets(5));
+      expect(find.text('Maria'), findsOneWidget);
+      expect(find.text('34'), findsOneWidget); // compact age label
+      expect(find.text('Turns 34'), findsNothing);
       expect(
-        find.byKey(const ValueKey('birthday-timeline-empty')),
+        find.byKey(
+          ValueKey(dashboardBirthdayPastDimKey(DateTime(2026, 9, 30))),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('empty window still shows the grid with a quiet hint', (
+      tester,
+    ) async {
+      await pump(tester, const Size(1280, 800), birthdays: const []);
+      expect(
+        find.byKey(const ValueKey('birthday-lookahead-empty')),
+        findsOneWidget,
+      );
+      expect(find.byType(BirthdayCakeMarker), findsNothing);
+      expect(find.byKey(const ValueKey('birthday-week-0')), findsOneWidget);
+    });
+
+    testWidgets('greying advances with the calendar day at midnight', (
+      tester,
+    ) async {
+      // 30 Sep 23:00 — 30 Sep is still today, not greyed.
+      await pump(
+        tester,
+        const Size(1280, 800),
+        today: DateTime(2026, 9, 30, 23),
+        birthdays: [
+          DashboardBirthday(id: 'a', name: 'Ann', date: DateTime(2026, 9, 30)),
+        ],
+      );
+      expect(
+        find.byKey(
+          ValueKey(dashboardBirthdayPastDimKey(DateTime(2026, 9, 30))),
+        ),
+        findsNothing,
+      );
+      expect(find.text('TODAY'), findsOneWidget);
+
+      // Midnight rolls the calendar day: 30 Sep is now past.
+      await pump(
+        tester,
+        const Size(1280, 800),
+        today: DateTime(2026, 10, 1),
+        birthdays: [
+          DashboardBirthday(id: 'a', name: 'Ann', date: DateTime(2026, 9, 30)),
+        ],
+      );
+      expect(
+        find.byKey(
+          ValueKey(dashboardBirthdayPastDimKey(DateTime(2026, 9, 30))),
+        ),
         findsOneWidget,
       );
     });
 
-    test('tile countdown labels', () {
-      expect(BirthdayGlassTile.daysLabel(0), 'TODAY');
-      expect(BirthdayGlassTile.daysLabel(1), 'TOMORROW');
-      expect(BirthdayGlassTile.daysLabel(12), 'IN 12 DAYS');
+    testWidgets('a month header appears when the board crosses into November', (
+      tester,
+    ) async {
+      // Thursday 15 Oct: board is Mon 12 Oct – Sun 8 Nov.
+      await pump(
+        tester,
+        const Size(1280, 800),
+        today: DateTime(2026, 10, 15),
+        birthdays: const [],
+      );
+      expect(find.text('OCTOBER'), findsOneWidget);
+      expect(find.text('NOVEMBER'), findsOneWidget);
+    });
+
+    test('cake age labels', () {
+      expect(BirthdayCakeMarker.ageLabel(34, compact: false), 'Turns 34');
+      expect(BirthdayCakeMarker.ageLabel(34, compact: true), '34');
     });
   });
 
