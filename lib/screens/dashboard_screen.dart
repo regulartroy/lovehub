@@ -9,6 +9,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import '../services/event_sanity.dart';
+import '../services/memory_photo_average_color.dart';
 import '../services/memory_photos.dart';
 import '../services/shared_streams.dart';
 
@@ -30,6 +31,7 @@ import '../widgets/dashboard/dashboard_chrome.dart';
 import '../widgets/dashboard/dashboard_day_tiles.dart';
 import '../widgets/dashboard/dashboard_controls_overlay.dart';
 import '../widgets/dashboard/dashboard_theme.dart';
+import '../widgets/dashboard/memory_photo_backdrop.dart';
 import '../widgets/dashboard/dashboard_today_answer.dart';
 import '../services/member_profile.dart';
 import '../widgets/hub_memory_image.dart';
@@ -1822,6 +1824,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildPhotosSlide(DashboardMetrics metrics) {
+    final url = _photoDeck.currentUrl;
+    final photo = url == null
+        ? const DashboardEmptyState(
+            icon: Icons.photo_outlined,
+            tint: DashboardTheme.photos,
+            title: 'No photo yet',
+            message: 'Add a picture in Gallery to fill this slide.',
+          )
+        : _photoDeck.holdingError
+        ? const DashboardEmptyState(
+            icon: Icons.broken_image_outlined,
+            tint: DashboardTheme.photos,
+            title: 'Photo could not load',
+            message: 'The next memory will appear on the next refresh.',
+          )
+        : MemoryPhotoBackdrop(
+            url: url,
+            builder: (context, overlayColor) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  HubMemoryImage(
+                    key: ValueKey(url),
+                    url: url,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                    onLoadError: _onMemoryPhotoError,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const DashboardLoadingView(
+                        label: 'Loading a memory…',
+                      );
+                    },
+                    errorBuilder: (context, error, stack) {
+                      return const DashboardLoadingView(
+                        label: 'Loading a memory…',
+                      );
+                    },
+                  ),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                      padding: EdgeInsets.all(metrics.isCompact ? 16 : 24),
+                      child: Icon(
+                        Icons.photo_camera_back,
+                        color: overlayColor,
+                        size: metrics.isCompact ? 22 : 28,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+
     return DashboardSlide(
       metrics: metrics,
       tint: DashboardTheme.photos,
@@ -1829,74 +1887,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(DashboardTheme.radiusLg),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 20,
-                    offset: Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(DashboardTheme.radiusLg),
-                child: _photoDeck.currentUrl == null
-                    ? const DashboardEmptyState(
-                        icon: Icons.photo_outlined,
-                        tint: DashboardTheme.photos,
-                        title: 'No photo yet',
-                        message: 'Add a picture in Gallery to fill this slide.',
-                      )
-                    : _photoDeck.holdingError
-                    ? const DashboardEmptyState(
-                        icon: Icons.broken_image_outlined,
-                        tint: DashboardTheme.photos,
-                        title: 'Photo could not load',
-                        message:
-                            'The next memory will appear on the next refresh.',
-                      )
-                    : Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          HubMemoryImage(
-                            key: ValueKey(_photoDeck.currentUrl),
-                            url: _photoDeck.currentUrl!,
-                            fit: BoxFit.contain,
-                            width: double.infinity,
-                            height: double.infinity,
-                            onLoadError: _onMemoryPhotoError,
-                            loadingBuilder: (context, child, progress) {
-                              if (progress == null) return child;
-                              return const DashboardLoadingView(
-                                label: 'Loading a memory…',
-                              );
-                            },
-                            errorBuilder: (context, error, stack) {
-                              return const DashboardLoadingView(
-                                label: 'Loading a memory…',
-                              );
-                            },
-                          ),
-                          Align(
-                            alignment: Alignment.bottomRight,
-                            child: Padding(
-                              padding: EdgeInsets.all(
-                                metrics.isCompact ? 16 : 24,
-                              ),
-                              child: Icon(
-                                Icons.photo_camera_back,
-                                color: Colors.white54,
-                                size: metrics.isCompact ? 22 : 28,
-                              ),
-                            ),
-                          ),
-                        ],
+            child: url == null || _photoDeck.holdingError
+                ? DecoratedBox(
+                    decoration: memoryPhotoFrameDecoration(
+                      fallbackMemoryPhotoBackground,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        DashboardTheme.radiusLg,
                       ),
-              ),
-            ),
+                      child: photo,
+                    ),
+                  )
+                : photo,
           ),
         ],
       ),
