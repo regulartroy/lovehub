@@ -1662,11 +1662,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       key: const ValueKey('birthdays-slide'),
       metrics: metrics,
       today: now,
-      birthdays: dashboardUpcomingBirthdays(
+      birthdays: dashboardBirthdaysInLookAhead(
         _eventsAll,
         now: now,
         members: _hubMembers,
-        maxCount: metrics.isCompact ? 6 : 8,
       ),
     );
   }
