@@ -221,6 +221,9 @@ class DashboardBirthdaysSlide extends StatelessWidget {
     return DashboardSlide(
       metrics: metrics,
       tint: BirthdayTimelineColors.magenta,
+      padding: metrics.slidePadding.copyWith(
+        bottom: metrics.isCompact ? 20 : 24,
+      ),
       gradient: const LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
@@ -236,14 +239,13 @@ class DashboardBirthdaysSlide extends StatelessWidget {
             title: 'BIRTHDAYS',
             trailing: _BirthdayRangeChip(label: rangeLabel),
           ),
-          SizedBox(height: metrics.isCompact ? 8 : 12),
+          SizedBox(height: metrics.isCompact ? 6 : 8),
           Expanded(
             child: _BirthdayLookAheadBoard(
               metrics: metrics,
               weeks: weeks,
               birthdays: birthdays,
               today: date,
-              rangeLabel: rangeLabel,
             ),
           ),
         ],
@@ -285,14 +287,12 @@ class _BirthdayLookAheadBoard extends StatelessWidget {
     required this.weeks,
     required this.birthdays,
     required this.today,
-    required this.rangeLabel,
   });
 
   final DashboardMetrics metrics;
   final List<List<DateTime>> weeks;
   final List<DashboardBirthday> birthdays;
   final DateTime today;
-  final String rangeLabel;
 
   Map<String, List<DashboardBirthday>> _byDay() {
     final map = <String, List<DashboardBirthday>>{};
@@ -307,8 +307,8 @@ class _BirthdayLookAheadBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compact = metrics.isCompact;
-    final rowGap = compact ? 8.0 : 10.0;
-    final monthGap = compact ? 16.0 : 22.0;
+    final rowGap = compact ? 6.0 : 8.0;
+    final monthGap = compact ? 8.0 : 10.0;
     final sections = dashboardLookAheadMonthSections(weeks, now: today);
     final byDay = _byDay();
     final hasAny = birthdays.any((b) {
@@ -318,17 +318,12 @@ class _BirthdayLookAheadBoard extends StatelessWidget {
 
     return DashboardGlassCard(
       tint: BirthdayTimelineColors.magenta,
-      padding: EdgeInsets.all(compact ? 12 : 16),
+      padding: EdgeInsets.all(compact ? 8 : 10),
       child: Column(
         key: const ValueKey('birthday-lookahead'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _BirthdayBoardLabel(
-            text: 'NEXT 4 WEEKS',
-            trailing: compact ? null : rangeLabel,
-          ),
           if (!hasAny) ...[
-            SizedBox(height: compact ? 8 : 10),
             const Text(
               'No birthdays in the next four weeks',
               key: ValueKey('birthday-lookahead-empty'),
@@ -338,8 +333,8 @@ class _BirthdayLookAheadBoard extends StatelessWidget {
                 fontStyle: FontStyle.italic,
               ),
             ),
+            SizedBox(height: compact ? 6 : 8),
           ],
-          SizedBox(height: compact ? 8 : 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,7 +376,7 @@ class _BirthdayLookAheadBoard extends StatelessWidget {
           compact: metrics.isCompact,
         ),
       ),
-      SizedBox(height: metrics.isCompact ? 8 : 10),
+      SizedBox(height: metrics.isCompact ? 4 : 6),
       for (var i = 0; i < section.weeks.length; i++) ...[
         if (i > 0) SizedBox(height: rowGap),
         Expanded(
@@ -395,59 +390,6 @@ class _BirthdayLookAheadBoard extends StatelessWidget {
         ),
       ],
     ];
-  }
-}
-
-class _BirthdayBoardLabel extends StatelessWidget {
-  const _BirthdayBoardLabel({required this.text, this.trailing});
-
-  final String text;
-  final String? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Flexible(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF8FB0C8),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.3,
-            ),
-          ),
-        ),
-        if (trailing != null) ...[
-          const SizedBox(width: 10),
-          Expanded(
-            child: Divider(
-              color: DashboardTheme.fade(Colors.white, 0.16),
-              height: 1,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              trailing!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: DashboardTheme.inkFaint,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.6,
-              ),
-            ),
-          ),
-        ] else
-          const Spacer(),
-      ],
-    );
   }
 }
 
@@ -467,9 +409,10 @@ class _BirthdayMonthHeader extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: const Color(0xFF8FB0C8),
-            fontSize: compact ? 12 : 14,
+            fontSize: compact ? 11 : 12,
             fontWeight: FontWeight.w700,
-            letterSpacing: 1.2,
+            letterSpacing: 1.1,
+            height: 1.1,
           ),
         ),
         const SizedBox(width: 10),
@@ -568,10 +511,10 @@ class _BirthdayDayCell extends StatelessWidget {
       ),
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          metrics.isCompact ? 5 : 8,
-          metrics.isCompact ? 8 : 10,
-          metrics.isCompact ? 5 : 8,
-          metrics.isCompact ? 6 : 8,
+          metrics.isCompact ? 3 : 6,
+          metrics.isCompact ? 5 : 6,
+          metrics.isCompact ? 3 : 6,
+          metrics.isCompact ? 4 : 6,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -583,33 +526,31 @@ class _BirthdayDayCell extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: labelColor,
-                fontSize: metrics.isCompact ? 10 : 12,
+                fontSize: metrics.isCompact ? 10 : 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.6,
+                height: 1.1,
               ),
             ),
-            const SizedBox(height: 2),
             Text(
               '${day.day}',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: dateColor,
-                fontSize: metrics.isCompact ? 20 : 24,
+                fontSize: metrics.isCompact ? 18 : 22,
                 fontWeight: FontWeight.w700,
                 height: 1.05,
               ),
             ),
-            SizedBox(height: metrics.isCompact ? 4 : 6),
+            SizedBox(height: metrics.isCompact ? 2 : 4),
             Expanded(
-              child: ClipRect(
-                child: _pastDim(
-                  birthdays.isEmpty
-                      ? const SizedBox.shrink()
-                      : _BirthdayCakeStack(
-                          birthdays: birthdays,
-                          compact: metrics.isCompact,
-                        ),
-                ),
+              child: _pastDim(
+                birthdays.isEmpty
+                    ? const SizedBox.shrink()
+                    : _BirthdayCakeStack(
+                        birthdays: birthdays,
+                        compact: metrics.isCompact,
+                      ),
               ),
             ),
           ],
@@ -639,19 +580,107 @@ class _BirthdayCakeStack extends StatelessWidget {
   final List<DashboardBirthday> birthdays;
   final bool compact;
 
+  static const moreKeyPrefix = 'birthday-more-';
+
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SingleChildScrollView(
-        physics: const NeverScrollableScrollPhysics(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final birthday in birthdays)
-              BirthdayCakeMarker(birthday: birthday, compact: compact),
-          ],
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (birthdays.isEmpty) return const SizedBox.shrink();
+        final moreHeight = BirthdayMoreCount.height(compact: compact);
+        final heights = [
+          for (final birthday in birthdays)
+            BirthdayCakeMarker.intrinsicHeight(
+              compact: compact,
+              hasAge: birthday.turning != null,
+            ),
+        ];
+        final shown = <Widget>[];
+        var used = 0.0;
+        for (var i = 0; i < birthdays.length; i++) {
+          final leftover = birthdays.length - i;
+          final markerHeight = heights[i];
+          final restAfterThis = leftover - 1;
+          final needMoreCue = restAfterThis > 0;
+          final fitsRest =
+              used + heights.skip(i).fold<double>(0, (a, b) => a + b) <=
+              constraints.maxHeight + 0.5;
+          if (fitsRest) {
+            shown.add(
+              BirthdayCakeMarker(birthday: birthdays[i], compact: compact),
+            );
+            used += markerHeight;
+            continue;
+          }
+          final fitsMarker = used + markerHeight <= constraints.maxHeight + 0.5;
+          final fitsMarkerAndMore =
+              used + markerHeight + moreHeight <= constraints.maxHeight + 0.5;
+          if (i == 0 && !fitsMarker) {
+            // Scale the first cake to the cell rather than clipping the name.
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.topCenter,
+              child: BirthdayCakeMarker(
+                birthday: birthdays[i],
+                compact: compact,
+              ),
+            );
+          }
+          if (fitsMarkerAndMore && needMoreCue) {
+            shown.add(
+              BirthdayCakeMarker(birthday: birthdays[i], compact: compact),
+            );
+            shown.add(
+              BirthdayMoreCount(count: restAfterThis, compact: compact),
+            );
+            break;
+          }
+          if (fitsMarker && !needMoreCue) {
+            shown.add(
+              BirthdayCakeMarker(birthday: birthdays[i], compact: compact),
+            );
+            break;
+          }
+          if (leftover > 0 && i > 0) {
+            shown.add(BirthdayMoreCount(count: leftover, compact: compact));
+          }
+          break;
+        }
+        return Align(
+          alignment: Alignment.topCenter,
+          child: Column(mainAxisSize: MainAxisSize.min, children: shown),
+        );
+      },
+    );
+  }
+}
+
+/// "+N" when a day has more birthdays than the cell can show in full.
+class BirthdayMoreCount extends StatelessWidget {
+  const BirthdayMoreCount({
+    super.key,
+    required this.count,
+    required this.compact,
+  });
+
+  final int count;
+  final bool compact;
+
+  static double height({required bool compact}) => compact ? 14.0 : 16.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '+$count',
+      key: ValueKey('${_BirthdayCakeStack.moreKeyPrefix}$count'),
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: BirthdayTimelineColors.lilac,
+        fontSize: compact ? 11 : 13,
+        fontWeight: FontWeight.w700,
+        height: 1.1,
       ),
     );
   }
@@ -672,11 +701,25 @@ class BirthdayCakeMarker extends StatelessWidget {
     return compact ? '$turning' : 'Turns $turning';
   }
 
+  static double cakeSize({required bool compact}) => compact ? 22.0 : 28.0;
+
+  static double nameSize({required bool compact}) => compact ? 11.0 : 13.0;
+
+  static double ageSize({required bool compact}) => compact ? 10.0 : 12.0;
+
+  /// Height of one marker, including the gap under it.
+  static double intrinsicHeight({required bool compact, required bool hasAge}) {
+    final cake = cakeSize(compact: compact);
+    final name = nameSize(compact: compact) * 1.15;
+    final age = hasAge ? ageSize(compact: compact) * 1.1 : 0.0;
+    final pad = compact ? 2.0 : 4.0;
+    return cake + name + age + pad;
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = dashboardBirthdayShortName(birthday.name);
     final turning = birthday.turning;
-    final cakeSize = compact ? 22.0 : 28.0;
     return Padding(
       padding: EdgeInsets.only(bottom: compact ? 2 : 4),
       child: Column(
@@ -684,7 +727,7 @@ class BirthdayCakeMarker extends StatelessWidget {
         children: [
           Icon(
             Icons.cake_rounded,
-            size: cakeSize,
+            size: cakeSize(compact: compact),
             color: BirthdayTimelineColors.magenta,
           ),
           Text(
@@ -694,7 +737,7 @@ class BirthdayCakeMarker extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: DashboardTheme.ink,
-              fontSize: compact ? 11 : 13,
+              fontSize: nameSize(compact: compact),
               fontWeight: FontWeight.w700,
               height: 1.15,
             ),
@@ -707,7 +750,7 @@ class BirthdayCakeMarker extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: BirthdayTimelineColors.lilac,
-                fontSize: compact ? 10 : 12,
+                fontSize: ageSize(compact: compact),
                 fontWeight: FontWeight.w600,
                 height: 1.1,
               ),
