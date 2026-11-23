@@ -27,6 +27,34 @@ Map<String, dynamic> _event(String summary, DateTime start, {String? id}) => {
   'category': 'birthday',
 };
 
+void _expectInside(WidgetTester tester, Finder inner, Finder outer) {
+  final innerRect = tester.getRect(inner);
+  final outerRect = tester.getRect(outer);
+  expect(
+    innerRect.top,
+    greaterThanOrEqualTo(outerRect.top - 0.5),
+    reason: '$inner top ${innerRect.top} is above $outer ${outerRect.top}',
+  );
+  expect(
+    innerRect.bottom,
+    lessThanOrEqualTo(outerRect.bottom + 0.5),
+    reason:
+        '$inner bottom ${innerRect.bottom} overflows $outer ${outerRect.bottom}',
+  );
+  expect(
+    innerRect.left,
+    greaterThanOrEqualTo(outerRect.left - 0.5),
+    reason: '$inner left ${innerRect.left} is left of $outer ${outerRect.left}',
+  );
+  expect(
+    innerRect.right,
+    lessThanOrEqualTo(outerRect.right + 0.5),
+    reason:
+        '$inner right ${innerRect.right} overflows $outer ${outerRect.right}',
+  );
+  expect(innerRect.height, greaterThan(6), reason: '$inner is too short');
+}
+
 void main() {
   group('birthday data', () {
     test('splits the projected "Name (age)" title', () {
@@ -190,7 +218,7 @@ void main() {
       await pump(tester, const Size(1280, 800));
       expect(find.byKey(const ValueKey('birthday-lookahead')), findsOneWidget);
       expect(find.text('BIRTHDAYS'), findsOneWidget);
-      expect(find.text('NEXT 4 WEEKS'), findsOneWidget);
+      expect(find.text('NEXT 4 WEEKS'), findsNothing);
       expect(find.text('TODAY'), findsOneWidget);
       expect(find.text('OCTOBER'), findsOneWidget);
       expect(find.byType(BirthdayCakeMarker), findsNWidgets(5));
@@ -298,6 +326,119 @@ void main() {
     test('cake age labels', () {
       expect(BirthdayCakeMarker.ageLabel(34, compact: false), 'Turns 34');
       expect(BirthdayCakeMarker.ageLabel(34, compact: true), '34');
+    });
+
+    testWidgets('tablet cells show the cake, name and age without clipping', (
+      tester,
+    ) async {
+      // 23 Nov 2026 is a Monday, so the live four-week board (23 Nov–20 Dec)
+      // crosses into December and is the tighter two-header layout Tom
+      // photographed on the wall tablet.
+      const size = Size(1280, 800);
+      final today = DateTime(2026, 11, 23);
+      final friday = DateTime(2026, 11, 27);
+      await pump(
+        tester,
+        size,
+        today: today,
+        birthdays: [
+          DashboardBirthday(
+            id: 'maria',
+            name: 'Maria',
+            date: friday,
+            turning: 34,
+          ),
+        ],
+      );
+
+      final cell = find.byKey(ValueKey(dashboardBirthdayDayKey(friday)));
+      expect(cell, findsOneWidget);
+      expect(find.text('Maria'), findsOneWidget);
+      expect(find.text('Turns 34'), findsOneWidget);
+      final cake = find.descendant(
+        of: cell,
+        matching: find.byIcon(Icons.cake_rounded),
+      );
+      expect(cake, findsOneWidget);
+      _expectInside(tester, find.text('Maria'), cell);
+      _expectInside(tester, find.text('Turns 34'), cell);
+      _expectInside(tester, cake, cell);
+      expect(tester.takeException(), isNull);
+
+      final slide = tester.getRect(find.byType(DashboardBirthdaysSlide));
+      expect(
+        tester.getRect(find.text('BIRTHDAYS')).left,
+        greaterThanOrEqualTo(slide.left - 0.5),
+      );
+      final sunday = DateTime(2026, 11, 29);
+      _expectInside(
+        tester,
+        find.byKey(ValueKey(dashboardBirthdayDayKey(sunday))),
+        find.byType(DashboardBirthdaysSlide),
+      );
+    });
+
+    testWidgets('phone also keeps the name visible in the cell', (
+      tester,
+    ) async {
+      const size = Size(390, 844);
+      final today = DateTime(2026, 11, 23);
+      final friday = DateTime(2026, 11, 27);
+      await pump(
+        tester,
+        size,
+        today: today,
+        birthdays: [
+          DashboardBirthday(
+            id: 'maria',
+            name: 'Maria',
+            date: friday,
+            turning: 34,
+          ),
+        ],
+      );
+      final cell = find.byKey(ValueKey(dashboardBirthdayDayKey(friday)));
+      expect(find.text('Maria'), findsOneWidget);
+      expect(find.text('34'), findsOneWidget);
+      final cake = find.descendant(
+        of: cell,
+        matching: find.byIcon(Icons.cake_rounded),
+      );
+      expect(cake, findsOneWidget);
+      _expectInside(tester, find.text('Maria'), cell);
+      _expectInside(tester, find.text('34'), cell);
+      _expectInside(tester, cake, cell);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('two birthdays on one day show the second or a +1 cue', (
+      tester,
+    ) async {
+      final day = _in(2);
+      await pump(
+        tester,
+        const Size(1280, 800),
+        birthdays: [
+          DashboardBirthday(id: 'a', name: 'Maria', date: day, turning: 34),
+          DashboardBirthday(id: 'b', name: 'Dad', date: day, turning: 66),
+        ],
+      );
+      expect(find.text('Maria'), findsOneWidget);
+      final second = find.text('Dad');
+      final more = find.text('+1');
+      expect(
+        second.evaluate().isNotEmpty || more.evaluate().isNotEmpty,
+        isTrue,
+        reason: 'the cell should show Dad in full, or +1 if both do not fit',
+      );
+      final cell = find.byKey(ValueKey(dashboardBirthdayDayKey(day)));
+      _expectInside(tester, find.text('Maria'), cell);
+      if (second.evaluate().isNotEmpty) {
+        _expectInside(tester, second, cell);
+      } else {
+        _expectInside(tester, more, cell);
+      }
+      expect(tester.takeException(), isNull);
     });
   });
 
