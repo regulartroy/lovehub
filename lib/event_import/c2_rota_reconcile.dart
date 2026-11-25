@@ -19,8 +19,10 @@ const c2RotaPriorDays = 14;
 const c2RotaNextDays = 90;
 const c2RotaDefaultMaxConfirms = 12;
 const c2RotaDefaultMaxDeletes = 8;
+const c2RotaDefaultMaxUpdates = 12;
 const c2RotaAbsoluteMaxConfirms = 40;
 const c2RotaAbsoluteMaxDeletes = 40;
+const c2RotaAbsoluteMaxUpdates = 40;
 const c2RotaMaxFeedDays = 500;
 const c2RotaMaxScopedEvents = 500;
 const c2RotaMaxFeedAge = Duration(hours: 6);
@@ -117,6 +119,7 @@ enum C2ShowStatus { on, cancelled }
 enum C2RotaActionKind {
   confirm,
   delete,
+  update,
   keepTentative,
   keepConfirmed,
   skip,
@@ -177,6 +180,7 @@ class C2StoredEvent {
     this.externalId,
     this.summary,
     this.startUtc,
+    this.endUtc,
     this.status,
     this.updateTime,
     this.restFields,
@@ -187,6 +191,7 @@ class C2StoredEvent {
   final String? externalId;
   final String? summary;
   final DateTime? startUtc;
+  final DateTime? endUtc;
   final String? status;
   final String? updateTime;
 
@@ -200,6 +205,7 @@ class C2StoredEvent {
       externalId: externalId,
       summary: summary,
       startUtc: startUtc,
+      endUtc: endUtc,
       status: status,
       updateTime: updateTime,
       restFields: restFields,
@@ -219,6 +225,9 @@ class C2RotaAction {
     this.feedStatus,
     this.event,
     this.day,
+    this.newSummary,
+    this.newStartUtc,
+    this.newEndUtc,
   });
 
   final C2RotaActionKind kind;
@@ -231,6 +240,16 @@ class C2RotaAction {
   final String? feedStatus;
   final C2StoredEvent? event;
   final C2FeedDay? day;
+
+  /// Calendar title to write. Null means leave the stored summary.
+  final String? newSummary;
+
+  /// New `start` / `end` in UTC. Null means leave the stored times.
+  final DateTime? newStartUtc;
+  final DateTime? newEndUtc;
+
+  bool get hasFieldUpdates =>
+      newSummary != null || newStartUtc != null || newEndUtc != null;
 }
 
 class C2RotaPlan {
@@ -242,6 +261,7 @@ class C2RotaPlan {
     required this.importedCount,
     required this.maxConfirms,
     required this.maxDeletes,
+    required this.maxUpdates,
     required this.staleReason,
     required this.blockReason,
   });
@@ -253,6 +273,7 @@ class C2RotaPlan {
   final int importedCount;
   final int maxConfirms;
   final int maxDeletes;
+  final int maxUpdates;
   final String? staleReason;
   final String? blockReason;
 
@@ -262,10 +283,16 @@ class C2RotaPlan {
   List<C2RotaAction> get deletes =>
       actions.where((a) => a.kind == C2RotaActionKind.delete).toList();
 
-  bool get hasMutations => confirms.isNotEmpty || deletes.isNotEmpty;
+  List<C2RotaAction> get updates =>
+      actions.where((a) => a.hasFieldUpdates).toList();
+
+  bool get hasMutations =>
+      confirms.isNotEmpty || deletes.isNotEmpty || updates.isNotEmpty;
 
   bool get preconditionsReady =>
-      confirms.every(_ready) && deletes.every(_ready);
+      confirms.every(_ready) &&
+      deletes.every(_ready) &&
+      updates.every(_ready);
 
   /// True when an apply may build a commit. A no-op plan is ready.
   bool get canCommit =>
@@ -273,7 +300,7 @@ class C2RotaPlan {
 
   String get planKey {
     final lines = <String>[
-      for (final action in [...confirms, ...deletes])
+      for (final action in [...confirms, ...deletes, ...updates])
         '${action.kind.name}:${action.docId}',
     ]..sort();
     return lines.join('|');
@@ -301,6 +328,7 @@ class C2ReconcileCommand {
     required this.jsonOut,
     required this.maxConfirms,
     required this.maxDeletes,
+    required this.maxUpdates,
     required this.now,
   });
 
@@ -315,6 +343,7 @@ class C2ReconcileCommand {
   final String? jsonOut;
   final int maxConfirms;
   final int maxDeletes;
+  final int maxUpdates;
   final DateTime? now;
 
   bool get offlineFixture =>
@@ -366,6 +395,99 @@ String? c2SummaryShowSlug(String? summary) {
   if (prefixed != null) text = prefixed.group(1)!.trim();
   final slug = c2CanonicalShowSlug(c2ShowSlug(text));
   return slug.isEmpty ? null : slug;
+}
+
+const _placeholderSlugs = {
+  'tba',
+  'tbc',
+  'tbd',
+  'to-be-announced',
+  'to-be-confirmed',
+};
+
+/// True when the stored title is still a TBA / TBC placeholder.
+bool c2IsPlaceholderSummary(String? summary) {
+  final slug = c2SummaryShowSlug(summary);
+  return slug != null && _placeholderSlugs.contains(slug);
+}
+
+/// Calendar title written for a feed show, e.g. `C2 — Andrew Cushin`.
+String c2RotaEventSummary(String show) {
+  final pretty = c2TitleCaseShow(show);
+  return pretty.isEmpty ? 'C2 —' : 'C2 — $pretty';
+}
+
+/// Title-case a feed show name. Extra spaces are folded. Words that start
+/// with a digit keep the letters after the digits in lower case (`80s`).
+String c2TitleCaseShow(String raw) {
+  final normalised = raw
+      .trim()
+      .replaceAll(RegExp(r'\(\s+'), '(')
+      .replaceAll(RegExp(r'\s+\)'), ')');
+  final words = normalised.split(RegExp(r'\s+'));
+  return [
+    for (final word in words)
+      if (word.isNotEmpty) _titleCaseWord(word),
+  ].join(' ');
+}
+
+String _titleCaseWord(String word) {
+  final units = word.split('');
+  var seenLetter = false;
+  var startedWithDigit = false;
+  final out = StringBuffer();
+  for (final char in units) {
+    final lower = char.toLowerCase();
+    final isLetter = lower != char.toUpperCase();
+    final isDigit = char.compareTo('0') >= 0 && char.compareTo('9') <= 0;
+    if (isDigit && !seenLetter) {
+      startedWithDigit = true;
+      out.write(char);
+      continue;
+    }
+    if (!isLetter) {
+      out.write(char);
+      continue;
+    }
+    if (!seenLetter && !startedWithDigit) {
+      out.write(char.toUpperCase());
+      seenLetter = true;
+    } else {
+      out.write(lower);
+      seenLetter = true;
+    }
+  }
+  return out.toString();
+}
+
+/// `HH:mm` or `H:mm` in a 24-hour clock, otherwise null.
+({int hour, int minute})? parseC2ClockHm(String? raw) {
+  if (raw == null) return null;
+  final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(raw.trim());
+  if (match == null) return null;
+  final hour = int.parse(match.group(1)!);
+  final minute = int.parse(match.group(2)!);
+  if (hour > 23 || minute > 59) return null;
+  return (hour: hour, minute: minute);
+}
+
+/// Europe/London wall time on [date] as UTC. Returns null when that
+/// wall time does not exist (the spring-forward gap).
+DateTime? londonWallTimeToUtc(LondonDate date, int hour, int minute) {
+  var utc = DateTime.utc(date.year, date.month, date.day, hour, minute);
+  if (londonIsBst(utc)) {
+    utc = utc.subtract(const Duration(hours: 1));
+  }
+  if (londonCivilDate(utc) != date) return null;
+  final localHour = utc.add(Duration(hours: londonIsBst(utc) ? 1 : 0)).hour;
+  if (localHour != hour) return null;
+  return utc;
+}
+
+bool c2IsDefaultGigStart(DateTime startUtc, LondonDate date) {
+  final expected = londonWallTimeToUtc(date, 15, 0);
+  if (expected == null) return false;
+  return startUtc.toUtc() == expected;
 }
 
 /// Raw bearer token from a secret file. The message never echoes [raw].
@@ -729,6 +851,7 @@ C2RotaPlan planC2RotaReconcile({
   required DateTime now,
   int maxConfirms = c2RotaDefaultMaxConfirms,
   int maxDeletes = c2RotaDefaultMaxDeletes,
+  int maxUpdates = c2RotaDefaultMaxUpdates,
 }) {
   final window = londonReconcileWindow(
     now,
@@ -762,6 +885,7 @@ C2RotaPlan planC2RotaReconcile({
       importedCount: imported.length,
       maxConfirms: maxConfirms,
       maxDeletes: maxDeletes,
+      maxUpdates: maxUpdates,
       staleReason: staleReason,
       blockReason:
           'imported c2-rota events (${imported.length}) exceed '
@@ -820,6 +944,7 @@ C2RotaPlan planC2RotaReconcile({
       importedCount: imported.length,
       maxConfirms: maxConfirms,
       maxDeletes: maxDeletes,
+      maxUpdates: maxUpdates,
       staleReason: staleReason,
       extraBlock:
           'feed has no shows inside $window (Europe/London); nothing written',
@@ -841,21 +966,12 @@ C2RotaPlan planC2RotaReconcile({
   }
 
   final matchedIds = <String>{};
+  final unmatchedFeedIndexes = <int>[];
   for (var i = 0; i < inWindowDays.length; i++) {
     final day = inWindowDays[i];
     final rowHits = hits[i]!;
     if (rowHits.isEmpty) {
-      actions.add(
-        C2RotaAction(
-          kind: C2RotaActionKind.unmatchedFeed,
-          reason: 'no imported c2-rota event for this show; not created',
-          date: day.date.ymd,
-          show: day.show,
-          tom: day.tomWire,
-          feedStatus: day.statusWire,
-          day: day,
-        ),
-      );
+      unmatchedFeedIndexes.add(i);
       continue;
     }
     final ambiguous =
@@ -882,7 +998,82 @@ C2RotaPlan planC2RotaReconcile({
     }
     final scoped = rowHits.single;
     matchedIds.add(scoped.event.docId);
-    actions.add(_decision(day, scoped.event, today: today));
+    actions.add(
+      _decision(
+        day,
+        scoped.event,
+        today: today,
+        renamePlaceholder: false,
+      ),
+    );
+  }
+
+  final placeholderByDate = <String, List<_Scoped>>{};
+  for (final scoped in ready) {
+    if (matchedIds.contains(scoped.event.docId)) continue;
+    if (matchedIds.contains('ambiguous:${scoped.event.docId}')) continue;
+    if (!c2IsPlaceholderSummary(scoped.event.summary)) continue;
+    placeholderByDate
+        .putIfAbsent(scoped.identity!.date.ymd, () => [])
+        .add(scoped);
+  }
+  final unmatchedByDate = <String, List<int>>{};
+  for (final i in unmatchedFeedIndexes) {
+    unmatchedByDate
+        .putIfAbsent(inWindowDays[i].date.ymd, () => [])
+        .add(i);
+  }
+  final rematchedFeed = <int>{};
+  for (final entry in unmatchedByDate.entries) {
+    final feedIndexes = entry.value;
+    final placeholders = placeholderByDate[entry.key] ?? const <_Scoped>[];
+    if (feedIndexes.length == 1 && placeholders.length == 1) {
+      final day = inWindowDays[feedIndexes.single];
+      final scoped = placeholders.single;
+      rematchedFeed.add(feedIndexes.single);
+      matchedIds.add(scoped.event.docId);
+      actions.add(
+        _decision(
+          day,
+          scoped.event,
+          today: today,
+          renamePlaceholder: true,
+        ),
+      );
+      continue;
+    }
+    if (feedIndexes.length > 1 && placeholders.isNotEmpty) {
+      for (final scoped in placeholders) {
+        if (!matchedIds.add('ambiguous:${scoped.event.docId}')) continue;
+        actions.add(
+          C2RotaAction(
+            kind: C2RotaActionKind.skip,
+            reason:
+                'ambiguous placeholder match on ${entry.key}; left untouched',
+            docId: scoped.event.docId,
+            summary: scoped.event.summary,
+            date: entry.key,
+            event: scoped.event,
+          ),
+        );
+      }
+    }
+  }
+
+  for (final i in unmatchedFeedIndexes) {
+    if (rematchedFeed.contains(i)) continue;
+    final day = inWindowDays[i];
+    actions.add(
+      C2RotaAction(
+        kind: C2RotaActionKind.unmatchedFeed,
+        reason: 'no imported c2-rota event for this show; not created',
+        date: day.date.ymd,
+        show: day.show,
+        tom: day.tomWire,
+        feedStatus: day.statusWire,
+        day: day,
+      ),
+    );
   }
 
   for (final scoped in ready) {
@@ -917,6 +1108,7 @@ C2RotaPlan planC2RotaReconcile({
     importedCount: imported.length,
     maxConfirms: maxConfirms,
     maxDeletes: maxDeletes,
+    maxUpdates: maxUpdates,
     staleReason: staleReason,
   );
 }
@@ -925,11 +1117,31 @@ C2RotaAction _decision(
   C2FeedDay day,
   C2StoredEvent event, {
   required LondonDate today,
+  required bool renamePlaceholder,
 }) {
   final tentative = c2IsTentativeStatus(event.status);
   final remove =
       day.showStatus == C2ShowStatus.cancelled ||
       day.tom == C2TomState.notWorking;
+  // A TBA title that now names a show Tom is not working, or a cancelled
+  // show, is left untouched. Rematching would otherwise rename it and
+  // the next run would delete it. Absence of a slug match is not a
+  // cancellation.
+  if (renamePlaceholder && remove) {
+    return C2RotaAction(
+      kind: C2RotaActionKind.skip,
+      reason:
+          'placeholder title no longer matches a working show; left untouched',
+      docId: event.docId,
+      summary: event.summary,
+      date: day.date.ymd,
+      show: day.show,
+      tom: day.tomWire,
+      feedStatus: day.statusWire,
+      event: event,
+      day: day,
+    );
+  }
   final base = C2RotaAction(
     kind: C2RotaActionKind.skip,
     reason: '',
@@ -942,12 +1154,13 @@ C2RotaAction _decision(
     event: event,
     day: day,
   );
+  late final C2RotaAction decided;
   if (remove) {
     if (tentative) {
       // Past history stays as stored. Deletes apply only to today and future
       // Europe/London dates. Confirming a past worked show is still allowed.
       if (day.date < today) {
-        return C2RotaAction(
+        decided = C2RotaAction(
           kind: C2RotaActionKind.keepTentative,
           reason: 'before today; not deleted',
           docId: base.docId,
@@ -959,12 +1172,29 @@ C2RotaAction _decision(
           event: event,
           day: day,
         );
+      } else {
+        final why = day.showStatus == C2ShowStatus.cancelled
+            ? 'show cancelled'
+            : 'tom=not_working';
+        decided = C2RotaAction(
+          kind: C2RotaActionKind.delete,
+          reason: why,
+          docId: base.docId,
+          summary: base.summary,
+          date: base.date,
+          show: base.show,
+          tom: base.tom,
+          feedStatus: base.feedStatus,
+          event: event,
+          day: day,
+        );
       }
+    } else {
       final why = day.showStatus == C2ShowStatus.cancelled
-          ? 'show cancelled'
-          : 'tom=not_working';
-      return C2RotaAction(
-        kind: C2RotaActionKind.delete,
+          ? 'left confirmed; show cancelled'
+          : 'left confirmed; tom=not_working';
+      decided = C2RotaAction(
+        kind: C2RotaActionKind.keepConfirmed,
         reason: why,
         docId: base.docId,
         summary: base.summary,
@@ -976,25 +1206,10 @@ C2RotaAction _decision(
         day: day,
       );
     }
-    final why = day.showStatus == C2ShowStatus.cancelled
-        ? 'left confirmed; show cancelled'
-        : 'left confirmed; tom=not_working';
-    return C2RotaAction(
-      kind: C2RotaActionKind.keepConfirmed,
-      reason: why,
-      docId: base.docId,
-      summary: base.summary,
-      date: base.date,
-      show: base.show,
-      tom: base.tom,
-      feedStatus: base.feedStatus,
-      event: event,
-      day: day,
-    );
-  }
-  if (day.tom == C2TomState.working && day.showStatus == C2ShowStatus.on) {
+  } else if (day.tom == C2TomState.working &&
+      day.showStatus == C2ShowStatus.on) {
     if (tentative) {
-      return C2RotaAction(
+      decided = C2RotaAction(
         kind: C2RotaActionKind.confirm,
         reason: 'tom=working status=on',
         docId: base.docId,
@@ -1006,22 +1221,22 @@ C2RotaAction _decision(
         event: event,
         day: day,
       );
+    } else {
+      decided = C2RotaAction(
+        kind: C2RotaActionKind.keepConfirmed,
+        reason: 'already confirmed',
+        docId: base.docId,
+        summary: base.summary,
+        date: base.date,
+        show: base.show,
+        tom: base.tom,
+        feedStatus: base.feedStatus,
+        event: event,
+        day: day,
+      );
     }
-    return C2RotaAction(
-      kind: C2RotaActionKind.keepConfirmed,
-      reason: 'already confirmed',
-      docId: base.docId,
-      summary: base.summary,
-      date: base.date,
-      show: base.show,
-      tom: base.tom,
-      feedStatus: base.feedStatus,
-      event: event,
-      day: day,
-    );
-  }
-  if (tentative) {
-    return C2RotaAction(
+  } else if (tentative) {
+    decided = C2RotaAction(
       kind: C2RotaActionKind.keepTentative,
       reason: 'tom=undecided',
       docId: base.docId,
@@ -1033,19 +1248,139 @@ C2RotaAction _decision(
       event: event,
       day: day,
     );
+  } else {
+    decided = C2RotaAction(
+      kind: C2RotaActionKind.keepConfirmed,
+      reason: 'left confirmed; tom=undecided',
+      docId: base.docId,
+      summary: base.summary,
+      date: base.date,
+      show: base.show,
+      tom: base.tom,
+      feedStatus: base.feedStatus,
+      event: event,
+      day: day,
+    );
+  }
+  return _withFieldUpdates(
+    decided,
+    day: day,
+    event: event,
+    today: today,
+    renamePlaceholder: renamePlaceholder,
+  );
+}
+
+C2RotaAction _withFieldUpdates(
+  C2RotaAction action, {
+  required C2FeedDay day,
+  required C2StoredEvent event,
+  required LondonDate today,
+  required bool renamePlaceholder,
+}) {
+  if (action.kind == C2RotaActionKind.delete ||
+      action.kind == C2RotaActionKind.skip) {
+    return action;
+  }
+  String? newSummary;
+  if (renamePlaceholder) {
+    final next = c2RotaEventSummary(day.show);
+    if (next != (event.summary ?? '').trim()) {
+      newSummary = next;
+    }
+  }
+  final times = _suggestedTimes(day, event, today: today);
+  DateTime? newStart;
+  DateTime? newEnd;
+  if (times != null) {
+    final allowTime =
+        renamePlaceholder || c2IsDefaultGigStart(event.startUtc!, day.date);
+    if (allowTime) {
+      newStart = times.start;
+      newEnd = times.end;
+    }
+  }
+  if (newSummary == null && newStart == null) return action;
+  final bits = <String>[
+    if (newSummary != null)
+      'summary ${(event.summary ?? '').trim()} -> $newSummary',
+    if (newStart != null)
+      'time ${event.startUtc!.toUtc().toIso8601String()} -> '
+          '${newStart.toUtc().toIso8601String()}',
+  ];
+  final detail = bits.join('; ');
+  if (action.kind == C2RotaActionKind.confirm) {
+    return C2RotaAction(
+      kind: C2RotaActionKind.confirm,
+      reason: '${action.reason}; $detail',
+      docId: action.docId,
+      summary: action.summary,
+      date: action.date,
+      show: action.show,
+      tom: action.tom,
+      feedStatus: action.feedStatus,
+      event: event,
+      day: day,
+      newSummary: newSummary,
+      newStartUtc: newStart,
+      newEndUtc: newEnd,
+    );
   }
   return C2RotaAction(
-    kind: C2RotaActionKind.keepConfirmed,
-    reason: 'left confirmed; tom=undecided',
-    docId: base.docId,
-    summary: base.summary,
-    date: base.date,
-    show: base.show,
-    tom: base.tom,
-    feedStatus: base.feedStatus,
+    kind: C2RotaActionKind.update,
+    reason: detail,
+    docId: action.docId,
+    summary: action.summary,
+    date: action.date,
+    show: action.show,
+    tom: action.tom,
+    feedStatus: action.feedStatus,
     event: event,
     day: day,
+    newSummary: newSummary,
+    newStartUtc: newStart,
+    newEndUtc: newEnd,
   );
+}
+
+/// Suggested start/end when the feed has a usable load-in. Times are only
+/// proposed for today and future Europe/London dates. Duration is kept
+/// unless the feed also has a finish. Overnight finish values wrap.
+({DateTime start, DateTime end})? _suggestedTimes(
+  C2FeedDay day,
+  C2StoredEvent event, {
+  required LondonDate today,
+}) {
+  if (day.date < today) return null;
+  final loadIn = parseC2ClockHm(day.loadIn);
+  if (loadIn == null) return null;
+  if (loadIn.hour < 8 || loadIn.hour > 23) return null;
+  if (event.startUtc == null || event.endUtc == null) return null;
+  final start = londonWallTimeToUtc(day.date, loadIn.hour, loadIn.minute);
+  if (start == null) return null;
+  DateTime end;
+  final finish = parseC2ClockHm(day.finish);
+  if (finish != null) {
+    var finishDate = day.date;
+    final loadMinutes = loadIn.hour * 60 + loadIn.minute;
+    final finishMinutes = finish.hour * 60 + finish.minute;
+    if (finishMinutes <= loadMinutes) {
+      finishDate = day.date.addDays(1);
+    }
+    final parsed = londonWallTimeToUtc(
+      finishDate,
+      finish.hour,
+      finish.minute,
+    );
+    if (parsed == null) return null;
+    end = parsed;
+  } else {
+    end = start.add(event.endUtc!.toUtc().difference(event.startUtc!.toUtc()));
+  }
+  if (start == event.startUtc!.toUtc() && end == event.endUtc!.toUtc()) {
+    return null;
+  }
+  return (start: start, end: end);
 }
 
 String? _staleReason(DateTime generatedAt, DateTime now) {
@@ -1069,6 +1404,7 @@ C2RotaPlan _finish({
   required int importedCount,
   required int maxConfirms,
   required int maxDeletes,
+  required int maxUpdates,
   required String? staleReason,
   String? extraBlock,
 }) {
@@ -1077,13 +1413,16 @@ C2RotaPlan _finish({
       .where((a) => a.kind == C2RotaActionKind.confirm)
       .length;
   final deletes = sorted.where((a) => a.kind == C2RotaActionKind.delete).length;
+  final updates = sorted.where((a) => a.hasFieldUpdates).length;
   final blocks = <String>[
     if (extraBlock != null) extraBlock,
     if (staleReason != null) 'feed is stale ($staleReason)',
-    if (confirms > maxConfirms || deletes > maxDeletes)
-      'batch would confirm $confirms and delete $deletes, '
-          'above the cap of $maxConfirms confirms / $maxDeletes deletes; '
-          'nothing written',
+    if (confirms > maxConfirms ||
+        deletes > maxDeletes ||
+        updates > maxUpdates)
+      'batch would confirm $confirms, delete $deletes, and update $updates, '
+          'above the cap of $maxConfirms confirms / $maxDeletes deletes / '
+          '$maxUpdates updates; nothing written',
   ];
   return C2RotaPlan(
     generatedAt: feed.generatedAt,
@@ -1093,6 +1432,7 @@ C2RotaPlan _finish({
     importedCount: importedCount,
     maxConfirms: maxConfirms,
     maxDeletes: maxDeletes,
+    maxUpdates: maxUpdates,
     staleReason: staleReason,
     blockReason: blocks.isEmpty ? null : blocks.join('; '),
   );
@@ -1130,8 +1470,10 @@ String renderC2RotaPlan(
   buffer
     ..writeln()
     ..writeln(
-      'writes: ${plan.confirms.length} confirm, ${plan.deletes.length} delete '
-      '(caps ${plan.maxConfirms} confirm / ${plan.maxDeletes} delete)',
+      'writes: ${plan.confirms.length} confirm, ${plan.deletes.length} delete, '
+      '${plan.updates.length} update '
+      '(caps ${plan.maxConfirms} confirm / ${plan.maxDeletes} delete / '
+      '${plan.maxUpdates} update)',
     );
   if (plan.blockReason != null) {
     buffer.writeln('apply refused: ${plan.blockReason}');
@@ -1153,6 +1495,7 @@ String _renderAction(C2RotaAction action) {
   final label = switch (action.kind) {
     C2RotaActionKind.confirm => 'CONFIRM',
     C2RotaActionKind.delete => 'DELETE',
+    C2RotaActionKind.update => 'UPDATE',
     C2RotaActionKind.keepTentative => 'KEEP',
     C2RotaActionKind.keepConfirmed => 'KEEP',
     C2RotaActionKind.skip => 'SKIP',
@@ -1161,7 +1504,10 @@ String _renderAction(C2RotaAction action) {
   final id = action.docId ?? action.date ?? '-';
   final title = action.summary ?? action.show ?? '';
   final detail = switch (action.kind) {
-    C2RotaActionKind.confirm => 'tentative -> confirmed',
+    C2RotaActionKind.confirm => action.hasFieldUpdates
+        ? 'tentative -> confirmed; ${action.reason}'
+        : 'tentative -> confirmed',
+    C2RotaActionKind.update => action.reason,
     C2RotaActionKind.keepTentative => 'left tentative (${action.reason})',
     _ => action.reason,
   };
@@ -1182,6 +1528,11 @@ Map<String, Object?> c2RotaPlanJson(C2RotaPlan plan) {
     'show': action.show,
     'summary': action.summary,
     'reason': action.reason,
+    if (action.newSummary != null) 'newSummary': action.newSummary,
+    if (action.newStartUtc != null)
+      'newStart': action.newStartUtc!.toUtc().toIso8601String(),
+    if (action.newEndUtc != null)
+      'newEnd': action.newEndUtc!.toUtc().toIso8601String(),
   };
   return {
     'canCommit': plan.canCommit,
@@ -1191,6 +1542,7 @@ Map<String, Object?> c2RotaPlanJson(C2RotaPlan plan) {
     'window': {'start': plan.window.start.ymd, 'end': plan.window.end.ymd},
     'confirms': [for (final action in plan.confirms) action.docId],
     'deletes': [for (final action in plan.deletes) action.docId],
+    'updates': [for (final action in plan.updates) action.docId],
     'actions': [for (final action in plan.actions) brief(action)],
   };
 }
@@ -1245,7 +1597,11 @@ List<Map<String, dynamic>> c2RotaCommitWrites({
     );
   }
 
-  final mutations = [...plan.confirms, ...plan.deletes]
+  final mutationById = <String, C2RotaAction>{
+    for (final action in [...plan.confirms, ...plan.deletes, ...plan.updates])
+      action.docId!: action,
+  };
+  final mutations = mutationById.values.toList()
     ..sort((a, b) => a.docId!.compareTo(b.docId!));
   final writes = <Map<String, dynamic>>[
     for (final action in mutations) _mutationWrite(projectId, hubId, action),
@@ -1276,16 +1632,31 @@ Map<String, dynamic> _mutationWrite(
       'currentDocument': {'updateTime': updateTime},
     };
   }
+  final fields = <String, dynamic>{};
+  final mask = <String>[];
+  if (action.kind == C2RotaActionKind.confirm) {
+    fields['status'] = {'stringValue': eventStatusConfirmed};
+    mask.add('status');
+  }
+  if (action.newSummary != null) {
+    fields['summary'] = {'stringValue': action.newSummary};
+    mask.add('summary');
+  }
+  if (action.newStartUtc != null) {
+    fields['start'] = {
+      'timestampValue': action.newStartUtc!.toUtc().toIso8601String(),
+    };
+    mask.add('start');
+  }
+  if (action.newEndUtc != null) {
+    fields['end'] = {
+      'timestampValue': action.newEndUtc!.toUtc().toIso8601String(),
+    };
+    mask.add('end');
+  }
   return {
-    'update': {
-      'name': name,
-      'fields': {
-        'status': {'stringValue': eventStatusConfirmed},
-      },
-    },
-    'updateMask': {
-      'fieldPaths': ['status'],
-    },
+    'update': {'name': name, 'fields': fields},
+    'updateMask': {'fieldPaths': mask},
     'currentDocument': {'updateTime': updateTime},
   };
 }
@@ -1312,6 +1683,7 @@ Map<String, dynamic> _auditWrite({
     'planKey': {'stringValue': plan?.planKey ?? reverts ?? ''},
     'confirmCount': {'integerValue': '${plan?.confirms.length ?? 0}'},
     'deleteCount': {'integerValue': '${plan?.deletes.length ?? 0}'},
+    'updateCount': {'integerValue': '${plan?.updates.length ?? 0}'},
     'changesJson': {'stringValue': jsonEncode(_changeRecords(mutations))},
   };
   return {
@@ -1324,7 +1696,11 @@ List<Map<String, Object?>> _changeRecords(List<C2RotaAction> mutations) {
   return [
     for (final action in mutations)
       {
-        'op': action.kind == C2RotaActionKind.delete ? 'delete' : 'confirm',
+        'op': action.kind == C2RotaActionKind.delete
+            ? 'delete'
+            : action.kind == C2RotaActionKind.confirm
+            ? 'confirm'
+            : 'update',
         'docId': action.docId,
         'summary': action.summary,
         'date': action.date,
@@ -1334,6 +1710,13 @@ List<Map<String, Object?>> _changeRecords(List<C2RotaAction> mutations) {
         'beforeStatus': action.event?.status,
         'updateTime': action.event?.updateTime,
         'beforeFields': action.event?.restFields,
+        'newSummary': action.newSummary,
+        'patchedFields': [
+          if (action.kind == C2RotaActionKind.confirm) 'status',
+          if (action.newSummary != null) 'summary',
+          if (action.newStartUtc != null) 'start',
+          if (action.newEndUtc != null) 'end',
+        ],
       },
   ];
 }
@@ -1354,12 +1737,14 @@ class C2AuditChange {
     required this.docId,
     required this.beforeFields,
     required this.beforeStatus,
+    this.patchedFields = const [],
   });
 
   final String op;
   final String docId;
   final Map<String, dynamic> beforeFields;
   final String? beforeStatus;
+  final List<String> patchedFields;
 }
 
 class C2RotaAudit {
@@ -1453,6 +1838,7 @@ C2StoredEvent c2EventFromRestDocument(Map<String, dynamic> document) {
     externalId: stringField('externalId'),
     summary: stringField('summary'),
     startUtc: timestampField('start'),
+    endUtc: timestampField('end'),
     status: stringField('status'),
     updateTime: updateTime is String ? updateTime : null,
     restFields: fields,
@@ -1492,6 +1878,20 @@ List<C2StoredEvent> parseC2EventFixture(Object? decoded) {
         throw C2RotaFeedException('events[$i].start is not a timestamp.');
       }
     }
+    DateTime? end;
+    final endRaw = map['end'];
+    if (endRaw != null) {
+      if (endRaw is! String) {
+        throw C2RotaFeedException(
+          'events[$i].end must be an ISO-8601 string.',
+        );
+      }
+      try {
+        end = DateTime.parse(endRaw.trim()).toUtc();
+      } on FormatException {
+        throw C2RotaFeedException('events[$i].end is not a timestamp.');
+      }
+    }
     final status = map['status'];
     if (status != null && status is! String) {
       throw C2RotaFeedException('events[$i].status must be a string.');
@@ -1507,6 +1907,7 @@ List<C2StoredEvent> parseC2EventFixture(Object? decoded) {
             : null,
         summary: map['summary'] is String ? map['summary'] as String : null,
         startUtc: start,
+        endUtc: end,
         status: status as String?,
         updateTime: map['updateTime'] is String
             ? map['updateTime'] as String
@@ -1570,16 +1971,26 @@ C2RotaAudit parseC2RotaAuditDocument({
     if (op is! String || docId is! String || before is! Map) {
       throw C2RotaFeedException('Audit $runId is missing a before-image.');
     }
-    if (op != 'confirm' && op != 'delete') {
+    if (op != 'confirm' && op != 'delete' && op != 'update') {
       throw C2RotaFeedException('Audit $runId has an unknown change.');
     }
     final beforeStatus = change['beforeStatus'];
+    final patchedRaw = change['patchedFields'];
+    final patched = <String>[];
+    if (patchedRaw is List) {
+      for (final item in patchedRaw) {
+        if (item is String && item.isNotEmpty) patched.add(item);
+      }
+    } else if (op == 'confirm') {
+      patched.add('status');
+    }
     changes.add(
       C2AuditChange(
         op: op,
         docId: docId,
         beforeFields: Map<String, dynamic>.from(before),
         beforeStatus: beforeStatus is String ? beforeStatus : null,
+        patchedFields: patched,
       ),
     );
   }
@@ -1652,14 +2063,81 @@ C2RollbackPlan planC2RotaRollback({
         );
         continue;
       }
+      final fields = <String, dynamic>{
+        'status': {'stringValue': eventStatusTentative},
+      };
+      final extra = [
+        for (final key in change.patchedFields)
+          if (key != 'status' && change.beforeFields[key] != null) key,
+      ];
+      for (final key in extra) {
+        fields[key] = change.beforeFields[key];
+      }
       actions.add(
         C2RollbackAction(
-          op: 'restoreStatus',
+          op: extra.isEmpty ? 'restoreStatus' : 'restoreFields',
           docId: change.docId,
-          reason: 'status confirmed -> tentative',
-          fields: {
-            'status': {'stringValue': eventStatusTentative},
-          },
+          reason: extra.isEmpty
+              ? 'status confirmed -> tentative'
+              : 'restore confirmed event and patched fields',
+          fields: fields,
+          updateTime: updateTime,
+        ),
+      );
+      continue;
+    }
+    if (change.op == 'update') {
+      if (live == null) {
+        actions.add(
+          C2RollbackAction(
+            op: 'skip',
+            docId: change.docId,
+            reason: 'event is missing; fields were not restored',
+          ),
+        );
+        continue;
+      }
+      if (!isImportedC2RotaDoc(live)) {
+        actions.add(
+          C2RollbackAction(
+            op: 'skip',
+            docId: change.docId,
+            reason: 'event is no longer an imported c2-rota event',
+          ),
+        );
+        continue;
+      }
+      final updateTime = live.updateTime?.trim() ?? '';
+      if (updateTime.isEmpty) {
+        actions.add(
+          C2RollbackAction(
+            op: 'skip',
+            docId: change.docId,
+            reason: 'missing updateTime; fields were not restored',
+          ),
+        );
+        continue;
+      }
+      final keys = [
+        for (final key in change.patchedFields)
+          if (change.beforeFields[key] != null) key,
+      ];
+      if (keys.isEmpty) {
+        actions.add(
+          C2RollbackAction(
+            op: 'skip',
+            docId: change.docId,
+            reason: 'audit has no patched fields to restore',
+          ),
+        );
+        continue;
+      }
+      actions.add(
+        C2RollbackAction(
+          op: 'restoreFields',
+          docId: change.docId,
+          reason: 'restore summary and time',
+          fields: {for (final key in keys) key: change.beforeFields[key]},
           updateTime: updateTime,
         ),
       );
@@ -1721,12 +2199,10 @@ List<Map<String, dynamic>> c2RollbackCommitWrites({
       });
       continue;
     }
-    if (action.op == 'restoreStatus') {
+    if (action.op == 'restoreStatus' || action.op == 'restoreFields') {
       writes.add({
         'update': {'name': name, 'fields': action.fields},
-        'updateMask': {
-          'fieldPaths': ['status'],
-        },
+        'updateMask': {'fieldPaths': action.fields!.keys.toList()},
         'currentDocument': {'updateTime': action.updateTime},
       });
     }
@@ -1772,6 +2248,7 @@ C2ReconcileCommand parseC2ReconcileArgs(
   String? jsonOut;
   var maxConfirms = c2RotaDefaultMaxConfirms;
   var maxDeletes = c2RotaDefaultMaxDeletes;
+  var maxUpdates = c2RotaDefaultMaxUpdates;
   DateTime? now;
 
   for (var i = 0; i < args.length; i++) {
@@ -1822,6 +2299,13 @@ C2ReconcileCommand parseC2ReconcileArgs(
           c2RotaAbsoluteMaxDeletes,
         );
         break;
+      case '--max-updates':
+        maxUpdates = _boundedInt(
+          _next(args, ++i, '--max-updates'),
+          '--max-updates',
+          c2RotaAbsoluteMaxUpdates,
+        );
+        break;
       case '--now':
         now = _parseNow(_next(args, ++i, '--now'));
         break;
@@ -1843,6 +2327,7 @@ C2ReconcileCommand parseC2ReconcileArgs(
       jsonOut: jsonOut,
       maxConfirms: maxConfirms,
       maxDeletes: maxDeletes,
+      maxUpdates: maxUpdates,
       now: now,
     );
   }
@@ -1888,6 +2373,7 @@ C2ReconcileCommand parseC2ReconcileArgs(
     jsonOut: jsonOut,
     maxConfirms: maxConfirms,
     maxDeletes: maxDeletes,
+    maxUpdates: maxUpdates,
     now: now,
   );
 }

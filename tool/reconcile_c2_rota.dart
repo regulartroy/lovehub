@@ -35,14 +35,16 @@ Reconcile imported c2-rota events with the Concorde rota feed.
   dart run tool/reconcile_c2_rota.dart --hub <hubId> --rollback <auditId>
   dart run tool/reconcile_c2_rota.dart --hub <hubId> --rollback <auditId> --apply
 
-Default is dry-run (nothing written). --apply confirms or deletes.
+Default is dry-run (nothing written). --apply confirms, deletes, or updates titles/times.
 HUB_ID can replace --hub.
 
 Only imported documents are in scope: source c2-rota and id c2-rota:{externalId}.
 Tentative + tom=working + status=on is confirmed (including past dates).
 Tentative + cancelled/postponed, or tentative + tom=not_working, is deleted
 only for today and future Europe/London dates. Past history is left alone.
-Undecided stays tentative. Confirmed documents are never changed or deleted.
+Undecided stays tentative. Confirmed documents are never deleted or moved
+back to tentative. Titles and times on a matched imported event may be
+updated when the feed has a real name or a usable load-in.
 Empty show rows and unknown statuses are skipped with a warning.
 A show is matched on its own, not by date alone. Missing, empty, stale, or
 invalid feeds write nothing. Ambiguous matches are skipped.
@@ -61,8 +63,8 @@ Firestore uses Application Default Credentials (googleapis_auth). One-time:
   gcloud auth application-default login
   gcloud auth application-default set-quota-project lovehub-26107
 Do not create a service-account key. --events-file and --now cannot be
-combined with --apply. Caps default to 12 confirms and 8 deletes
-(absolute max 40).
+combined with --apply. Caps default to 12 confirms, 8 deletes, and
+12 title/time updates (absolute max 40).
 ''';
 
 Future<void> main(List<String> args) async {
@@ -129,6 +131,7 @@ Future<void> _reconcile(C2ReconcileCommand command) async {
       now: now,
       maxConfirms: command.maxConfirms,
       maxDeletes: command.maxDeletes,
+      maxUpdates: command.maxUpdates,
     );
     stdout.write(renderC2RotaPlan(plan, hubId: hubId, applying: command.apply));
     _writePlanFiles(command, plan);
