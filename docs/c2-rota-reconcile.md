@@ -11,9 +11,11 @@ now defaults to `sharedHubs`.
 
 | Feed row | Imported event is `tentative` | Imported event is confirmed, or has no status |
 | --- | --- | --- |
-| `tom=working` and `status=on` | Set `status` to `confirmed` | Leave it |
-| `tom=undecided` and `status=on` | Leave it tentative | Leave it |
-| `status=cancelled` or `postponed`, or `tom=not_working` | Delete that document (today or future only) | Leave it |
+| `tom=working` and `status=on` | Set `status` to `confirmed` | Leave the status |
+| `tom=undecided` and `status=on` | Leave it tentative | Leave the status |
+| `status=cancelled` or `postponed`, or `tom=not_working` | Delete that document (today or future only) | Leave the status |
+
+A matching imported event can also have its `summary` and, for today or a future Europe/London date, its `start` / `end` updated. This is how a `TBA` / `To be announced` title picks up a real act name, and how a default 15:00 gig start follows a later load-in. Confirmed events may be retitled or retimed this way; they are still never deleted and never moved back to tentative.
 
 `cancelled` and `postponed` remove a tentative show even when `tom` is `working` or `undecided`. A confirmed show is never deleted and never moved back to tentative. Deletes never apply to events dated before today (Europe/London); past history is left as stored. Confirming a past tentative show Tom worked is still allowed.
 
@@ -35,6 +37,7 @@ Matching is per show, on the Europe/London civil date:
 - Two events that fit one show, or one event that fits two shows, are skipped. Nothing is written for them.
 - A feed row with no imported event is logged and not created.
 - An imported event with no matching feed row is left in place. Absence is not a cancellation.
+- If a slug match fails, a unique leftover placeholder title (`TBA`, `TBC`, `To be announced`, `To be confirmed`) on that date can be paired with a unique unmatched feed row. The event is then retitled (and retimed if the load-in is usable). If that row is cancelled or `tom=not_working`, the placeholder is left untouched, so a leftover TBA is not renamed and then deleted on the next run. Two feed rows and one TBA, or two TBAs, stay untouched.
 
 The feed has to be a JSON object with `generatedAt` and a non-empty `days` array. Each kept day needs `date` (`YYYY-MM-DD`), a non-empty `show`, `status` (`on`, `cancelled`, or `postponed`), and `tom` (`working`, `not_working`, or `undecided`). Empty `show` rows (off-days) and unknown `status` values are skipped with a warning rather than failing the feed. An empty list after skips, a duplicate show on the same date, a structurally invalid row, or more than 500 rows rejects the whole feed. Nothing is written.
 
@@ -42,7 +45,9 @@ The feed has to be a JSON object with `generatedAt` and a non-empty `days` array
 
 Days are acted on only inside the London window of 14 days back through 90 days ahead. That is the span the feed covers. Rows outside it are ignored. Within that window, deletes still refuse any show dated before today in Europe/London.
 
-One run confirms at most 12 events and deletes at most 8 (raise with `--max-confirms` / `--max-deletes`, hard ceiling 40). Over the cap, the run writes nothing: it does not apply the first few. More than 500 imported `c2-rota` documents also writes nothing.
+One run confirms at most 12 events, deletes at most 8, and updates titles or times on at most 12 (raise with `--max-confirms` / `--max-deletes` / `--max-updates`, hard ceiling 40). A confirm that also rewrites the title counts toward both the confirm and update caps. Over a cap, the run writes nothing: it does not apply the first few. More than 500 imported `c2-rota` documents also writes nothing.
+
+Times are only rewritten for today and future Europe/London dates. The feed `loadIn` must be a 08:00–23:00 `HH:mm` clock. A named gig is retimed only when its stored start is still the default 15:00 London; a TBA that is being renamed may also pick up a new load-in. Duration is kept unless the feed also has `finish`. A load-in of 03:00, or a club night that already starts at 22:00, is left alone.
 
 Writes are one Firestore commit. Each confirm or delete is conditional on the `updateTime` read in that run, so a document Tom edited in between is not overwritten. The commit also writes the rollback record. A 429 or 5xx is retried up to three times. A precondition failure writes nothing (the commit is atomic) and the next run reads again.
 

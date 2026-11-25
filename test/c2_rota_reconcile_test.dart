@@ -28,6 +28,30 @@ void main() {
       expect(londonCivilDate(DateTime.utc(2026, 11, 9)).ymd, '2026-11-09');
     });
 
+    test('wall times convert to UTC in GMT and BST', () {
+      final winter = LondonDate(2026, 12, 1);
+      final summer = LondonDate(2026, 7, 1);
+      expect(
+        londonWallTimeToUtc(winter, 15, 0),
+        DateTime.utc(2026, 12, 1, 15),
+      );
+      expect(
+        londonWallTimeToUtc(summer, 15, 0),
+        DateTime.utc(2026, 7, 1, 14),
+      );
+      expect(c2IsDefaultGigStart(DateTime.utc(2026, 12, 1, 15), winter), isTrue);
+      expect(c2IsDefaultGigStart(DateTime.utc(2026, 7, 1, 14), summer), isTrue);
+      expect(c2TitleCaseShow('ANDREW CUSHIN'), 'Andrew Cushin');
+      expect(c2TitleCaseShow('80S HIFI'), '80s Hifi');
+      expect(c2TitleCaseShow('THE SCRIPT ( 2 show day)'), 'The Script (2 Show Day)');
+      expect(c2RotaEventSummary('GOTTS STREET PARK'), 'C2 — Gotts Street Park');
+      expect(c2IsPlaceholderSummary('C2 — TBA'), isTrue);
+      expect(c2IsPlaceholderSummary('C2 — To be announced'), isTrue);
+      expect(c2IsPlaceholderSummary('C2 — Andrew Cushin'), isFalse);
+      expect(parseC2ClockHm('9:00')?.hour, 9);
+      expect(parseC2ClockHm('24:00'), isNull);
+    });
+
     test('the reconcile window is prior 14 days through next 90', () {
       final window = londonReconcileWindow(reviewedAt);
       expect(window.start.ymd, '2026-10-25');
@@ -662,6 +686,246 @@ void main() {
     });
   });
 
+  group('title and time updates', () {
+    test('a unique TBA title is renamed when the feed now has a real name', () {
+      final plan = _plan(
+        days: [_row('2026-11-20', 'GOTTS STREET PARK', 'undecided')],
+        events: [
+          _show('2026-11-20', 'C2 — TBA', start: '2026-11-20T15:00:00Z'),
+        ],
+      );
+      final action = plan.actions.singleWhere(
+        (item) => item.docId == 'c2-rota:2026-11-20',
+      );
+      expect(action.kind, C2RotaActionKind.update);
+      expect(action.newSummary, 'C2 — Gotts Street Park');
+      expect(action.newStartUtc, isNull);
+      expect(plan.updates, hasLength(1));
+      expect(plan.confirms, isEmpty);
+      expect(plan.deletes, isEmpty);
+    });
+
+    test('a TBA that Tom is working is confirmed and retitled together', () {
+      final plan = planC2RotaReconcile(
+        feed: parseC2RotaFeed({
+          'generatedAt': '2026-11-08T09:39:00Z',
+          'days': [_row('2026-11-20', 'ANDREW CUSHIN', 'working')],
+        }),
+        events: [
+          _show(
+            '2026-11-20',
+            'C2 — TBA',
+            start: '2026-11-20T15:00:00Z',
+            snapshot: true,
+          ),
+        ],
+        now: reviewedAt,
+      );
+      expect(plan.canCommit, isTrue);
+      expect(plan.confirms, hasLength(1));
+      expect(plan.updates, hasLength(1));
+      expect(plan.confirms.single.newSummary, 'C2 — Andrew Cushin');
+      final writes = c2RotaCommitWrites(
+        projectId: lovehubFirebaseProjectId,
+        hubId: 'pobIb3qupVJudoQGMJjl',
+        plan: plan,
+        auditId: c2RotaAuditId(reviewedAt, plan.planKey),
+        appliedAt: reviewedAt,
+      );
+      final confirm = writes.singleWhere(
+        (write) =>
+            '${write['update']?['name']}'.endsWith('c2-rota:2026-11-20'),
+      );
+      expect(
+        confirm['updateMask']['fieldPaths'],
+        containsAll(['status', 'summary']),
+      );
+      expect(confirm['update']['fields']['status'], {
+        'stringValue': 'confirmed',
+      });
+      expect(confirm['update']['fields']['summary'], {
+        'stringValue': 'C2 — Andrew Cushin',
+      });
+      final audit = parseC2RotaAuditDocument(
+        runId: c2RotaAuditId(reviewedAt, plan.planKey),
+        document: {'fields': writes.last['update']['fields']},
+      );
+      final rollback = planC2RotaRollback(
+        audit: audit,
+        currentEvents: [
+          plan.confirms.single.event!.withStatus('confirmed'),
+        ],
+      );
+      expect(rollback.writes, hasLength(1));
+      expect(rollback.writes.single.op, 'restoreFields');
+      expect(rollback.writes.single.fields!['status'], {
+        'stringValue': 'tentative',
+      });
+      expect(rollback.writes.single.fields!['summary'], {
+        'stringValue': 'C2 — TBA',
+      });
+    });
+
+    test('a leftover TBA is not renamed onto a not-working show', () {
+      final plan = _plan(
+        days: [
+          _row('2026-12-04', 'MARTIN KEMP', 'undecided'),
+          _row('2026-12-04', 'FATBOY SLIM', 'not_working'),
+        ],
+        events: [
+          _show('2026-12-04', 'C2 — Martin Kemp'),
+          _show('2026-12-04-tba', 'C2 — TBA'),
+        ],
+      );
+      final kemp = plan.actions.singleWhere(
+        (item) => item.docId == 'c2-rota:2026-12-04',
+      );
+      final tba = plan.actions.singleWhere(
+        (item) => item.docId == 'c2-rota:2026-12-04-tba',
+      );
+      expect(kemp.kind, C2RotaActionKind.keepTentative);
+      expect(tba.kind, C2RotaActionKind.skip);
+      expect(tba.reason, contains('left untouched'));
+      expect(tba.newSummary, isNull);
+      expect(plan.deletes, isEmpty);
+      expect(plan.updates, isEmpty);
+    });
+
+    test('two named shows and one TBA on a date stay untouched', () {
+      final plan = _plan(
+        days: [
+          _row('2026-12-18', 'ALPHA', 'undecided'),
+          _row('2026-12-18', 'BETA', 'undecided'),
+        ],
+        events: [_show('2026-12-18', 'C2 — TBA')],
+      );
+      expect(
+        plan.actions.singleWhere((item) => item.docId == 'c2-rota:2026-12-18').kind,
+        C2RotaActionKind.skip,
+      );
+      expect(
+        plan.actions
+            .where((item) => item.kind == C2RotaActionKind.unmatchedFeed)
+            .map((item) => item.show),
+        containsAll(['ALPHA', 'BETA']),
+      );
+      expect(plan.updates, isEmpty);
+    });
+
+    test('a default 15:00 gig follows a later daytime load-in', () {
+      final plan = _plan(
+        days: [
+          _row(
+            '2026-11-20',
+            'THE BIG MOON',
+            'undecided',
+            'on',
+            '14:00',
+          ),
+        ],
+        events: [
+          _show(
+            '2026-11-20',
+            'C2 — The Big Moon',
+            start: '2026-11-20T15:00:00Z',
+            end: '2026-11-20T23:30:00Z',
+          ),
+        ],
+      );
+      final action = plan.actions.singleWhere(
+        (item) => item.docId == 'c2-rota:2026-11-20',
+      );
+      expect(action.kind, C2RotaActionKind.update);
+      expect(action.newSummary, isNull);
+      expect(action.newStartUtc, DateTime.utc(2026, 11, 20, 14));
+      expect(action.newEndUtc, DateTime.utc(2026, 11, 20, 22, 30));
+    });
+
+    test('a club night and a 03:00 load-in are not retimed', () {
+      final club = _plan(
+        days: [
+          _row('2026-11-20', 'GET DOWN SERVICES', 'working', 'on', '14:00'),
+        ],
+        events: [
+          _show(
+            '2026-11-20',
+            'C2 — Get Down Services',
+            status: 'confirmed',
+            start: '2026-11-20T22:00:00Z',
+            end: '2026-11-21T04:30:00Z',
+          ),
+        ],
+      );
+      expect(
+        club.actions.singleWhere((item) => item.docId == 'c2-rota:2026-11-20').kind,
+        C2RotaActionKind.keepConfirmed,
+      );
+      expect(club.updates, isEmpty);
+
+      final early = _plan(
+        days: [
+          _row('2026-11-20', 'OMG ITS THE CHURCH', 'working', 'on', '03:00'),
+        ],
+        events: [
+          _show(
+            '2026-11-20',
+            'C2 — Omg Its The Church',
+            status: 'confirmed',
+            start: '2026-11-20T15:00:00Z',
+            end: '2026-11-20T23:30:00Z',
+          ),
+        ],
+      );
+      expect(early.updates, isEmpty);
+    });
+
+    test('past dates are not retimed', () {
+      final plan = _plan(
+        days: [
+          _row('2026-11-07', 'PRIVATE HIRE', 'working', 'on', '09:00'),
+        ],
+        events: [
+          _show(
+            '2026-11-07',
+            'C2 — Private Hire',
+            status: 'confirmed',
+            start: '2026-11-07T15:00:00Z',
+            end: '2026-11-07T23:30:00Z',
+          ),
+        ],
+      );
+      expect(plan.updates, isEmpty);
+    });
+
+    test('more updates than the cap writes nothing', () {
+      final days = [
+        for (var i = 0; i < 13; i++)
+          _row('2026-11-${18 + i}', 'ARTIST $i', 'undecided'),
+      ];
+      final events = [
+        for (var i = 0; i < 13; i++)
+          _show(
+            '2026-11-${18 + i}',
+            'C2 — TBA',
+            start: '2026-11-${18 + i}T15:00:00Z',
+            snapshot: true,
+          ),
+      ];
+      final plan = planC2RotaReconcile(
+        feed: parseC2RotaFeed({
+          'generatedAt': '2026-11-08T09:39:00Z',
+          'days': days,
+        }),
+        events: events,
+        now: reviewedAt,
+        maxUpdates: 12,
+      );
+      expect(plan.updates, hasLength(13));
+      expect(plan.canCommit, isFalse);
+      expect(plan.blockReason, contains('nothing written'));
+    });
+  });
+
   group('bounds, stale feeds, commits, rollback', () {
     test('a stale feed still explains the plan and refuses the batch', () {
       final plan = planC2RotaReconcile(
@@ -959,6 +1223,7 @@ void main() {
         expect(command.tokenFile, defaultTomRotaTokenFile);
         expect(command.maxConfirms, c2RotaDefaultMaxConfirms);
         expect(command.maxDeletes, c2RotaDefaultMaxDeletes);
+        expect(command.maxUpdates, c2RotaDefaultMaxUpdates);
 
         final fromEnv = parseC2ReconcileArgs(
           const [],
@@ -989,6 +1254,10 @@ void main() {
         );
         expect(
           () => parseC2ReconcileArgs(['--hub', 'hub', '--max-deletes', '41']),
+          throwsA(isA<C2RotaArgsException>()),
+        );
+        expect(
+          () => parseC2ReconcileArgs(['--hub', 'hub', '--max-updates', '41']),
           throwsA(isA<C2RotaArgsException>()),
         );
         expect(
@@ -1059,6 +1328,8 @@ Map<String, Object?> _row(
   String show, [
   String tom = 'working',
   String status = 'on',
+  String? loadIn,
+  String? finish,
 ]) {
   return {
     'date': date,
@@ -1066,8 +1337,8 @@ Map<String, Object?> _row(
     'status': status,
     'tom': tom,
     'role': null,
-    'loadIn': null,
-    'finish': null,
+    'loadIn': loadIn,
+    'finish': finish,
   };
 }
 
@@ -1076,16 +1347,21 @@ C2StoredEvent _show(
   String summary, {
   String? status = 'tentative',
   String? start,
+  String? end,
   bool snapshot = false,
 }) {
   final date = externalId.substring(0, 10);
   final startUtc = DateTime.parse(start ?? '${date}T19:00:00Z').toUtc();
+  final endUtc = DateTime.parse(
+    end ?? startUtc.add(const Duration(hours: 8, minutes: 30)).toIso8601String(),
+  ).toUtc();
   return C2StoredEvent(
     docId: 'c2-rota:$externalId',
     source: 'c2-rota',
     externalId: externalId,
     summary: summary,
     startUtc: startUtc,
+    endUtc: endUtc,
     status: status,
     updateTime: snapshot ? '2026-11-08T10:00:00.000000Z' : null,
     restFields: snapshot
@@ -1095,6 +1371,7 @@ C2StoredEvent _show(
             'externalId': {'stringValue': externalId},
             'status': {'stringValue': status},
             'start': {'timestampValue': startUtc.toIso8601String()},
+            'end': {'timestampValue': endUtc.toIso8601String()},
           }
         : null,
   );
