@@ -20,6 +20,8 @@ import 'package:http/http.dart' as http;
 import 'package:lovehub/event_import/c2_rota_reconcile.dart';
 import 'package:lovehub/event_import/imported_event.dart';
 import 'package:lovehub/event_import/schedule_export.dart';
+import 'package:lovehub/models/friend_model.dart';
+import 'package:lovehub/services/event_store.dart';
 import 'package:lovehub/services/hub_collection.dart';
 
 const _usage = '''
@@ -30,6 +32,9 @@ Export a read-only LoveHub schedule snapshot for other household bots.
 
 HUB_ID can replace --hub. Default out-dir is /home/box/shared/lovehub.
 Default window is today through today+56 days, Europe/London.
+--person-store --user <uid> exports the same merged view as the person-sync
+preview (person events allowed by sharing toggles, plus hub-shared events).
+Default is unchanged and still reads only the hub events collection.
 
 Writes schedule.json, schedule.ics, and README.md atomically (temp file,
 then rename). This tool only reads Firestore. It has no write or --apply
@@ -90,11 +95,23 @@ Future<void> _export(ScheduleExportCommand command) async {
       throw ScheduleExportException('Hub $hubId was not found.');
     }
     final namesByUid = namesByUidFromHubDocument(hub);
-    final events = await _listCollection(
+    final liveEvents = await _listCollection(
       client,
       '$kHubsCollection/${Uri.encodeComponent(hubId)}/events',
       storedEventsFromRestList,
     );
+    final List<StoredExportEvent> events;
+    if (command.personStore) {
+      events = await _personStoreEvents(
+        client,
+        hubId: hubId,
+        hub: hub,
+        liveEvents: liveEvents,
+        viewerUid: command.userId!,
+      );
+    } else {
+      events = liveEvents;
+    }
     final birthdays = await _listCollection(
       client,
       '$kHubsCollection/${Uri.encodeComponent(hubId)}/birthdays',
@@ -229,6 +246,93 @@ Future<List<T>> _listCollection<T>(
     pageToken = next;
   }
   return items;
+}
+
+Future<List<StoredExportEvent>> _personStoreEvents(
+  http.Client client, {
+  required String hubId,
+  required Map<String, dynamic> hub,
+  required List<StoredExportEvent> liveEvents,
+  required String viewerUid,
+}) async {
+  final memberUids = memberUidsFromHubDocument(hub);
+  final friendDocs = await _runQuery(
+    client,
+    parent: '',
+    structuredQuery: {
+      'from': [
+        {'collectionId': 'friends'},
+      ],
+      'where': {
+        'fieldFilter': {
+          'field': {'fieldPath': 'members'},
+          'op': 'ARRAY_CONTAINS',
+          'value': {'stringValue': viewerUid},
+        },
+      },
+    },
+  );
+  final friendships = <Friendship>[
+    for (final doc in friendDocs)
+      if (friendshipFromRestDocument(doc) != null)
+        friendshipFromRestDocument(doc)!,
+  ];
+  final indexed = friendshipsIndexedByOtherUid(
+    viewerUid: viewerUid,
+    friendships: friendships,
+  );
+  final eventsByOwner = <String, List<StoredExportEvent>>{};
+  final owners = {viewerUid, ...memberUids};
+  for (final uid in owners) {
+    eventsByOwner[uid] = await _listCollection(
+      client,
+      'users/${Uri.encodeComponent(uid)}/events',
+      storedEventsFromRestList,
+    );
+  }
+  final preview = await _listCollection(
+    client,
+    '$kHubsCollection/${Uri.encodeComponent(hubId)}/$kPreviewSharedEventsCollection',
+    storedEventsFromRestList,
+  );
+  return personStoreExportEvents(
+    viewerUid: viewerUid,
+    memberUids: memberUids,
+    friendshipsByOtherUid: indexed,
+    liveHubEvents: liveEvents,
+    previewSharedEvents: preview,
+    eventsByOwner: eventsByOwner,
+  );
+}
+
+Future<List<Map<String, dynamic>>> _runQuery(
+  http.Client client, {
+  required String parent,
+  required Map<String, dynamic> structuredQuery,
+}) async {
+  final suffix = parent.isEmpty ? ':runQuery' : '/$parent:runQuery';
+  final uri = Uri.parse(
+    'https://firestore.googleapis.com/v1/projects/$lovehubFirebaseProjectId'
+    '/databases/(default)/documents$suffix',
+  );
+  final response = await client.post(
+    uri,
+    headers: _firestoreHeaders(json: true),
+    body: jsonEncode({'structuredQuery': structuredQuery}),
+  );
+  _refuseFirestoreStatus(response.statusCode);
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw ScheduleExportException(
+      'Could not query Firestore (${response.statusCode}).',
+    );
+  }
+  final decoded = jsonDecode(response.body);
+  if (decoded is! List) return const [];
+  return [
+    for (final row in decoded)
+      if (row is Map && row['document'] is Map)
+        Map<String, dynamic>.from(row['document'] as Map),
+  ];
 }
 
 void writeScheduleExportFiles({

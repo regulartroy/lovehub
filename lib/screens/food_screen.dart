@@ -19,6 +19,8 @@ import '../widgets/recipe_link_import_sheet.dart';
 import '../widgets/recipe_picture.dart';
 import 'tasks_screen.dart'; // (if you still have this here)
 import '../services/hub_collection.dart';
+import '../services/event_store.dart';
+import '../repositories/event_repository.dart';
 
 class FoodScreen extends StatefulWidget {
   final User user;
@@ -91,7 +93,7 @@ class _FoodScreenState extends State<FoodScreen>
             isShoppingOnly: true, // <-- Tell it to hide the other tabs!
           ),
           _RecipesTab(hubId: _hubId!),
-          _MealPlannerTab(hubId: _hubId!),
+          _MealPlannerTab(hubId: _hubId!, viewerUid: widget.user.uid),
           _FridgeAITab(hubId: _hubId!), // <-- ADD THE HUB ID HERE!
         ],
       ),
@@ -768,7 +770,8 @@ class _AddRecipeSheetState extends State<_AddRecipeSheet> {
 /// --- TAB 2: MEAL PLANNER ---
 class _MealPlannerTab extends StatelessWidget {
   final String hubId;
-  const _MealPlannerTab({required this.hubId});
+  final String viewerUid;
+  const _MealPlannerTab({required this.hubId, required this.viewerUid});
 
   void _showSmartAddMeal(BuildContext context, DateTime day) {
     showModalBottomSheet(
@@ -778,7 +781,8 @@ class _MealPlannerTab extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => _SmartAddMealSheet(hubId: hubId, date: day),
+      builder: (context) =>
+          _SmartAddMealSheet(hubId: hubId, viewerUid: viewerUid, date: day),
     );
   }
 
@@ -786,24 +790,40 @@ class _MealPlannerTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final todayStart = DateUtils.dateOnly(DateTime.now());
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection(kHubsCollection)
-          .doc(hubId)
-          .collection('events')
-          .where(
-            'start',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart),
-          )
-          .orderBy('start')
-          .snapshots(),
+    final Stream<List<Map<String, dynamic>>> eventStream = usePersonEventStore
+        ? EventRepository()
+              .streamEvents(hubId, viewerUid: viewerUid)
+              .map(
+                (events) => events.map(eventModelToDocumentMap).where((data) {
+                  final start = data['start'];
+                  if (start is! Timestamp) return true;
+                  return !start.toDate().isBefore(todayStart);
+                }).toList(),
+              )
+        : FirebaseFirestore.instance
+              .collection(kHubsCollection)
+              .doc(hubId)
+              .collection('events')
+              .where(
+                'start',
+                isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart),
+              )
+              .orderBy('start')
+              .snapshots()
+              .map(
+                (snap) =>
+                    snap.docs.map((d) => {'id': d.id, ...d.data()}).toList(),
+              );
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: eventStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData)
           return const Center(
             child: CircularProgressIndicator(color: Colors.green),
           );
 
-        final events = snapshot.data!.docs;
+        final events = snapshot.data!;
 
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
@@ -812,8 +832,7 @@ class _MealPlannerTab extends StatelessWidget {
             final day = calendarDayOffset(todayStart, index);
             final isToday = index == 0;
 
-            final meals = events.where((doc) {
-              final d = doc.data() as Map<String, dynamic>;
+            final meals = events.where((d) {
               if ((d['category'] ?? 'general') != 'meal') return false;
               return DateUtils.isSameDay(
                 (d['start'] as Timestamp).toDate(),
@@ -884,8 +903,7 @@ class _MealPlannerTab extends StatelessWidget {
                           )
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: meals.map((m) {
-                              final d = m.data() as Map<String, dynamic>;
+                            children: meals.map((d) {
                               final bool hasIngredients =
                                   d.containsKey('ingredients') &&
                                   (d['ingredients'] as List).isNotEmpty;
@@ -917,8 +935,19 @@ class _MealPlannerTab extends StatelessWidget {
                                           constraints:
                                               const BoxConstraints(), // Keeps the button small
                                           padding: EdgeInsets.zero,
-                                          onPressed: () => m.reference
-                                              .delete(), // Instantly deletes the meal!
+                                          onPressed: () {
+                                            final id = (d['id'] ?? '')
+                                                .toString();
+                                            if (id.isEmpty) return;
+                                            EventRepository().deleteEvent(
+                                              hubId,
+                                              id,
+                                              hint: EventWriteHint.fromMap(
+                                                d,
+                                                viewerUid: viewerUid,
+                                              ),
+                                            );
+                                          },
                                         ),
                                       ],
                                     ),
@@ -987,8 +1016,13 @@ class _MealPlannerTab extends StatelessWidget {
 // --- SMART ADD MEAL SHEET ---
 class _SmartAddMealSheet extends StatefulWidget {
   final String hubId;
+  final String viewerUid;
   final DateTime date;
-  const _SmartAddMealSheet({required this.hubId, required this.date});
+  const _SmartAddMealSheet({
+    required this.hubId,
+    required this.viewerUid,
+    required this.date,
+  });
 
   @override
   State<_SmartAddMealSheet> createState() => _SmartAddMealSheetState();
@@ -1023,11 +1057,11 @@ class _SmartAddMealSheetState extends State<_SmartAddMealSheet> {
       eventData['ingredients'] = _selectedRecipe!.ingredients;
     }
 
-    FirebaseFirestore.instance
-        .collection(kHubsCollection)
-        .doc(widget.hubId)
-        .collection('events')
-        .add(eventData);
+    EventRepository().addEvent(
+      widget.hubId,
+      eventData,
+      hint: EventWriteHint.fromMap(eventData, viewerUid: widget.viewerUid),
+    );
     Navigator.pop(context);
   }
 

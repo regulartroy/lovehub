@@ -30,6 +30,8 @@ Import work events into a LoveHub hub (idempotent upsert).
 --tentative marks events that omit status as tentative (a C2 rota dump).
 --confirm source:externalId flips that one event to confirmed.
 HUB_ID can replace --hub.
+--person-store --user <uid> upserts into users/{uid}/events instead of the hub.
+Default is unchanged.
 Set FIREBASE_ID_TOKEN or FIREBASE_REFRESH_TOKEN to a hub member's credential.
 Payload: one event, a JSON array, or {"events":[...]}.
 ''';
@@ -83,13 +85,14 @@ Future<void> main(List<String> args) async {
             projectId: lovehubFirebaseProjectId,
             hubId: hubId,
             event: event,
-            ownerId: uid,
+            ownerId: command.personStore ? command.userId : uid,
+            personStoreUserId: command.personStore ? command.userId : null,
           ),
       ];
       await _commit(client, idToken, writes);
       stdout.writeln(
         'Upserted ${events.length} event${events.length == 1 ? '' : 's'} '
-        'into $kHubsCollection/$hubId/events',
+        '${command.personStore ? 'into users/${command.userId}/events' : 'into $kHubsCollection/$hubId/events'}',
       );
       for (final event in events) {
         stdout.writeln(
@@ -167,6 +170,7 @@ Future<void> _confirm(http.Client client, ImportCommand command) async {
           projectId: lovehubFirebaseProjectId,
           hubId: hubId,
           target: target,
+          personStoreUserId: command.personStore ? command.userId : null,
         ),
       ], requireExisting: true);
     } on EventImportException catch (error) {

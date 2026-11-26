@@ -24,6 +24,15 @@ class EventModel {
   /// `tentative` or `confirmed`. Null is a legacy event and displays as confirmed.
   final String? status;
 
+  /// Cookbook meal link, when this event was added from the meal planner.
+  final String? recipeId;
+
+  /// Snapshot of recipe ingredients, when this event was added from a recipe.
+  final List<String>? ingredients;
+
+  /// Preview-only tombstone on `previewSharedEvents`. Not used on live docs.
+  final bool previewDeleted;
+
   EventModel({
     required this.id,
     required this.summary,
@@ -39,6 +48,9 @@ class EventModel {
     this.externalId,
     this.notes,
     this.status,
+    this.recipeId,
+    this.ingredients,
+    this.previewDeleted = false,
   });
 
   bool get isTentative => isTentativeEventStatus(status);
@@ -71,6 +83,9 @@ class EventModel {
       externalId: externalId,
       notes: notes,
       status: status,
+      recipeId: recipeId,
+      ingredients: ingredients,
+      previewDeleted: previewDeleted,
     );
   }
 
@@ -96,6 +111,9 @@ class EventModel {
       externalId: data['externalId'],
       notes: data['notes'],
       status: readStoredEventStatus(data['status']),
+      recipeId: data['recipeId'] as String?,
+      ingredients: _readStringList(data['ingredients']),
+      previewDeleted: data['previewDeleted'] == true,
     );
   }
 
@@ -103,6 +121,11 @@ class EventModel {
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
     throw ArgumentError('Expected a Firestore Timestamp or DateTime');
+  }
+
+  static List<String>? _readStringList(Object? value) {
+    if (value is! List) return null;
+    return value.map((item) => item.toString()).toList();
   }
 
   Map<String, dynamic> toMap() {
@@ -124,6 +147,9 @@ class EventModel {
     if (externalId != null) map['externalId'] = externalId;
     if (notes != null) map['notes'] = notes;
     if (status != null) map['status'] = status;
+    if (recipeId != null) map['recipeId'] = recipeId;
+    if (ingredients != null) map['ingredients'] = ingredients;
+    if (previewDeleted) map['previewDeleted'] = true;
 
     return map;
   }

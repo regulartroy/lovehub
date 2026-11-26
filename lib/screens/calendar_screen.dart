@@ -19,6 +19,7 @@ import '../widgets/tentative_event_confirm.dart';
 import '../services/member_profile.dart';
 import '../widgets/member_avatar.dart';
 import '../services/hub_collection.dart';
+import '../services/event_store.dart';
 
 // --- TOP LEVEL HELPERS ---
 extension StringExtension on String {
@@ -597,6 +598,9 @@ class _CalendarScreenState extends State<CalendarScreen>
                           ),
                           onPressed: () {
                             if (existingEvent.id.startsWith('bday_')) {
+                              if (_previewBlocksLiveBirthdayWrite(context)) {
+                                return;
+                              }
                               String realId = existingEvent.id.split('_')[1];
                               FirebaseFirestore.instance
                                   .collection(kHubsCollection)
@@ -608,6 +612,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                               _eventRepo.deleteEvent(
                                 _activeHubId!,
                                 existingEvent.id,
+                                hint: _writeHint(existingEvent),
                               );
                             }
                             Navigator.pop(context);
@@ -955,6 +960,10 @@ class _CalendarScreenState extends State<CalendarScreen>
                               // Intercept Birthday Saves
                               if (category == 'birthday' &&
                                   existingEvent == null) {
+                                if (_previewBlocksLiveBirthdayWrite(context)) {
+                                  setSheetState(() => isSaving = false);
+                                  return;
+                                }
                                 await FirebaseFirestore.instance
                                     .collection(kHubsCollection)
                                     .doc(_activeHubId!)
@@ -980,6 +989,12 @@ class _CalendarScreenState extends State<CalendarScreen>
 
                               if (existingEvent != null) {
                                 if (existingEvent.id.startsWith('bday_')) {
+                                  if (_previewBlocksLiveBirthdayWrite(
+                                    context,
+                                  )) {
+                                    setSheetState(() => isSaving = false);
+                                    return;
+                                  }
                                   String realId = existingEvent.id.split(
                                     '_',
                                   )[1];
@@ -1018,6 +1033,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   _activeHubId!,
                                   existingEvent.id,
                                   updatedEvent.toMap(),
+                                  hint: _writeHint(updatedEvent),
                                 );
 
                                 if (iterations > 1) {
@@ -1049,6 +1065,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   await _eventRepo.batchAddEvents(
                                     _activeHubId!,
                                     futureEvents,
+                                    viewerUid: widget.user.uid,
                                   );
                                 }
                               } else {
@@ -1080,6 +1097,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                 await _eventRepo.batchAddEvents(
                                   _activeHubId!,
                                   eventsToCreate,
+                                  viewerUid: widget.user.uid,
                                 );
                               }
 
@@ -1516,7 +1534,10 @@ class _CalendarScreenState extends State<CalendarScreen>
             _buildMemberFilter(),
             Expanded(
               child: StreamBuilder<List<EventModel>>(
-                stream: _eventRepo.streamEvents(_activeHubId!),
+                stream: _eventRepo.streamEvents(
+                  _activeHubId!,
+                  viewerUid: widget.user.uid,
+                ),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData)
                     return const Center(child: CircularProgressIndicator());
@@ -1789,6 +1810,22 @@ class _CalendarScreenState extends State<CalendarScreen>
     return clean.isEmpty ? event.summary : clean;
   }
 
+  EventWriteHint _writeHint(EventModel event) {
+    return EventWriteHint.fromEvent(event, viewerUid: widget.user.uid);
+  }
+
+  bool _previewBlocksLiveBirthdayWrite(BuildContext context) {
+    if (!usePersonEventStore) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Birthday list edits are disabled on this preview so the live hub stays unchanged.',
+        ),
+      ),
+    );
+    return true;
+  }
+
   Future<void> _confirmTentativeEvent(EventModel event) async {
     final hubId = _activeHubId;
     if (hubId == null || event.id.trim().isEmpty) {
@@ -1799,7 +1836,7 @@ class _CalendarScreenState extends State<CalendarScreen>
       _locallyTentative.remove(event.id);
     });
     try {
-      await _eventRepo.confirmEvent(hubId, event.id);
+      await _eventRepo.confirmEvent(hubId, event.id, hint: _writeHint(event));
     } catch (_) {
       if (mounted) setState(() => _locallyConfirmed.remove(event.id));
       rethrow;
@@ -1820,7 +1857,11 @@ class _CalendarScreenState extends State<CalendarScreen>
       _locallyConfirmed.remove(event.id);
     });
     try {
-      await _eventRepo.markEventTentative(hubId, event.id);
+      await _eventRepo.markEventTentative(
+        hubId,
+        event.id,
+        hint: _writeHint(event),
+      );
     } catch (_) {
       if (mounted) setState(() => _locallyTentative.remove(event.id));
       rethrow;

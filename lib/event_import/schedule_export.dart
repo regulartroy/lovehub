@@ -5,6 +5,8 @@
 // per-day busy summary for Tom's work. This library does not talk to
 // Firestore and has no write path.
 
+import '../models/friend_model.dart';
+import '../services/event_store_core.dart';
 import 'london_date.dart';
 
 const lovehubScheduleTimezone = 'Europe/London';
@@ -149,6 +151,9 @@ class StoredExportEvent {
     required this.assignedTo,
     this.status,
     this.source,
+    this.ownerId,
+    this.externalId,
+    this.previewDeleted = false,
   });
 
   final String id;
@@ -160,6 +165,9 @@ class StoredExportEvent {
   final String assignedTo;
   final String? status;
   final String? source;
+  final String? ownerId;
+  final String? externalId;
+  final bool previewDeleted;
 }
 
 class StoredBirthday {
@@ -185,6 +193,8 @@ class ScheduleExportCommand {
     this.days = defaultScheduleExportDays,
     this.now,
     this.help = false,
+    this.personStore = false,
+    this.userId,
   });
 
   final String? hubId;
@@ -192,6 +202,8 @@ class ScheduleExportCommand {
   final int days;
   final DateTime? now;
   final bool help;
+  final bool personStore;
+  final String? userId;
 }
 
 ScheduleExportCommand parseScheduleExportArgs(
@@ -203,6 +215,8 @@ ScheduleExportCommand parseScheduleExportArgs(
   var days = defaultScheduleExportDays;
   DateTime? now;
   var help = false;
+  var personStore = false;
+  String? userId;
 
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
@@ -225,6 +239,10 @@ ScheduleExportCommand parseScheduleExportArgs(
         days = _parseDays(requireValue());
       case '--now':
         now = _parseNow(requireValue());
+      case '--person-store':
+        personStore = true;
+      case '--user':
+        userId = requireValue();
       default:
         if (arg.startsWith('-')) {
           throw ScheduleExportArgsException('Unknown argument: $arg');
@@ -240,6 +258,8 @@ ScheduleExportCommand parseScheduleExportArgs(
       days: days,
       now: now,
       help: true,
+      personStore: personStore,
+      userId: userId?.trim(),
     );
   }
 
@@ -251,11 +271,19 @@ ScheduleExportCommand parseScheduleExportArgs(
   if (trimmedOut.isEmpty) {
     throw ScheduleExportArgsException('--out-dir must not be empty.');
   }
+  final trimmedUser = userId?.trim() ?? '';
+  if (personStore && (trimmedUser.isEmpty || trimmedUser.contains('/'))) {
+    throw ScheduleExportArgsException(
+      '--person-store requires --user <uid> (the viewer Firebase uid).',
+    );
+  }
   return ScheduleExportCommand(
     hubId: trimmedHub,
     outDir: trimmedOut,
     days: days,
     now: now,
+    personStore: personStore,
+    userId: trimmedUser.isEmpty ? null : trimmedUser,
   );
 }
 
@@ -839,6 +867,11 @@ StoredExportEvent? storedEventFromRestDocument(Map<String, dynamic> document) {
     assignedTo: assignedTo is String ? assignedTo : 'shared',
     status: status is String ? status : null,
     source: source is String ? source : null,
+    ownerId: fields['ownerId'] is String ? fields['ownerId'] as String : null,
+    externalId: fields['externalId'] is String
+        ? fields['externalId'] as String
+        : null,
+    previewDeleted: fields['previewDeleted'] == true,
   );
 }
 
@@ -912,6 +945,35 @@ Map<String, String> namesByUidFromHubDocument(Map<String, dynamic> document) {
   return names;
 }
 
+List<String> memberUidsFromHubDocument(Map<String, dynamic> document) {
+  final fieldsRaw = document['fields'];
+  final fields = fieldsRaw is Map
+      ? firestoreRestFields(Map<String, dynamic>.from(fieldsRaw))
+      : <String, Object?>{};
+  final members = fields['members'];
+  if (members is! List) return const [];
+  return [
+    for (final item in members)
+      if (item != null && item.toString().trim().isNotEmpty) item.toString(),
+  ];
+}
+
+Friendship? friendshipFromRestDocument(Map<String, dynamic> document) {
+  final id = firestoreDocumentId(document);
+  if (id == null || id.isEmpty) return null;
+  final fieldsRaw = document['fields'];
+  final fields = fieldsRaw is Map
+      ? firestoreRestFields(Map<String, dynamic>.from(fieldsRaw))
+      : <String, Object?>{};
+  return Friendship.fromMap(
+    {
+      ...fields,
+      // Friendship.fromMap expects plain Dart maps, already decoded.
+    }.map((key, value) => MapEntry(key, value)),
+    id: id,
+  );
+}
+
 List<Map<String, dynamic>> _restDocuments(Object? decoded) {
   if (decoded is List) {
     return [
@@ -939,4 +1001,63 @@ int? _asInt(Object? value) {
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value);
   return null;
+}
+
+String storedExportDedupeKey(StoredExportEvent event) {
+  return eventDedupeKeyFor(
+    id: event.id,
+    category: event.category,
+    assignedTo: event.assignedTo,
+    ownerId: event.ownerId,
+    source: event.source,
+    externalId: event.externalId,
+  );
+}
+
+/// Merge a person-store hub view for [export_schedule --person-store].
+List<StoredExportEvent> personStoreExportEvents({
+  required String viewerUid,
+  required Iterable<String> memberUids,
+  required Map<String, Friendship> friendshipsByOtherUid,
+  required List<StoredExportEvent> liveHubEvents,
+  required List<StoredExportEvent> previewSharedEvents,
+  required Map<String, List<StoredExportEvent>> eventsByOwner,
+}) {
+  final mine = categoriesSharedWithAnyMember(
+    viewerUid: viewerUid,
+    memberUids: memberUids,
+    friendshipsByOtherUid: friendshipsByOtherUid,
+  );
+  final person = <StoredExportEvent>[];
+  void addFiltered(String uid, Set<String> categories) {
+    if (categories.isEmpty) return;
+    for (final event in eventsByOwner[uid] ?? const <StoredExportEvent>[]) {
+      if (categories.contains(event.category)) {
+        person.add(event);
+      }
+    }
+  }
+
+  addFiltered(viewerUid, mine);
+  for (final other in memberUids) {
+    if (other == viewerUid) continue;
+    addFiltered(
+      other,
+      categoriesTheyShareWithMe(
+        viewerUid: viewerUid,
+        otherUid: other,
+        friendship: friendshipsByOtherUid[other],
+      ),
+    );
+  }
+
+  return mergeVisibleEventRecords<StoredExportEvent>(
+    liveShared: liveHubEvents,
+    previewShared: previewSharedEvents,
+    personEvents: person,
+    isJoint: (event) =>
+        isHubJointEvent(category: event.category, assignedTo: event.assignedTo),
+    isDeleted: (event) => event.previewDeleted,
+    keyOf: storedExportDedupeKey,
+  );
 }
