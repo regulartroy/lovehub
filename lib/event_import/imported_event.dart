@@ -118,6 +118,8 @@ class ImportCommand {
     this.help = false,
     this.tentative = false,
     this.confirm = const [],
+    this.personStore = false,
+    this.userId,
   });
 
   final String? hubId;
@@ -126,6 +128,8 @@ class ImportCommand {
   final bool help;
   final bool tentative;
   final List<EventConfirmTarget> confirm;
+  final bool personStore;
+  final String? userId;
 
   String? get defaultStatus => tentative ? eventStatusTentative : null;
 }
@@ -301,6 +305,8 @@ ImportCommand parseImportCommand(
   var dryRun = false;
   var tentative = false;
   final confirm = <EventConfirmTarget>[];
+  var personStore = false;
+  String? userId;
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
     switch (arg) {
@@ -321,6 +327,12 @@ ImportCommand parseImportCommand(
         break;
       case '--confirm':
         confirm.add(parseConfirmTarget(_nextArg(args, ++i, '--confirm')));
+        break;
+      case '--person-store':
+        personStore = true;
+        break;
+      case '--user':
+        userId = _nextArg(args, ++i, '--user');
         break;
       default:
         if (arg.startsWith('-')) {
@@ -343,6 +355,15 @@ ImportCommand parseImportCommand(
       'Pass a file to import, or --confirm, not both.',
     );
   }
+  final trimmedUser = userId?.trim();
+  if (personStore &&
+      (trimmedUser == null ||
+          trimmedUser.isEmpty ||
+          trimmedUser.contains('/'))) {
+    throw EventImportException(
+      '--person-store requires --user <uid> (a Firebase uid).',
+    );
+  }
   return ImportCommand(
     hubId: hub,
     file: file,
@@ -350,6 +371,8 @@ ImportCommand parseImportCommand(
     help: false,
     tentative: tentative,
     confirm: confirm,
+    personStore: personStore,
+    userId: trimmedUser,
   );
 }
 
@@ -569,20 +592,52 @@ Map<String, dynamic> firestoreRestValue(Object? value) {
   if (value is DateTime) {
     return {'timestampValue': value.toUtc().toIso8601String()};
   }
+  if (value is Iterable && value is! String) {
+    return {
+      'arrayValue': {
+        'values': [for (final item in value) firestoreRestValue(item)],
+      },
+    };
+  }
   throw ArgumentError('Unsupported Firestore value: $value');
 }
 
 /// Confirm write. Only `status` is touched, and the document must already exist.
+String firestoreEventDocumentName({
+  required String projectId,
+  required String eventId,
+  String? hubId,
+  String? personStoreUserId,
+}) {
+  if (personStoreUserId != null && personStoreUserId.isNotEmpty) {
+    return 'projects/$projectId/databases/(default)/documents/'
+        'users/$personStoreUserId/events/$eventId';
+  }
+  if (hubId == null) {
+    throw EventImportException('Pass --hub <hubId> or set HUB_ID.');
+  }
+  validateHubId(hubId);
+  return 'projects/$projectId/databases/(default)/documents/'
+      '$kHubsCollection/$hubId/events/$eventId';
+}
+
 Map<String, dynamic> firestoreRestConfirmWrite({
   required String projectId,
   required String hubId,
   required EventConfirmTarget target,
+  String? personStoreUserId,
 }) {
-  validateHubId(hubId);
+  if (personStoreUserId == null || personStoreUserId.isEmpty) {
+    validateHubId(hubId);
+  }
   return {
     'update': {
-      'name':
-          'projects/$projectId/databases/(default)/documents/$kHubsCollection/$hubId/events/${target.docId}',
+      'name': firestoreEventDocumentName(
+        projectId: projectId,
+        eventId: target.docId,
+        hubId: hubId,
+        personStoreUserId: personStoreUserId,
+      ),
       'fields': {'status': firestoreRestValue(eventStatusConfirmed)},
     },
     'updateMask': {
@@ -598,13 +653,20 @@ Map<String, dynamic> firestoreRestWrite({
   required String hubId,
   required ImportedEvent event,
   String? ownerId,
+  String? personStoreUserId,
 }) {
-  validateHubId(hubId);
+  if (personStoreUserId == null || personStoreUserId.isEmpty) {
+    validateHubId(hubId);
+  }
   final fields = event.toImportFields(ownerId: ownerId);
   return {
     'update': {
-      'name':
-          'projects/$projectId/databases/(default)/documents/$kHubsCollection/$hubId/events/${event.docId}',
+      'name': firestoreEventDocumentName(
+        projectId: projectId,
+        eventId: event.docId,
+        hubId: hubId,
+        personStoreUserId: personStoreUserId,
+      ),
       'fields': {
         for (final entry in fields.entries)
           entry.key: firestoreRestValue(entry.value),

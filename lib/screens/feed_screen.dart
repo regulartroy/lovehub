@@ -20,6 +20,8 @@ import '../services/home_feed_weather.dart';
 import '../widgets/undo_snackbar.dart';
 import '../widgets/home_feed/home_feed_view.dart';
 import '../services/hub_collection.dart';
+import '../services/event_store.dart';
+import '../repositories/event_repository.dart';
 
 class FeedScreen extends StatefulWidget {
   final User user;
@@ -136,6 +138,31 @@ class _FeedScreenState extends State<FeedScreen> {
   Future<void> _loadWeather() async {
     final w = await fetchHomeFeedWeather(widget.user.uid);
     if (mounted && w != null) setState(() => _weather = w);
+  }
+
+  Stream<List<Map<String, dynamic>>> _eventMapsStream(
+    String hubId,
+    DateTime lookBack,
+  ) {
+    if (usePersonEventStore) {
+      return EventRepository()
+          .streamEvents(hubId, viewerUid: widget.user.uid)
+          .map(
+            (events) => sanitizeEventMaps(events.map(eventModelToDocumentMap)),
+          );
+    }
+    return FirebaseFirestore.instance
+        .collection(kHubsCollection)
+        .doc(hubId)
+        .collection('events')
+        .where('start', isGreaterThan: Timestamp.fromDate(lookBack))
+        .orderBy('start')
+        .snapshots()
+        .map(
+          (snap) => sanitizeEventMaps(
+            snap.docs.map((d) => {'id': d.id, ...d.data()}),
+          ),
+        );
   }
 
   HomeFeedData _feedData({
@@ -573,19 +600,12 @@ class _FeedScreenState extends State<FeedScreen> {
                       .snapshots(),
                 ),
                 builder: (context, notifSnapshot) {
-                  return StreamBuilder<QuerySnapshot>(
+                  return StreamBuilder<List<Map<String, dynamic>>>(
                     stream: _streams.watch(
-                      'events:$activeHubId:$dayKey',
-                      () => FirebaseFirestore.instance
-                          .collection(kHubsCollection)
-                          .doc(activeHubId)
-                          .collection('events')
-                          .where(
-                            'start',
-                            isGreaterThan: Timestamp.fromDate(lookBack),
-                          )
-                          .orderBy('start')
-                          .snapshots(),
+                      usePersonEventStore
+                          ? 'person-events:$activeHubId:${widget.user.uid}'
+                          : 'events:$activeHubId:$dayKey',
+                      () => _eventMapsStream(activeHubId, lookBack),
                     ),
                     builder: (context, eventSnapshot) {
                       return StreamBuilder<QuerySnapshot>(
@@ -608,14 +628,7 @@ class _FeedScreenState extends State<FeedScreen> {
                               child: CircularProgressIndicator(),
                             );
 
-                          final rawEvents = sanitizeEventMaps(
-                            (eventSnapshot.data?.docs ?? const []).map(
-                              (d) => {
-                                'id': d.id,
-                                ...d.data() as Map<String, dynamic>,
-                              },
-                            ),
-                          );
+                          final rawEvents = eventSnapshot.data ?? const [];
                           final allEvents = [
                             ...rawEvents,
                             ..._getProjectedBirthdays(),

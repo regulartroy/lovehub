@@ -290,9 +290,7 @@ class C2RotaPlan {
       confirms.isNotEmpty || deletes.isNotEmpty || updates.isNotEmpty;
 
   bool get preconditionsReady =>
-      confirms.every(_ready) &&
-      deletes.every(_ready) &&
-      updates.every(_ready);
+      confirms.every(_ready) && deletes.every(_ready) && updates.every(_ready);
 
   /// True when an apply may build a commit. A no-op plan is ready.
   bool get canCommit =>
@@ -330,6 +328,8 @@ class C2ReconcileCommand {
     required this.maxDeletes,
     required this.maxUpdates,
     required this.now,
+    this.personStore = false,
+    this.userId,
   });
 
   final bool help;
@@ -345,6 +345,8 @@ class C2ReconcileCommand {
   final int maxDeletes;
   final int maxUpdates;
   final DateTime? now;
+  final bool personStore;
+  final String? userId;
 
   bool get offlineFixture =>
       !apply && rollbackId == null && feedFile != null && eventsFile != null;
@@ -999,12 +1001,7 @@ C2RotaPlan planC2RotaReconcile({
     final scoped = rowHits.single;
     matchedIds.add(scoped.event.docId);
     actions.add(
-      _decision(
-        day,
-        scoped.event,
-        today: today,
-        renamePlaceholder: false,
-      ),
+      _decision(day, scoped.event, today: today, renamePlaceholder: false),
     );
   }
 
@@ -1019,9 +1016,7 @@ C2RotaPlan planC2RotaReconcile({
   }
   final unmatchedByDate = <String, List<int>>{};
   for (final i in unmatchedFeedIndexes) {
-    unmatchedByDate
-        .putIfAbsent(inWindowDays[i].date.ymd, () => [])
-        .add(i);
+    unmatchedByDate.putIfAbsent(inWindowDays[i].date.ymd, () => []).add(i);
   }
   final rematchedFeed = <int>{};
   for (final entry in unmatchedByDate.entries) {
@@ -1033,12 +1028,7 @@ C2RotaPlan planC2RotaReconcile({
       rematchedFeed.add(feedIndexes.single);
       matchedIds.add(scoped.event.docId);
       actions.add(
-        _decision(
-          day,
-          scoped.event,
-          today: today,
-          renamePlaceholder: true,
-        ),
+        _decision(day, scoped.event, today: today, renamePlaceholder: true),
       );
       continue;
     }
@@ -1367,11 +1357,7 @@ C2RotaAction _withFieldUpdates(
     if (finishMinutes <= loadMinutes) {
       finishDate = day.date.addDays(1);
     }
-    final parsed = londonWallTimeToUtc(
-      finishDate,
-      finish.hour,
-      finish.minute,
-    );
+    final parsed = londonWallTimeToUtc(finishDate, finish.hour, finish.minute);
     if (parsed == null) return null;
     end = parsed;
   } else {
@@ -1417,9 +1403,7 @@ C2RotaPlan _finish({
   final blocks = <String>[
     if (extraBlock != null) extraBlock,
     if (staleReason != null) 'feed is stale ($staleReason)',
-    if (confirms > maxConfirms ||
-        deletes > maxDeletes ||
-        updates > maxUpdates)
+    if (confirms > maxConfirms || deletes > maxDeletes || updates > maxUpdates)
       'batch would confirm $confirms, delete $deletes, and update $updates, '
           'above the cap of $maxConfirms confirms / $maxDeletes deletes / '
           '$maxUpdates updates; nothing written',
@@ -1504,9 +1488,10 @@ String _renderAction(C2RotaAction action) {
   final id = action.docId ?? action.date ?? '-';
   final title = action.summary ?? action.show ?? '';
   final detail = switch (action.kind) {
-    C2RotaActionKind.confirm => action.hasFieldUpdates
-        ? 'tentative -> confirmed; ${action.reason}'
-        : 'tentative -> confirmed',
+    C2RotaActionKind.confirm =>
+      action.hasFieldUpdates
+          ? 'tentative -> confirmed; ${action.reason}'
+          : 'tentative -> confirmed',
     C2RotaActionKind.update => action.reason,
     C2RotaActionKind.keepTentative => 'left tentative (${action.reason})',
     _ => action.reason,
@@ -1582,6 +1567,7 @@ List<Map<String, dynamic>> c2RotaCommitWrites({
   required C2RotaPlan plan,
   required String auditId,
   required DateTime appliedAt,
+  String? personStoreUserId,
 }) {
   validateHubId(hubId);
   if (!isC2RotaAuditId(auditId)) {
@@ -1604,7 +1590,13 @@ List<Map<String, dynamic>> c2RotaCommitWrites({
   final mutations = mutationById.values.toList()
     ..sort((a, b) => a.docId!.compareTo(b.docId!));
   final writes = <Map<String, dynamic>>[
-    for (final action in mutations) _mutationWrite(projectId, hubId, action),
+    for (final action in mutations)
+      _mutationWrite(
+        projectId,
+        hubId,
+        action,
+        personStoreUserId: personStoreUserId,
+      ),
     _auditWrite(
       projectId: projectId,
       hubId: hubId,
@@ -1614,6 +1606,7 @@ List<Map<String, dynamic>> c2RotaCommitWrites({
       appliedAt: appliedAt,
       kind: 'c2-rota-reconcile',
       reverts: null,
+      personStoreUserId: personStoreUserId,
     ),
   ];
   return writes;
@@ -1622,9 +1615,15 @@ List<Map<String, dynamic>> c2RotaCommitWrites({
 Map<String, dynamic> _mutationWrite(
   String projectId,
   String hubId,
-  C2RotaAction action,
-) {
-  final name = _eventName(projectId, hubId, action.docId!);
+  C2RotaAction action, {
+  String? personStoreUserId,
+}) {
+  final name = _eventName(
+    projectId,
+    hubId,
+    action.docId!,
+    personStoreUserId: personStoreUserId,
+  );
   final updateTime = action.event!.updateTime!;
   if (action.kind == C2RotaActionKind.delete) {
     return {
@@ -1670,6 +1669,7 @@ Map<String, dynamic> _auditWrite({
   required DateTime appliedAt,
   required String kind,
   required String? reverts,
+  String? personStoreUserId,
 }) {
   final fields = <String, dynamic>{
     'kind': {'stringValue': kind},
@@ -1687,7 +1687,15 @@ Map<String, dynamic> _auditWrite({
     'changesJson': {'stringValue': jsonEncode(_changeRecords(mutations))},
   };
   return {
-    'update': {'name': _auditName(projectId, hubId, auditId), 'fields': fields},
+    'update': {
+      'name': _auditName(
+        projectId,
+        hubId,
+        auditId,
+        personStoreUserId: personStoreUserId,
+      ),
+      'fields': fields,
+    },
     'updateMask': {'fieldPaths': fields.keys.toList()},
   };
 }
@@ -1721,12 +1729,30 @@ List<Map<String, Object?>> _changeRecords(List<C2RotaAction> mutations) {
   ];
 }
 
-String _eventName(String projectId, String hubId, String docId) {
+String _eventName(
+  String projectId,
+  String hubId,
+  String docId, {
+  String? personStoreUserId,
+}) {
+  if (personStoreUserId != null && personStoreUserId.isNotEmpty) {
+    return 'projects/$projectId/databases/(default)/documents/'
+        'users/$personStoreUserId/events/$docId';
+  }
   return 'projects/$projectId/databases/(default)/documents/'
       '$kHubsCollection/$hubId/events/$docId';
 }
 
-String _auditName(String projectId, String hubId, String auditId) {
+String _auditName(
+  String projectId,
+  String hubId,
+  String auditId, {
+  String? personStoreUserId,
+}) {
+  if (personStoreUserId != null && personStoreUserId.isNotEmpty) {
+    return 'projects/$projectId/databases/(default)/documents/'
+        'users/$personStoreUserId/$c2RotaAuditCollection/$auditId';
+  }
   return 'projects/$projectId/databases/(default)/documents/'
       '$kHubsCollection/$hubId/$c2RotaAuditCollection/$auditId';
 }
@@ -1882,9 +1908,7 @@ List<C2StoredEvent> parseC2EventFixture(Object? decoded) {
     final endRaw = map['end'];
     if (endRaw != null) {
       if (endRaw is! String) {
-        throw C2RotaFeedException(
-          'events[$i].end must be an ISO-8601 string.',
-        );
+        throw C2RotaFeedException('events[$i].end must be an ISO-8601 string.');
       }
       try {
         end = DateTime.parse(endRaw.trim()).toUtc();
@@ -2180,6 +2204,7 @@ List<Map<String, dynamic>> c2RollbackCommitWrites({
   required String sourceAuditId,
   required String rollbackAuditId,
   required DateTime appliedAt,
+  String? personStoreUserId,
 }) {
   validateHubId(hubId);
   if (!isC2RotaAuditId(sourceAuditId) || !isC2RotaAuditId(rollbackAuditId)) {
@@ -2190,7 +2215,12 @@ List<Map<String, dynamic>> c2RollbackCommitWrites({
   }
   final writes = <Map<String, dynamic>>[];
   for (final action in plan.writes) {
-    final name = _eventName(projectId, hubId, action.docId);
+    final name = _eventName(
+      projectId,
+      hubId,
+      action.docId,
+      personStoreUserId: personStoreUserId,
+    );
     if (action.op == 'recreate') {
       writes.add({
         'update': {'name': name, 'fields': action.fields},
@@ -2222,7 +2252,12 @@ List<Map<String, dynamic>> c2RollbackCommitWrites({
   };
   writes.add({
     'update': {
-      'name': _auditName(projectId, hubId, rollbackAuditId),
+      'name': _auditName(
+        projectId,
+        hubId,
+        rollbackAuditId,
+        personStoreUserId: personStoreUserId,
+      ),
       'fields': fields,
     },
     'updateMask': {'fieldPaths': fields.keys.toList()},
@@ -2250,6 +2285,8 @@ C2ReconcileCommand parseC2ReconcileArgs(
   var maxDeletes = c2RotaDefaultMaxDeletes;
   var maxUpdates = c2RotaDefaultMaxUpdates;
   DateTime? now;
+  var personStore = false;
+  String? userId = _trimmed(environment['PERSON_STORE_USER']);
 
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
@@ -2309,6 +2346,12 @@ C2ReconcileCommand parseC2ReconcileArgs(
       case '--now':
         now = _parseNow(_next(args, ++i, '--now'));
         break;
+      case '--person-store':
+        personStore = true;
+        break;
+      case '--user':
+        userId = _next(args, ++i, '--user');
+        break;
       default:
         throw C2RotaArgsException('Unknown option $arg');
     }
@@ -2329,6 +2372,8 @@ C2ReconcileCommand parseC2ReconcileArgs(
       maxDeletes: maxDeletes,
       maxUpdates: maxUpdates,
       now: now,
+      personStore: personStore,
+      userId: _trimmed(userId),
     );
   }
   if (apply && dryRun) {
@@ -2356,6 +2401,14 @@ C2ReconcileCommand parseC2ReconcileArgs(
   if (resolvedHub == null) {
     throw C2RotaArgsException('Pass --hub <hubId> or set HUB_ID.');
   }
+  final resolvedUser = _trimmed(userId);
+  if (personStore) {
+    if (resolvedUser == null || resolvedUser.contains('/')) {
+      throw C2RotaArgsException(
+        '--person-store requires --user <uid> (a Firebase uid).',
+      );
+    }
+  }
   try {
     validateHubId(resolvedHub);
   } on EventImportException catch (error) {
@@ -2375,6 +2428,8 @@ C2ReconcileCommand parseC2ReconcileArgs(
     maxDeletes: maxDeletes,
     maxUpdates: maxUpdates,
     now: now,
+    personStore: personStore,
+    userId: resolvedUser,
   );
 }
 

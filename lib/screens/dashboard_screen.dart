@@ -43,6 +43,7 @@ import '../models/quote_model.dart';
 import '../repositories/quote_repository.dart';
 import 'dashboard/dashboard_weather_icons.dart';
 import '../services/hub_collection.dart';
+import '../services/event_store.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -304,23 +305,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     final lookBack = DateTime.now().subtract(const Duration(days: 60));
-    _subs.add(
-      FirebaseFirestore.instance
-          .collection(kHubsCollection)
-          .doc(hubId)
-          .collection('events')
-          .where('start', isGreaterThan: Timestamp.fromDate(lookBack))
-          .orderBy('start')
-          .snapshots()
-          .listen((snap) {
+    if (usePersonEventStore) {
+      final viewerUid = FirebaseAuth.instance.currentUser?.uid;
+      if (viewerUid != null) {
+        _subs.add(
+          EventRepository().streamEvents(hubId, viewerUid: viewerUid).listen((
+            events,
+          ) {
             if (!mounted) return;
-            _rawEvents = sanitizeEventMaps(
-              snap.docs.map((d) => {'id': d.id, ...d.data()}),
-            );
+            _rawEvents = sanitizeEventMaps(events.map(eventModelToDocumentMap));
             _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
             _rebuildSlides(_widthOrDefault);
           }, onError: (_) {}),
-    );
+        );
+      }
+    } else {
+      _subs.add(
+        FirebaseFirestore.instance
+            .collection(kHubsCollection)
+            .doc(hubId)
+            .collection('events')
+            .where('start', isGreaterThan: Timestamp.fromDate(lookBack))
+            .orderBy('start')
+            .snapshots()
+            .listen((snap) {
+              if (!mounted) return;
+              _rawEvents = sanitizeEventMaps(
+                snap.docs.map((d) => {'id': d.id, ...d.data()}),
+              );
+              _eventsAll = [..._rawEvents, ..._projectedBirthdays()];
+              _rebuildSlides(_widthOrDefault);
+            }, onError: (_) {}),
+      );
+    }
 
     _subs.add(
       FirebaseFirestore.instance
@@ -2055,7 +2072,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
     _applyEventStatus(id, 'confirmed');
     try {
-      await EventRepository().confirmEvent(widget.visibleHubs.first.key, id);
+      await EventRepository().confirmEvent(
+        widget.visibleHubs.first.key,
+        id,
+        hint: EventWriteHint.fromMap(
+          event,
+          viewerUid: FirebaseAuth.instance.currentUser?.uid,
+        ),
+      );
     } catch (_) {
       if (!mounted) rethrow;
       _rawEvents = previous;
@@ -2078,6 +2102,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await EventRepository().markEventTentative(
         widget.visibleHubs.first.key,
         id,
+        hint: EventWriteHint.fromMap(
+          event,
+          viewerUid: FirebaseAuth.instance.currentUser?.uid,
+        ),
       );
     } catch (_) {
       if (!mounted) rethrow;

@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Mutual friendship stored at `friends/{uidA_uidB}`.
 ///
 /// The document id is the two Firebase Auth uids in lexicographic order,
@@ -75,8 +73,12 @@ class Friendship {
   }
 
   static DateTime? _readDate(Object? value) {
-    if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
+    // Avoid importing cloud_firestore so CLI tools can use this model.
+    try {
+      final result = (value as dynamic).toDate();
+      if (result is DateTime) return result;
+    } catch (_) {}
     return null;
   }
 }

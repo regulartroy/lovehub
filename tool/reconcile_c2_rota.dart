@@ -37,6 +37,8 @@ Reconcile imported c2-rota events with the Concorde rota feed.
 
 Default is dry-run (nothing written). --apply confirms, deletes, or updates titles/times.
 HUB_ID can replace --hub.
+--person-store --user <uid> reads and writes users/{uid}/events (and
+users/{uid}/c2RotaSyncAudit) instead of the hub. Default is unchanged.
 
 Only imported documents are in scope: source c2-rota and id c2-rota:{externalId}.
 Tentative + tom=working + status=on is confirmed (including past dates).
@@ -124,7 +126,11 @@ Future<void> _reconcile(C2ReconcileCommand command) async {
     }
     events = command.eventsFile != null
         ? parseC2EventFixture(_readJsonFile(command.eventsFile!))
-        : await _queryEvents(firestore!, hubId);
+        : await _queryEvents(
+            firestore!,
+            hubId,
+            personStoreUserId: command.personStore ? command.userId : null,
+          );
     final plan = planC2RotaReconcile(
       feed: feed,
       events: events,
@@ -154,11 +160,14 @@ Future<void> _reconcile(C2ReconcileCommand command) async {
       plan: plan,
       auditId: auditId,
       appliedAt: appliedAt,
+      personStoreUserId: command.personStore ? command.userId : null,
     );
     _writePendingAudit(command, auditId, writes);
     await _commit(firestore!, writes);
     stdout.writeln(
-      'Applied audit $kHubsCollection/$hubId/$c2RotaAuditCollection/$auditId',
+      command.personStore
+          ? 'Applied audit users/${command.userId}/$c2RotaAuditCollection/$auditId'
+          : 'Applied audit $kHubsCollection/$hubId/$c2RotaAuditCollection/$auditId',
     );
   } finally {
     firestore?.close();
@@ -170,15 +179,19 @@ Future<void> _rollback(C2ReconcileCommand command) async {
   final auditId = command.rollbackId!;
   final firestore = await _firestoreClient();
   try {
-    final document = await _getDocument(
-      firestore,
-      '$kHubsCollection/${Uri.encodeComponent(hubId)}/$c2RotaAuditCollection/${Uri.encodeComponent(auditId)}',
-    );
+    final auditPath = command.personStore
+        ? 'users/${Uri.encodeComponent(command.userId!)}/$c2RotaAuditCollection/${Uri.encodeComponent(auditId)}'
+        : '$kHubsCollection/${Uri.encodeComponent(hubId)}/$c2RotaAuditCollection/${Uri.encodeComponent(auditId)}';
+    final document = await _getDocument(firestore, auditPath);
     final audit = parseC2RotaAuditDocument(runId: auditId, document: document);
     if (audit.hubId != hubId) {
       throw C2RotaFeedException('Audit $auditId belongs to a different hub.');
     }
-    final current = await _queryEvents(firestore, hubId);
+    final current = await _queryEvents(
+      firestore,
+      hubId,
+      personStoreUserId: command.personStore ? command.userId : null,
+    );
     final plan = planC2RotaRollback(audit: audit, currentEvents: current);
     stdout.writeln(
       command.apply ? 'C2 rota rollback: apply' : 'C2 rota rollback: dry-run',
@@ -202,10 +215,13 @@ Future<void> _rollback(C2ReconcileCommand command) async {
       sourceAuditId: auditId,
       rollbackAuditId: rollbackId,
       appliedAt: appliedAt,
+      personStoreUserId: command.personStore ? command.userId : null,
     );
     await _commit(firestore, writes);
     stdout.writeln(
-      'Applied rollback $kHubsCollection/$hubId/$c2RotaAuditCollection/$rollbackId',
+      command.personStore
+          ? 'Applied rollback users/${command.userId}/$c2RotaAuditCollection/$rollbackId'
+          : 'Applied rollback $kHubsCollection/$hubId/$c2RotaAuditCollection/$rollbackId',
     );
   } finally {
     firestore.close();
@@ -287,11 +303,15 @@ void _refuseFirestoreStatus(int statusCode) {
 
 Future<List<C2StoredEvent>> _queryEvents(
   http.Client client,
-  String hubId,
-) async {
+  String hubId, {
+  String? personStoreUserId,
+}) async {
+  final parent = personStoreUserId != null && personStoreUserId.isNotEmpty
+      ? 'users/${Uri.encodeComponent(personStoreUserId)}'
+      : '$kHubsCollection/${Uri.encodeComponent(hubId)}';
   final uri = Uri.parse(
     'https://firestore.googleapis.com/v1/projects/$lovehubFirebaseProjectId'
-    '/databases/(default)/documents/$kHubsCollection/${Uri.encodeComponent(hubId)}:runQuery',
+    '/databases/(default)/documents/$parent:runQuery',
   );
   final response = await client.post(
     uri,
